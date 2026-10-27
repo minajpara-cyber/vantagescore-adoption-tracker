@@ -71,7 +71,12 @@ def unpack_bundle(bundle: Path) -> dict:
             out["bytes"] += len(data)
     coll = paths.DATA / "collections"
     coll.mkdir(parents=True, exist_ok=True)
-    (coll / f"{bundle.stem}.json").write_text(json.dumps(manifest, indent=1))
+    record = coll / f"{bundle.stem}.json"
+    n = 1
+    while record.exists():  # a second bundle the same day: keep both records
+        record = coll / f"{bundle.stem}_{n}.json"
+        n += 1
+    record.write_text(json.dumps(manifest, indent=1))
     out["files_in_manifest"] = len(manifest["files"])
     out["source"] = manifest.get("source")
     out["collected_at"] = manifest.get("collected_at")
