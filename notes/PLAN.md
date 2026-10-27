@@ -72,8 +72,9 @@ Loan-level data stays local. Only aggregates are published.
 1. Done Oct 27, 2026: month-end issuance loan files Dec 2025 - Sep 2026 and intraday loan files
    Jul 1 - Oct 27, 2026, both GSEs (680 files, 158 MB, 2.05M loans).
 2. Done: dashboard v1 (monthly and weekly adoption by GSE, count vs balance, sellers, borrower mix).
-3. Next: recurring refresh (weekly is enough given retention): pull new intraday files and each new
-   month-end file (published the first business day of the month), unpack, ingest, build, re-upload.
+3. Done: weekly refresh, a scheduled task in the Claude app (gse-weekly-refresh, Mondays 9:00 ET):
+   check portal sign-in (the user signs in), collector/collect.js, `refresh`, update the claude.ai
+   dashboard's files, `publish` to GitHub Pages (https://minajpara-cyber.github.io/vantagescore-adoption-tracker/).
 
 **Phase 2: analytical layers**
 - Spread: note-rate spread of VS4 vs FICO loans within matched cells (month x purpose x LTV x score
