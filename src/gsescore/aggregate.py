@@ -13,12 +13,15 @@ Loan-level data never leaves the local warehouse; only these aggregates are publ
   profile      averages for VS4 vs Classic FICO loans since MIX_START
   summary      headline figures per GSE (+ All)
   events       policy dates drawn on the charts
+  sellers, seller_monthly, seller_weekly, seller_splits, adoption, series, highlights
+               seller-level adoption, built in lenders.py
 """
 import json
 from datetime import datetime, timezone
 from pathlib import Path
 
 from . import paths
+from .lenders import build_datasets as build_lender_datasets
 from .warehouse import connect
 
 # VS4 fields went live Nov 17, 2025; the first month-end file on the portal is December 2025.
@@ -185,6 +188,8 @@ def build(out_dir: Path = paths.SITE_DATA) -> dict:
                    p.month AS prior_month, p.vs4_share AS prior_vs4_share, p.vs4_upb_share AS prior_vs4_upb_share,
                    f.vs4_share - p.vs4_share AS vs4_share_change,
                    f.vs4_upb_share - p.vs4_upb_share AS vs4_upb_share_change,
+                   round((f.vs4_share - p.vs4_share) * 100, 4) AS vs4_share_change_pts,
+                   round((f.vs4_upb_share - p.vs4_upb_share) * 100, 4) AS vs4_upb_share_change_pts,
                    l.month AS current_month, l.vs4_share AS current_vs4_share,
                    l.vs4_upb_share AS current_vs4_upb_share, l.scored_loans AS current_scored_loans,
                    (SELECT count(*) FROM sel) AS sellers, DATE '{LENDER_START}' AS sellers_since, (SELECT count(*) FILTER (WHERE v > 0) FROM sel) AS sellers_with_vs4,
@@ -204,6 +209,9 @@ def build(out_dir: Path = paths.SITE_DATA) -> dict:
         written[name] = len(rows)
     (out_dir / "events.json").write_text(json.dumps({"rows": [{"date": d, "label": t} for d, t in EVENTS]}))
     written["events"] = len(EVENTS)
+    for name, rows in build_lender_datasets(con, in_range, WEEKLY_START, _rows).items():
+        (out_dir / f"{name}.json").write_text(json.dumps({"rows": rows}, separators=(",", ":")))
+        written[name] = len(rows)
 
     coverage = _rows(con, """
         SELECT agency, kind, min(file_date) AS first_file, max(file_date) AS last_file,

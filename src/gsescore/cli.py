@@ -1,4 +1,4 @@
-"""Command line: gsescore {have,unpack,refresh,ingest,status,build,site,publish,sql}."""
+"""Command line: gsescore {have,unpack,refresh,ingest,status,build,site,preview,publish,dashboard-changes,dashboard-record,sql}."""
 import argparse
 import json
 import re
@@ -53,6 +53,23 @@ def cmd_refresh(args):
 def cmd_site(args):
     from .site import build_site
     print("\n".join(build_site()))
+
+
+def cmd_preview(args):
+    from .site import build_preview
+    print("\n".join(build_preview()))
+
+
+def cmd_dashboard_changes(args):
+    from .site import dashboard_changes
+    print(json.dumps(dashboard_changes(), indent=1))
+
+
+def cmd_dashboard_record(args):
+    from .site import dashboard_record
+    urls = dict(a.split("=", 1) for a in args.uploads)
+    dashboard_record(urls)
+    print("recorded " + ", ".join(sorted(urls)))
 
 
 def cmd_publish(args):
@@ -124,7 +141,12 @@ def main():
     s.add_argument("--downloads", type=Path, default=Path.home() / "Downloads")
     s.set_defaults(fn=cmd_refresh)
     sub.add_parser("site", help="rebuild the public site in docs/").set_defaults(fn=cmd_site)
+    sub.add_parser("preview", help="build the full dashboard page as a static site in build/preview/").set_defaults(fn=cmd_preview)
     sub.add_parser("publish", help="commit docs/ and push to GitHub").set_defaults(fn=cmd_publish)
+    sub.add_parser("dashboard-changes", help="dashboard datasets changed since their last upload (JSON)").set_defaults(fn=cmd_dashboard_changes)
+    s = sub.add_parser("dashboard-record", help="record uploads to the claude.ai dashboard: ID=/_blob/<32 hex> ...")
+    s.add_argument("uploads", nargs="+")
+    s.set_defaults(fn=cmd_dashboard_record)
     s = sub.add_parser("ingest", help="parse raw files into the parquet warehouse")
     s.add_argument("paths", nargs="*", type=Path)
     s.add_argument("--force", action="store_true", help="re-ingest files already in the manifest")

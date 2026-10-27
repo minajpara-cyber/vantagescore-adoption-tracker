@@ -76,16 +76,32 @@ Loan-level data stays local. Only aggregates are published.
    check portal sign-in (the user signs in), collector/collect.js, `refresh`, update the claude.ai
    dashboard's files, `publish` to GitHub Pages (https://minajpara-cyber.github.io/vantagescore-adoption-tracker/).
 
-**Phase 2: analytical layers**
-- Spread: note-rate spread of VS4 vs FICO loans within matched cells (month x purpose x LTV x score
-  bucket x loan size), and after Oct 2026 aligned LLPAs.
-- Borrower composition: score, LTV, DTI, FTHB, purpose, occupancy, geography by model; VS4-vs-FICO
-  crosswalk on loans that disclose both (Oct 2026 onward).
-- Lender penetration: VS4 share by seller over time, adoption curves, concentration of VS4 volume.
-- Forecast: logistic / Bass diffusion fit on aggregate and per-lender penetration, with scenarios for
-  large-lender switching.
+**Phase 2: analytical layers** (agreed Oct 27, 2026; new views go to the private claude.ai dashboard
+first, and to the public site only once cleared)
+1. Done Oct 27, 2026: lenders and adoption. Seller list matched across GSEs with parents and tickers
+   (reference/sellers.csv); seller explorer (VS4 share by month and GSE, volume, weekly, channel and
+   purpose); heat table of the largest sellers; adopters under three thresholds (first VS4 loan, 10+ in a
+   month, 5%+ of a month's loans) and the largest sellers not yet over them; breadth x depth with each
+   month's change split exactly into new adopters, existing adopters and lender mix; clean series at a
+   fixed Jan-Jun 2026 lender mix and without the two largest VS4 sellers; latest highlights.
+2. Next: score choice and FICO exposure, from loans with both scores (Oct 19 onward): the rule lenders
+   use to pick a score (by how many LLPA buckets VS4 sits above or below FICO), a same-borrower
+   crosswalk, a ceiling (VS4 share if every lender priced on the higher score, reweighted to the whole
+   market), and a series of loans delivered with no Classic FICO (the two GSEs differ here; explain
+   that first).
+3. Pricing: 30-yr fixed note rate VS4 vs FICO raw, matched within seller x month x purpose x occupancy
+   x LTV x score bucket x size, and at the same Classic FICO (Oct 19 onward); upfront LLPA saved per VS4
+   loan from the published grids and how much reaches the rate; note rate minus pass-through rate
+   (retained servicing). Points and lender credits are not disclosed.
+4. Borrowers: within-lender and lender-mix-adjusted comparisons, distributions rather than averages,
+   where the VS4 lift is largest.
+5. Forecast: diffusion fit on breadth (adopters' share of volume) x depth (toward the ceiling in 2), with
+   lender scenarios.
 
 ## 5. Open items
+- Seller is not originator: correspondent aggregators (AmeriHome, PennyMac) deliver loans other lenders
+  made. Nationstar (Mr. Cooper) delivered under its own name only through January 2026, so Rocket
+  Companies' recent figures equal Rocket Mortgage's.
 - Freddie "Daily Issuance Loan Level File 2" (`al*` files, Jan - Mar 2026 only): not collected.
 - Month-end loan correction files (`*_RILLD_*`): not collected yet; apply once corrections matter.
 - Pricing Indicator codes: the portal app maps 9, C, V, N = Fannie Score, R = Freddie Score; the pipeline accepts all of them.

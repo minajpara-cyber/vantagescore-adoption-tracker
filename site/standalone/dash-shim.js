@@ -2,7 +2,7 @@
 // runs as a plain static site. Each dataset id loads from data/<id>.json ({"rows": [...]}); filters
 // live in memory; dash.colors are theme variables defined in the page template.
 (function () {
-  const DEFAULTS = { agency: 'All', measure: 'loans', dim: 'pricing_score' };
+  const DEFAULTS = { agency: 'All', measure: 'loans', dim: 'pricing_score', seller: 'rocket-mortgage', adopt: 'any', period: 'month', top: 25 };
   const sources = {};
   const listeners = [];
   let params = { ...DEFAULTS };
@@ -29,7 +29,7 @@
   window.dash = {
     data(id) {
       const s = load(id);
-      return { status: s.status, data: s.data, message: s.message, refreshing: false, meta: [] };
+      return { status: s.status, data: s.data, columns: s.data.length ? Object.keys(s.data[0]) : [], message: s.message, refreshing: false, meta: [] };
     },
     onData(fn) {
       listeners.push(fn);

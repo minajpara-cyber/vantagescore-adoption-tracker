@@ -2,7 +2,8 @@
 import os
 from pathlib import Path
 
-ROOT = Path(os.environ.get("GSESCORE_HOME", Path(__file__).resolve().parents[2]))
+REPO = Path(__file__).resolve().parents[2]  # code and hand-kept reference files, whatever the data root
+ROOT = Path(os.environ.get("GSESCORE_HOME", REPO))
 DATA = ROOT / "data"
 RAW = DATA / "raw"              # downloaded files, untouched: raw/{FNMA,FHLMC}/{intraday,monthend,monthly}/
 WAREHOUSE = DATA / "warehouse"  # one parquet per ingested file: warehouse/{loan,security}/{agency}/{kind}/
