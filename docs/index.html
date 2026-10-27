@@ -1,0 +1,651 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VantageScore adoption tracker</title>
+<meta name="description" content="VantageScore 4.0 vs Classic FICO in Fannie Mae and Freddie Mac MBS issuance, from the GSEs' loan-level disclosure files.">
+<style>
+  :root {
+    color-scheme: light dark;
+    --font-anthropic-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --font-anthropic-serif: Georgia, "Times New Roman", serif;
+    --cds-font-size-caption: 12.5px;
+    --cds-font-size-body: 15px;
+    --cds-font-size-heading: 16px;
+    --cds-font-size-title: 30px;
+    --cds-font-weight-medium: 600;
+    --cds-gap-xs: 4px; --cds-gap-sm: 8px; --cds-gap-md: 14px; --cds-gap-lg: 24px; --cds-gap-xl: 36px;
+    --cds-pad-xs: 4px; --cds-pad-sm: 8px; --cds-pad-md: 12px; --cds-pad-lg: 18px; --cds-pad-xl: 28px;
+    --cds-radius: 10px;
+    --cds-dur-slow: 300ms;
+    --color-bg: #fbfbfa; --color-panel: #ffffff; --color-fg: #1d1d1b; --color-fg-muted: #66655f;
+    --color-border-line: #e5e4df; --color-ok: #1f7a3d; --color-warn: #a35a00; --color-bad: #c03a1a;
+    --cds-text-secondary: #66655f; --cds-border: #dddcd6; --cds-surface-popover: #ffffff;
+    --cds-shadow-popover: 0 6px 18px rgba(0, 0, 0, .12);
+    --cds-chart-muted: #bdbbb3; --cds-chart-grid: #eeede9; --cds-chart-axis: #a9a79f; --cds-chart-reference: #8d8b84;
+    --series-1: #2b66d9; --series-2: #d97b29; --series-3: #23968a; --series-4: #8a55c9;
+    --series-5: #c4467a; --series-6: #6b8e23; --series-7: #b8860b; --series-8: #4a6f8a;
+    --skeleton: #ecebe6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --color-bg: #171716; --color-panel: #201f1e; --color-fg: #ecebe6; --color-fg-muted: #a6a59e;
+      --color-border-line: #363532; --color-ok: #5cc27e; --color-warn: #e0a84a; --color-bad: #f07457;
+      --cds-text-secondary: #a6a59e; --cds-border: #43423e; --cds-surface-popover: #2a2927;
+      --cds-shadow-popover: 0 6px 18px rgba(0, 0, 0, .5);
+      --cds-chart-muted: #5f5e59; --cds-chart-grid: #2c2b29; --cds-chart-axis: #6f6e68; --cds-chart-reference: #8f8e88;
+      --series-1: #6f9ef5; --series-2: #f0a35e; --series-3: #4fc0b2; --series-4: #b48cec;
+      --series-5: #e57aa6; --series-6: #9bc15a; --series-7: #e2b64a; --series-8: #84a6c0;
+      --skeleton: #2c2b29;
+    }
+  }
+  html, body { margin: 0; background: var(--color-bg); color: var(--color-fg); }
+  body { font-family: var(--font-anthropic-sans); font-size: var(--cds-font-size-body); line-height: 1.45; }
+  #dash-root { max-width: 1240px; margin: 0 auto; padding: 28px 16px 48px; }
+  .dash-skeleton { color: transparent !important; background: var(--skeleton); border-radius: 6px; }
+  .site-foot { margin-top: var(--cds-gap-xl); font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+<script src="dash-shim.js"></script>
+</head>
+<body>
+<main id="dash-root">
+<style>
+  .vx { display: flex; flex-direction: column; gap: var(--cds-gap-lg); font-family: var(--font-anthropic-sans); color: var(--color-fg); }
+  .vx h1 { margin: 0; font-family: var(--font-anthropic-serif); font-weight: 400; font-size: var(--cds-font-size-title); line-height: 1.2; }
+  .vx h2 { margin: 0; font-size: var(--cds-font-size-heading); font-weight: var(--cds-font-weight-medium); }
+  .vx p { margin: 0; }
+  .vx-takeaway { margin-top: var(--cds-gap-sm); max-width: 78ch; font-size: var(--cds-font-size-body); color: var(--color-fg-muted); }
+  .vx .vx-num { color: var(--color-fg); font-weight: var(--cds-font-weight-medium); font-variant-numeric: tabular-nums; }
+  .vx-controls { display: flex; flex-wrap: wrap; gap: var(--cds-gap-sm) var(--cds-gap-md); margin-top: var(--cds-gap-md); }
+  .vx-seg { display: inline-flex; border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); overflow: hidden; }
+  .vx-seg button { font: inherit; font-size: var(--cds-font-size-caption); padding: var(--cds-pad-xs) var(--cds-pad-sm); border: 0; background: transparent; color: var(--color-fg-muted); cursor: pointer; }
+  .vx-seg button + button { border-left: 1px solid var(--color-border-line); }
+  .vx-seg button[aria-pressed="true"] { background: var(--color-panel); color: var(--color-fg); font-weight: var(--cds-font-weight-medium); }
+  .vx-card { background: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: var(--cds-pad-lg); min-width: 0; }
+  .vx-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr)); gap: var(--cds-gap-md); }
+  .vx-lbl, .vx-sub { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+  .vx-val { margin: var(--cds-gap-xs) 0; font-family: var(--font-anthropic-serif); font-weight: 400; font-size: var(--cds-font-size-title); line-height: 1.15; font-variant-numeric: tabular-nums; }
+  .vx-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr)); gap: var(--cds-gap-md); }
+  .vx-wide { grid-column: 1 / -1; }
+  .vx-note { margin: var(--cds-gap-xs) 0 var(--cds-gap-md); font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+  .vx-legend { display: flex; flex-wrap: wrap; align-items: center; gap: var(--cds-gap-xs) var(--cds-gap-md); margin-bottom: var(--cds-gap-sm); font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+  .vx-sw { display: inline-block; flex: none; width: .7rem; height: .7rem; margin-right: var(--cds-gap-xs); border-radius: 2px; vertical-align: -1px; }
+  .vx-sw-line { width: .9rem; height: 2px; vertical-align: 3px; border-radius: 1px; }
+  .vx-chart { position: relative; min-height: 260px; }
+  .vx-chart svg { display: block; }
+  .vx-chart text { font-family: var(--font-anthropic-sans); font-size: var(--cds-font-size-caption); fill: var(--color-fg-muted); }
+  .vx-tip { position: absolute; top: 0; left: 0; z-index: 2; pointer-events: none; opacity: 0; white-space: nowrap; background: var(--cds-surface-popover); border: 1px solid var(--cds-border); border-radius: var(--cds-radius); box-shadow: var(--cds-shadow-popover); padding: var(--cds-pad-xs) var(--cds-pad-sm); font-size: var(--cds-font-size-caption); font-variant-numeric: tabular-nums; }
+  .vx-tip-h { color: var(--cds-text-secondary); margin-bottom: 2px; }
+  .vx-tip-r { display: flex; align-items: center; gap: var(--cds-gap-xs); }
+  .vx-tip-r .vx-sw { margin-right: 0; }
+  .vx-keys { display: flex; flex-wrap: wrap; gap: var(--cds-gap-xs) var(--cds-gap-lg); min-height: 1.2rem; font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+  .vx-badge { display: inline-flex; align-items: center; justify-content: center; width: 1.05rem; height: 1.05rem; margin-right: var(--cds-gap-xs); border: 1px solid var(--cds-chart-reference); border-radius: 50%; font-size: .68rem; color: var(--color-fg); }
+  .vx-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--cds-gap-sm) var(--cds-gap-md); margin-bottom: var(--cds-gap-sm); }
+  .vx-row .vx-legend { margin: 0; }
+  .vx-select { font: inherit; font-size: var(--cds-font-size-caption); color: var(--color-fg); background: var(--color-bg); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: var(--cds-pad-xs) var(--cds-pad-sm); }
+  .vx-tablebox { max-height: 26rem; overflow: auto; }
+  .vx-table { width: 100%; border-collapse: collapse; font-size: var(--cds-font-size-caption); font-variant-numeric: tabular-nums; }
+  .vx-table th { position: sticky; top: 0; z-index: 1; padding: 0; background: var(--color-panel); border-bottom: 1px solid var(--color-border-line); text-align: left; font-weight: var(--cds-font-weight-medium); }
+  .vx-table th button { width: 100%; padding: var(--cds-pad-xs) var(--cds-pad-sm); font: inherit; text-align: inherit; color: var(--color-fg-muted); background: none; border: 0; cursor: pointer; }
+  .vx-table th[aria-sort] button { color: var(--color-fg); }
+  .vx-table th[aria-sort="descending"] button::after { content: " \2193"; }
+  .vx-table th[aria-sort="ascending"] button::after { content: " \2191"; }
+  .vx-table td { padding: var(--cds-pad-xs) var(--cds-pad-sm); border-bottom: 1px solid var(--color-border-line); }
+  .vx-table :is(th, td):nth-child(n+2) { text-align: right; }
+  @media (max-width: 40rem) { .vx-table :is(th, td):nth-child(n+5) { display: none; } }
+  .vx-cmp { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; column-gap: var(--cds-gap-lg); font-size: var(--cds-font-size-caption); font-variant-numeric: tabular-nums; }
+  .vx-cmp > div { padding: var(--cds-pad-xs) 0; border-bottom: 1px solid var(--color-border-line); }
+  .vx-cmp .vx-h { color: var(--color-fg-muted); font-weight: var(--cds-font-weight-medium); }
+  .vx-cmp .vx-v { text-align: right; }
+  .vx-method ul { margin: var(--cds-gap-sm) 0 0; padding-left: 1.1rem; display: grid; gap: var(--cds-gap-xs); max-width: 92ch; font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+  .vx-fail { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: var(--cds-gap-xs); font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+  .vx-fail::before { content: ""; width: .375rem; height: .375rem; border-radius: 50%; background: var(--color-bad); }
+  .vx [data-dash-source-state=empty] { color: transparent; }
+  .vx [data-dash-source-state=refreshing] { opacity: .5; transition: opacity var(--cds-dur-slow); }
+</style>
+
+<div class="vx">
+  <header id="overview">
+    <h1>VantageScore adoption in GSE mortgage securities</h1>
+    <p class="vx-takeaway">
+      <span class="s-final-month dash-skeleton" data-source="summary" data-field="final_month" data-where="agency=All">—</span>
+      closed with VantageScore 4.0 pricing
+      <span class="vx-num s-final-share dash-skeleton" data-source="summary" data-field="final_vs4_share" data-where="agency=All">—</span>
+      <span class="s-of">of GSE loans with a credit score</span>, against
+      <span class="vx-num s-fico dash-skeleton" data-source="summary" data-field="final_fico_share" data-where="agency=All">—</span>
+      for Classic FICO.
+      <span class="s-cur-month dash-skeleton" data-source="summary" data-field="current_month" data-where="agency=All">—</span>
+      is running at
+      <span class="vx-num s-cur-share dash-skeleton" data-source="summary" data-field="current_vs4_share" data-where="agency=All">—</span>
+      so far, and two sellers delivered
+      <span class="vx-num s-top2 dash-skeleton" data-source="summary" data-field="top2_share_of_vs4" data-where="agency=All">—</span>
+      of all VS4 loans.
+    </p>
+    <div class="vx-controls">
+      <div class="vx-seg" id="agency-seg" role="group" aria-label="GSE">
+        <button type="button" data-v="All">Both GSEs</button><button type="button" data-v="FNMA">Fannie Mae</button><button type="button" data-v="FHLMC">Freddie Mac</button>
+      </div>
+      <div class="vx-seg" id="measure-seg" role="group" aria-label="Measure">
+        <button type="button" data-v="loans">Share of loans</button><button type="button" data-v="upb">Share of balance</button>
+      </div>
+    </div>
+  </header>
+
+  <section class="vx-tiles" id="headline" aria-label="Headline figures" data-fetchpriority="high">
+    <div class="vx-card" id="tile-final">
+      <div class="vx-lbl">VS4 share, <span class="s-final-month" data-source="summary" data-field="final_month" data-where="agency=All">—</span></div>
+      <div class="vx-val s-final-share dash-skeleton" data-source="summary" data-field="final_vs4_share" data-where="agency=All">—</div>
+      <div class="vx-sub"><span class="s-change" data-source="summary" data-field="vs4_share_change" data-where="agency=All">—</span> pts from <span class="s-prior-month" data-source="summary" data-field="prior_month" data-where="agency=All">—</span></div>
+    </div>
+    <div class="vx-card" id="tile-current">
+      <div class="vx-lbl">VS4 share, <span class="s-cur-month" data-source="summary" data-field="current_month" data-where="agency=All">—</span> so far</div>
+      <div class="vx-val s-cur-share dash-skeleton" data-source="summary" data-field="current_vs4_share" data-where="agency=All">—</div>
+      <div class="vx-sub">Intraday files through <span class="s-through" data-source="summary" data-field="data_through" data-where="agency=All">—</span></div>
+    </div>
+    <div class="vx-card" id="tile-fico">
+      <div class="vx-lbl">Classic FICO share, <span class="s-final-month" data-source="summary" data-field="final_month" data-where="agency=All">—</span></div>
+      <div class="vx-val s-fico dash-skeleton" data-source="summary" data-field="final_fico_share" data-where="agency=All">—</div>
+      <div class="vx-sub">Of loans with a credit score</div>
+    </div>
+    <div class="vx-card" id="tile-sellers">
+      <div class="vx-lbl">Sellers delivering VS4</div>
+      <div class="vx-val s-sellers-vs4 dash-skeleton" data-source="summary" data-field="sellers_with_vs4" data-where="agency=All">—</div>
+      <div class="vx-sub">Of <span class="s-sellers" data-source="summary" data-field="sellers" data-where="agency=All">—</span> sellers, loans issued since <span class="s-sellers-since" data-source="summary" data-field="sellers_since" data-where="agency=All">—</span></div>
+    </div>
+    <div class="vx-card" id="tile-top2">
+      <div class="vx-lbl">Top two sellers' share of VS4</div>
+      <div class="vx-val s-top2 dash-skeleton" data-source="summary" data-field="top2_share_of_vs4" data-where="agency=All">—</div>
+      <div class="vx-sub s-top2-names" data-source="summary" data-field="top2_sellers" data-where="agency=All">—</div>
+    </div>
+  </section>
+
+  <section class="vx-grid" id="trend" aria-label="Adoption over time">
+    <div class="vx-card" id="monthly-card">
+      <h2>VS4 share by issue month</h2>
+      <p class="vx-note">Share of loans with a credit score, by the month their pool was issued. The latest month is partial and comes from intraday files.</p>
+      <div class="vx-legend" id="monthly-legend"></div>
+      <div class="vx-chart dash-skeleton" id="monthly-chart" data-source="monthly events"></div>
+    </div>
+    <div class="vx-card" id="weekly-card">
+      <h2>VS4 share by week of first disclosure</h2>
+      <p class="vx-note">Loans by the week they first appeared in an intraday file. Bars are weekly; the line is a four-week rolling share. The latest week is partial.</p>
+      <div class="vx-legend" id="weekly-legend"></div>
+      <div class="vx-chart dash-skeleton" id="weekly-chart" data-source="weekly events"></div>
+    </div>
+    <div class="vx-card vx-wide" id="key-dates">
+      <div class="vx-keys dash-skeleton" id="events-list" data-source="events"></div>
+    </div>
+  </section>
+
+  <section class="vx-card" id="lenders">
+    <h2>Sellers delivering VS4 loans</h2>
+    <p class="vx-note">Loans issued since <span class="s-lenders-since" data-source="lenders" data-field="since" data-row="0">—</span>, both GSEs. VS4 share of seller is the share of that seller's loans with a credit score.</p>
+    <div class="vx-tablebox">
+      <table class="vx-table" id="lenders-table" data-source="lenders" data-row-key="seller">
+        <thead><tr>
+          <th scope="col" data-field="seller"><button type="button">Seller</button></th>
+          <th scope="col" data-field="vs4_loans"><button type="button">VS4 loans</button></th>
+          <th scope="col" data-field="vs4_share_of_seller"><button type="button">VS4 share of seller</button></th>
+          <th scope="col" data-field="share_of_all_vs4"><button type="button">Share of all VS4</button></th>
+          <th scope="col" data-field="vs4_loans_fnma"><button type="button">Fannie Mae VS4</button></th>
+          <th scope="col" data-field="vs4_loans_fhlmc"><button type="button">Freddie Mac VS4</button></th>
+          <th scope="col" data-field="loans"><button type="button">All loans</button></th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="vx-grid" id="borrowers" aria-label="Borrower mix">
+    <div class="vx-card" id="mix-card">
+      <h2>Borrower mix, VS4 vs Classic FICO</h2>
+      <p class="vx-note">Share of each model's loans issued since <span class="s-mix-since" data-source="composition" data-field="since" data-row="0">—</span>, both GSEs.</p>
+      <div class="vx-row">
+        <select class="vx-select" id="mix-dim" aria-label="Breakdown" data-source="composition"></select>
+        <div class="vx-legend" id="mix-legend"></div>
+      </div>
+      <div class="vx-chart dash-skeleton" id="mix-chart" data-source="composition"></div>
+    </div>
+    <div class="vx-card" id="profile-card">
+      <h2>Average loan, VS4 vs Classic FICO</h2>
+      <p class="vx-note">Loans issued since <span class="s-profile-since" data-source="profile" data-field="since" data-row="0">—</span>, both GSEs. Score, LTV, DTI and note rate are balance-weighted; the rate is not adjusted for loan mix.</p>
+      <div class="vx-cmp" id="profile-grid">
+        <div class="vx-h"></div><div class="vx-h vx-v">VantageScore 4.0</div><div class="vx-h vx-v">Classic FICO</div>
+        <div>Loans</div><div class="vx-v dash-skeleton" data-source="profile" data-field="loans" data-where="model=VantageScore 4.0">—</div><div class="vx-v dash-skeleton" data-source="profile" data-field="loans" data-where="model=Classic FICO">—</div>
+        <div>Credit score used for pricing</div><div class="vx-v dash-skeleton" data-source="profile" data-field="wa_score" data-where="model=VantageScore 4.0">—</div><div class="vx-v dash-skeleton" data-source="profile" data-field="wa_score" data-where="model=Classic FICO">—</div>
+        <div>Loan-to-value (%)</div><div class="vx-v dash-skeleton" data-source="profile" data-field="wa_ltv" data-where="model=VantageScore 4.0">—</div><div class="vx-v dash-skeleton" data-source="profile" data-field="wa_ltv" data-where="model=Classic FICO">—</div>
+        <div>Debt-to-income (%)</div><div class="vx-v dash-skeleton" data-source="profile" data-field="wa_dti" data-where="model=VantageScore 4.0">—</div><div class="vx-v dash-skeleton" data-source="profile" data-field="wa_dti" data-where="model=Classic FICO">—</div>
+        <div>Note rate (%)</div><div class="vx-v dash-skeleton" data-source="profile" data-field="wa_rate" data-where="model=VantageScore 4.0">—</div><div class="vx-v dash-skeleton" data-source="profile" data-field="wa_rate" data-where="model=Classic FICO">—</div>
+        <div>Average loan size</div><div class="vx-v dash-skeleton" data-source="profile" data-field="avg_loan" data-where="model=VantageScore 4.0">—</div><div class="vx-v dash-skeleton" data-source="profile" data-field="avg_loan" data-where="model=Classic FICO">—</div>
+        <div>Purchase loans</div><div class="vx-v dash-skeleton" data-source="profile" data-field="purchase_share" data-where="model=VantageScore 4.0">—</div><div class="vx-v dash-skeleton" data-source="profile" data-field="purchase_share" data-where="model=Classic FICO">—</div>
+        <div>Cash-out refinances</div><div class="vx-v dash-skeleton" data-source="profile" data-field="cashout_share" data-where="model=VantageScore 4.0">—</div><div class="vx-v dash-skeleton" data-source="profile" data-field="cashout_share" data-where="model=Classic FICO">—</div>
+        <div>First-time homebuyers</div><div class="vx-v dash-skeleton" data-source="profile" data-field="fthb_share" data-where="model=VantageScore 4.0">—</div><div class="vx-v dash-skeleton" data-source="profile" data-field="fthb_share" data-where="model=Classic FICO">—</div>
+        <div>Investor properties</div><div class="vx-v dash-skeleton" data-source="profile" data-field="investor_share" data-where="model=VantageScore 4.0">—</div><div class="vx-v dash-skeleton" data-source="profile" data-field="investor_share" data-where="model=Classic FICO">—</div>
+        <div>Broker channel</div><div class="vx-v dash-skeleton" data-source="profile" data-field="broker_share" data-where="model=VantageScore 4.0">—</div><div class="vx-v dash-skeleton" data-source="profile" data-field="broker_share" data-where="model=Classic FICO">—</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="vx-card vx-method" id="method">
+    <h2>How this is measured</h2>
+    <ul>
+      <li>The model that priced a loan comes from the Pricing Indicator the GSEs began disclosing in October. Before that, each loan disclosed only the score it was priced with, so the populated score field identifies the model.</li>
+      <li>Shares count loans with a valid credit score. Pools that disclose no score, mostly re-performing loans, are left out.</li>
+      <li>Issue month comes from the GSEs' month-end issuance files, the official list for each month. The latest month uses intraday files and will change until its month-end file is published.</li>
+      <li>The weekly series dates each loan by its first appearance in an intraday file. Loans are republished for up to a few weeks, so the series starts three weeks after the portal's intraday history begins.</li>
+      <li>Source: Fannie Mae PoolTalk and Freddie Mac MBS disclosure loan-level issuance files, intraday and month-end, through <span class="s-through" data-source="summary" data-field="data_through" data-where="agency=All">—</span>. Only these aggregates are published here; loan-level data stays on the computer that built them.</li>
+    </ul>
+  </section>
+</div>
+
+<script>
+(() => {
+  const AGENCIES = ['All', 'FNMA', 'FHLMC'];
+  const AG_NAME = { All: 'Both GSEs', FNMA: 'Fannie Mae', FHLMC: 'Freddie Mac' };
+  const AG_NOUN = { All: 'GSE', FNMA: 'Fannie Mae', FHLMC: 'Freddie Mac' };
+  const MODELS = ['VantageScore 4.0', 'Classic FICO'];
+  const DAY = 864e5;
+  const pct1 = d3.format('.1%');
+  const pctSigned = d3.format('+.1%');
+  const int = d3.format(',');
+  const money = d3.format('$,.0f');
+  const fixed = (n) => d3.format(`.${n}f`);
+  const parse = (s) => new Date(String(s).slice(0, 10) + 'T00:00:00Z');
+  const monthYear = (s) => d3.utcFormat('%B %Y')(parse(s));
+  const longDay = (s) => d3.utcFormat('%b %-d, %Y')(parse(s));
+  const shortDay = (s) => d3.utcFormat('%b %-d')(parse(s));
+  const agencyColor = (a) => dash.colors[Math.max(0, AGENCIES.indexOf(a))];
+  const params = () => Object.assign({ agency: 'All', measure: 'loans', dim: 'pricing_score' }, dash.params());
+  const rowsOf = (id) => {
+    const d = dash.data(id);
+    if (d.status !== 'ok') return [];
+    return Array.isArray(d.data) ? d.data : (d.data && (d.data.rows || d.data.data || d.data.results)) || [];
+  };
+
+  for (const [id, key] of [['agency-seg', 'agency'], ['measure-seg', 'measure']]) {
+    document.getElementById(id).addEventListener('click', (event) => {
+      const b = event.target.closest('button[data-v]');
+      if (b) dash.setParams({ [key]: b.dataset.v });
+    });
+  }
+  const dimSel = document.getElementById('mix-dim');
+  dimSel.addEventListener('change', () => dash.setParams({ dim: dimSel.value }));
+
+  function fill(el, status, text) {
+    el.classList.toggle('dash-skeleton', status === 'loading');
+    el.textContent = status === 'ok' && text != null ? text : '—';
+  }
+
+  function drawSummary(p) {
+    const status = dash.data('summary').status;
+    const all = rowsOf('summary');
+    const mine = all.find((r) => r.agency === p.agency) || {};
+    const both = all.find((r) => r.agency === 'All') || {};
+    const upb = p.measure === 'upb';
+    const put = (cls, field, fmt, row, agency) => {
+      document.querySelectorAll('.' + cls).forEach((el) => {
+        el.setAttribute('data-field', field);
+        el.setAttribute('data-where', 'agency=' + agency);
+        fill(el, status, row[field] == null ? null : fmt(row[field]));
+      });
+    };
+    put('s-final-month', 'final_month', monthYear, mine, p.agency);
+    put('s-prior-month', 'prior_month', monthYear, mine, p.agency);
+    put('s-cur-month', 'current_month', monthYear, mine, p.agency);
+    put('s-final-share', upb ? 'final_vs4_upb_share' : 'final_vs4_share', pct1, mine, p.agency);
+    put('s-change', upb ? 'vs4_upb_share_change' : 'vs4_share_change', pctSigned, mine, p.agency);
+    put('s-cur-share', upb ? 'current_vs4_upb_share' : 'current_vs4_share', pct1, mine, p.agency);
+    put('s-fico', upb ? 'final_fico_upb_share' : 'final_fico_share', pct1, mine, p.agency);
+    put('s-through', 'data_through', longDay, both, 'All');
+    put('s-sellers-vs4', 'sellers_with_vs4', int, both, 'All');
+    put('s-sellers', 'sellers', int, both, 'All');
+    put('s-sellers-since', 'sellers_since', monthYear, both, 'All');
+    put('s-top2', 'top2_share_of_vs4', pct1, both, 'All');
+    put('s-top2-names', 'top2_sellers', String, both, 'All');
+    document.querySelector('.s-of').textContent = `${upb ? 'of the balance of' : 'of'} ${AG_NOUN[p.agency]} loans with a credit score`;
+  }
+
+  function drawSince() {
+    for (const [cls, id] of [['s-lenders-since', 'lenders'], ['s-mix-since', 'composition'], ['s-profile-since', 'profile']]) {
+      const r = rowsOf(id)[0];
+      document.querySelectorAll('.' + cls).forEach((el) => fill(el, dash.data(id).status, r && r.since ? monthYear(r.since) : null));
+    }
+  }
+
+  function prep(box, status) {
+    box.querySelectorAll(':scope > svg, :scope > .vx-tip, :scope > .vx-fail').forEach((n) => n.remove());
+    box.classList.toggle('dash-skeleton', status === 'loading');
+    if (status === 'ok') return box.clientWidth > 0;
+    if (status !== 'loading') {
+      const f = document.createElement('div');
+      f.className = 'vx-fail';
+      f.textContent = 'Failed to load';
+      box.append(f);
+    }
+    return false;
+  }
+
+  function textWidth(svg, labels) {
+    const t = svg.append('text').attr('visibility', 'hidden');
+    let w = 0;
+    for (const s of labels) w = Math.max(w, t.text(s).node().getComputedTextLength());
+    t.remove();
+    return w;
+  }
+
+  function styleAxis(g) {
+    g.attr('font-size', null).attr('font-family', null);
+    g.select('.domain').remove();
+  }
+
+  function legend(el, items) {
+    el.replaceChildren(...items.map(([color, label, kind, strong]) => {
+      const item = document.createElement('span');
+      const sw = document.createElement('span');
+      sw.className = kind === 'line' ? 'vx-sw vx-sw-line' : 'vx-sw';
+      sw.style.background = color;
+      item.append(sw, label);
+      if (strong) item.style.color = 'var(--color-fg)';
+      return item;
+    }));
+  }
+
+  function tooltip(box) {
+    const tip = document.createElement('div');
+    tip.className = 'vx-tip';
+    box.append(tip);
+    return {
+      show(event, header, lines) {
+        const h = document.createElement('div');
+        h.className = 'vx-tip-h';
+        h.textContent = header;
+        tip.replaceChildren(h, ...lines.map(([color, label, value]) => {
+          const r = document.createElement('div');
+          r.className = 'vx-tip-r';
+          if (color) {
+            const sw = document.createElement('span');
+            sw.className = 'vx-sw';
+            sw.style.background = color;
+            r.append(sw);
+          }
+          r.append(`${label}: ${value}`);
+          return r;
+        }));
+        const [px, py] = d3.pointer(event, box);
+        const w = tip.offsetWidth, h2 = tip.offsetHeight;
+        tip.style.left = `${px + 14 + w > box.clientWidth ? Math.max(0, px - 14 - w) : px + 14}px`;
+        tip.style.top = `${Math.max(0, Math.min(py - h2 / 2, box.clientHeight - h2))}px`;
+        tip.style.opacity = 1;
+      },
+      hide() { tip.style.opacity = 0; },
+    };
+  }
+
+  // Numbered markers for policy dates; the number matches the key-dates list.
+  function eventMarks(svg, events, xOf, top, bottom) {
+    let lastX = -Infinity, row = 0;
+    events.forEach((e, i) => {
+      const x = xOf(e);
+      if (x == null) return;
+      row = x - lastX < 18 ? 1 - row : 0;
+      lastX = x;
+      const cy = top - 10 - row * 16;
+      svg.append('line').attr('x1', x).attr('x2', x).attr('y1', cy + 7.5).attr('y2', bottom)
+        .attr('stroke', 'var(--cds-chart-reference)').attr('stroke-dasharray', '3 3');
+      svg.append('circle').attr('cx', x).attr('cy', cy).attr('r', 7.5)
+        .attr('fill', 'var(--color-panel)').attr('stroke', 'var(--cds-chart-reference)');
+      svg.append('text').attr('x', x).attr('y', cy).attr('dy', '0.35em').attr('text-anchor', 'middle')
+        .style('font-size', '.68rem').style('fill', 'var(--color-fg)').text(i + 1);
+    });
+  }
+
+  function yAxis(svg, y, yf, left, right) {
+    svg.append('g').selectAll('line').data(y.ticks(5)).join('line')
+      .attr('x1', left).attr('x2', right).attr('y1', (v) => y(v)).attr('y2', (v) => y(v))
+      .attr('stroke', (v) => (v === 0 ? 'var(--cds-chart-axis)' : 'var(--cds-chart-grid)'));
+    svg.append('g').attr('transform', `translate(${left - 6},0)`)
+      .call(d3.axisLeft(y).ticks(5).tickFormat(yf).tickSize(0)).call(styleAxis);
+  }
+
+  function drawMonthly(p) {
+    const box = document.getElementById('monthly-chart');
+    legend(document.getElementById('monthly-legend'), AGENCIES.map((a) => [agencyColor(a), AG_NAME[a], 'line', a === p.agency]));
+    if (!prep(box, dash.data('monthly').status)) return;
+    const f = p.measure === 'upb' ? 'vs4_upb_share' : 'vs4_share';
+    const data = rowsOf('monthly').filter((r) => r[f] != null)
+      .map((r) => ({ ...r, mid: new Date(parse(r.month).getTime() + 14.5 * DAY) }));
+    if (!data.length) return;
+    const W = box.clientWidth, H = 260;
+    const m = { top: 40, right: 10, bottom: 26, left: 0 };
+    const svg = d3.select(box).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`)
+      .attr('role', 'img').attr('aria-label', 'VS4 share by issue month');
+    const y = d3.scaleLinear([0, (d3.max(data, (r) => r[f]) || 0.01) * 1.1], [H - m.bottom, m.top]).nice(5);
+    const yf = y.tickFormat(5, '%');
+    m.left = Math.ceil(textWidth(svg, y.ticks(5).map(yf))) + 10;
+    const first = d3.min(data, (r) => parse(r.month));
+    const last = d3.utcMonth.offset(d3.max(data, (r) => parse(r.month)), 1);
+    const x = d3.scaleUtc([first, last], [m.left, W - m.right]);
+    yAxis(svg, y, yf, m.left, W - m.right);
+
+    const months = d3.utcMonths(first, last);
+    const label = (d, i) => d3.utcFormat(i === 0 || d.getUTCMonth() === 0 ? '%b %Y' : '%b')(d);
+    const widest = textWidth(svg, months.map(label));
+    const step = Math.max(1, Math.ceil(months.length / Math.max(2, Math.floor((W - m.left - m.right) / (widest + 12)))));
+    const ticks = months.filter((_, i) => i % step === 0);
+    svg.append('g').attr('transform', `translate(0,${H - m.bottom + 8})`)
+      .call(d3.axisBottom(x).tickValues(ticks.map((d) => new Date(d.getTime() + 14.5 * DAY)))
+        .tickFormat((d, i) => label(d3.utcMonth.floor(d), i)).tickSize(0)).call(styleAxis);
+
+    eventMarks(svg, rowsOf('events'), (e) => {
+      const t = parse(e.date);
+      return t >= first && t < last ? x(t) : null;
+    }, m.top, H - m.bottom);
+
+    const line = d3.line().x((r) => x(r.mid)).y((r) => y(r[f]));
+    for (const a of AGENCIES.filter((a) => a !== p.agency).concat(p.agency)) {
+      const pts = data.filter((r) => r.agency === a);
+      const sel = a === p.agency, color = agencyColor(a);
+      const fin = pts.filter((r) => r.final), partial = pts.filter((r) => !r.final);
+      const style = (path) => path.attr('fill', 'none').attr('stroke', color).attr('stroke-width', sel ? 2.5 : 1.5)
+        .attr('stroke-opacity', sel ? 1 : 0.55).attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round');
+      if (fin.length > 1) style(svg.append('path').attr('d', line(fin)));
+      if (partial.length) style(svg.append('path').attr('d', line(fin.slice(-1).concat(partial)))).attr('stroke-dasharray', '4 4');
+      if (sel) {
+        svg.append('g').selectAll('circle').data(pts).join('circle')
+          .attr('cx', (r) => x(r.mid)).attr('cy', (r) => y(r[f])).attr('r', 3)
+          .attr('fill', (r) => (r.final ? color : 'var(--color-panel)')).attr('stroke', color).attr('stroke-width', 1.5);
+      }
+    }
+
+    const tip = tooltip(box);
+    const rule = svg.append('line').attr('y1', m.top).attr('y2', H - m.bottom)
+      .attr('stroke', 'var(--cds-chart-axis)').attr('opacity', 0);
+    const mids = [...new Set(data.map((r) => r.month))].map((mo) => ({ mo, t: parse(mo).getTime() + 14.5 * DAY }));
+    svg.append('rect').attr('x', m.left).attr('y', m.top).attr('width', W - m.left - m.right)
+      .attr('height', H - m.top - m.bottom).attr('fill', 'transparent')
+      .on('pointermove', (event) => {
+        const t = x.invert(d3.pointer(event)[0]).getTime();
+        const near = d3.least(mids, (d) => Math.abs(d.t - t));
+        if (!near) return;
+        rule.attr('x1', x(near.t)).attr('x2', x(near.t)).attr('opacity', 1);
+        const rs = AGENCIES.map((a) => data.find((r) => r.agency === a && r.month === near.mo)).filter(Boolean);
+        tip.show(event, `${monthYear(near.mo)}${rs.every((r) => r.final) ? '' : ' (partial)'}`,
+          rs.map((r) => [agencyColor(r.agency), AG_NAME[r.agency], `${pct1(r[f])} of ${int(r.scored_loans)} loans`]));
+      })
+      .on('pointerleave', () => { rule.attr('opacity', 0); tip.hide(); });
+  }
+
+  function drawWeekly(p) {
+    const box = document.getElementById('weekly-chart');
+    legend(document.getElementById('weekly-legend'), [['var(--cds-chart-muted)', 'Weekly share', 'box'], [agencyColor(p.agency), `Four-week rolling share, ${AG_NAME[p.agency]}`, 'line', true]]);
+    if (!prep(box, dash.data('weekly').status)) return;
+    const upb = p.measure === 'upb';
+    const f = upb ? 'vs4_upb_share' : 'vs4_share', f4 = upb ? 'vs4_upb_share_4wk' : 'vs4_share_4wk';
+    const data = rowsOf('weekly').filter((r) => r.agency === p.agency && r[f] != null);
+    if (!data.length) return;
+    const W = box.clientWidth, H = 260;
+    const m = { top: 40, right: 10, bottom: 26, left: 0 };
+    const svg = d3.select(box).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`)
+      .attr('role', 'img').attr('aria-label', 'VS4 share by week of first disclosure');
+    const y = d3.scaleLinear([0, (d3.max(data, (r) => Math.max(r[f], r[f4] ?? 0)) || 0.01) * 1.08], [H - m.bottom, m.top]).nice(5);
+    const yf = y.tickFormat(5, '%');
+    m.left = Math.ceil(textWidth(svg, y.ticks(5).map(yf))) + 10;
+    const widest = textWidth(svg, data.map((r) => shortDay(r.week)));
+    m.right = Math.max(m.right, Math.ceil(widest / 2));
+    const x = d3.scaleBand(data.map((r) => r.week), [m.left, W - m.right]).paddingInner(0.3).paddingOuter(0.15);
+    yAxis(svg, y, yf, m.left, W - m.right);
+
+    const bw = Math.min(32, x.bandwidth()), off = (x.bandwidth() - bw) / 2;
+    svg.append('g').selectAll('rect').data(data).join('rect')
+      .attr('x', (r) => x(r.week) + off).attr('width', bw)
+      .attr('y', (r) => y(r[f])).attr('height', (r) => Math.max(0, y(0) - y(r[f]))).attr('rx', 3)
+      .attr('fill', 'var(--cds-chart-muted)').attr('fill-opacity', (r) => (r.complete ? 1 : 0.45));
+    const color = agencyColor(p.agency);
+    const cx = (r) => x(r.week) + x.bandwidth() / 2;
+    svg.append('path').attr('d', d3.line().defined((r) => r[f4] != null).x(cx).y((r) => y(r[f4]))(data))
+      .attr('fill', 'none').attr('stroke', color).attr('stroke-width', 2).attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round');
+    svg.append('g').selectAll('circle').data(data.filter((r) => r[f4] != null)).join('circle')
+      .attr('cx', cx).attr('cy', (r) => y(r[f4])).attr('r', 2.5).attr('fill', color);
+
+    const every = Math.max(1, Math.ceil(data.length / Math.max(2, Math.floor((W - m.left - m.right) / (widest + 14)))));
+    svg.append('g').attr('transform', `translate(0,${H - m.bottom + 8})`)
+      .call(d3.axisBottom(x).tickValues(data.map((r) => r.week).filter((_, i) => i % every === 0)).tickFormat(shortDay).tickSize(0))
+      .call(styleAxis);
+
+    const weekOf = (t) => data.find((r) => t >= parse(r.week).getTime() && t < parse(r.week).getTime() + 7 * DAY);
+    eventMarks(svg, rowsOf('events'), (e) => {
+      const t = parse(e.date).getTime();
+      const wk = weekOf(t);
+      return wk ? x(wk.week) + x.bandwidth() * ((t - parse(wk.week).getTime()) / (7 * DAY)) : null;
+    }, m.top, H - m.bottom);
+
+    const tip = tooltip(box);
+    svg.append('g').selectAll('rect').data(data).join('rect')
+      .attr('x', (r) => x(r.week) - (x.step() - x.bandwidth()) / 2).attr('width', x.step())
+      .attr('y', m.top).attr('height', H - m.top - m.bottom).attr('fill', 'transparent')
+      .on('pointermove', (event, r) => tip.show(event, `Week of ${shortDay(r.week)}${r.complete ? '' : ' (partial)'}`, [
+        ['var(--cds-chart-muted)', 'Weekly share', `${pct1(r[f])} of ${int(r.scored_loans)} loans`],
+        [color, 'Four-week share', r[f4] == null ? 'not enough weeks' : pct1(r[f4])],
+      ]))
+      .on('pointerleave', () => tip.hide());
+  }
+
+  function drawEventList() {
+    const el = document.getElementById('events-list');
+    el.classList.toggle('dash-skeleton', dash.data('events').status === 'loading');
+    el.replaceChildren(...rowsOf('events').map((e, i) => {
+      const item = document.createElement('span');
+      const badge = document.createElement('span');
+      badge.className = 'vx-badge';
+      badge.textContent = String(i + 1);
+      item.append(badge, `${longDay(e.date)}: ${e.label}`);
+      return item;
+    }));
+  }
+
+  const table = document.getElementById('lenders-table');
+  const COLS = [['seller', String], ['vs4_loans', int], ['vs4_share_of_seller', pct1], ['share_of_all_vs4', pct1],
+    ['vs4_loans_fnma', int], ['vs4_loans_fhlmc', int], ['loans', int]];
+  let sortKey = 'vs4_loans', sortDir = 'descending';
+  table.tHead.addEventListener('click', (event) => {
+    const th = event.target.closest('th[data-field]');
+    if (!th) return;
+    const k = th.dataset.field;
+    sortDir = k === sortKey ? (sortDir === 'descending' ? 'ascending' : 'descending') : (k === 'seller' ? 'ascending' : 'descending');
+    sortKey = k;
+    drawLenders();
+  });
+
+  function drawLenders() {
+    table.querySelectorAll('th[data-field]').forEach((th) => {
+      if (th.dataset.field === sortKey) th.setAttribute('aria-sort', sortDir);
+      else th.removeAttribute('aria-sort');
+    });
+    const data = rowsOf('lenders').slice().sort((a, b) => {
+      const va = a[sortKey], vb = b[sortKey];
+      const c = typeof va === 'string' ? va.localeCompare(vb) : (va ?? -1) - (vb ?? -1);
+      return sortDir === 'ascending' ? c : -c;
+    });
+    const body = table.tBodies[0];
+    body.replaceChildren();
+    for (const r of data) {
+      const tr = body.insertRow();
+      for (const [k, fmt] of COLS) tr.insertCell().textContent = r[k] == null ? '—' : fmt(r[k]);
+    }
+  }
+
+  function drawMix(p) {
+    const box = document.getElementById('mix-chart');
+    const all = rowsOf('composition');
+    const dims = [...new Map(all.map((r) => [r.dim, r.dim_label])).entries()];
+    if (dims.length && dimSel.options.length !== dims.length) dimSel.replaceChildren(...dims.map(([v, l]) => new Option(l, v)));
+    const dim = dims.some(([v]) => v === p.dim) ? p.dim : dims.length ? dims[0][0] : null;
+    if (dim) dimSel.value = dim;
+    const color = (model) => (model === MODELS[0] ? dash.colors[0] : 'var(--cds-chart-muted)');
+    legend(document.getElementById('mix-legend'), MODELS.map((mdl) => [color(mdl), mdl, 'box']));
+    if (!prep(box, dash.data('composition').status)) return;
+    const data = all.filter((r) => r.dim === dim).sort((a, b) => a.bucket_order - b.bucket_order);
+    const buckets = [...new Set(data.map((r) => r.bucket))];
+    if (!buckets.length) return;
+    const W = box.clientWidth, barH = 11, gap = 14;
+    const groupH = MODELS.length * barH + 4;
+    const m = { top: 4, right: 0, bottom: 4, left: 0 };
+    const H = m.top + m.bottom + buckets.length * (groupH + gap);
+    box.style.minHeight = `${H}px`;
+    const svg = d3.select(box).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`)
+      .attr('role', 'img').attr('aria-label', 'Borrower mix of VS4 and Classic FICO loans');
+    m.left = Math.ceil(textWidth(svg, buckets)) + 10;
+    m.right = Math.ceil(textWidth(svg, data.map((r) => pct1(r.share)))) + 8;
+    const x = d3.scaleLinear([0, d3.max(data, (r) => r.share) || 1], [m.left, W - m.right]);
+    const yb = d3.scaleBand(buckets, [m.top, H - m.bottom]).paddingInner(gap / (groupH + gap));
+    const yi = d3.scaleBand(MODELS, [0, yb.bandwidth()]).paddingInner(0.2);
+    svg.append('g').selectAll('text').data(buckets).join('text')
+      .attr('x', m.left - 10).attr('y', (b) => yb(b) + yb.bandwidth() / 2).attr('dy', '0.35em')
+      .attr('text-anchor', 'end').style('fill', 'var(--color-fg)').text((b) => b);
+    svg.append('line').attr('x1', x(0)).attr('x2', x(0)).attr('y1', m.top).attr('y2', H - m.bottom).attr('stroke', 'var(--cds-chart-axis)');
+    const tip = tooltip(box);
+    const g = svg.append('g').selectAll('g').data(data).join('g');
+    g.append('rect').attr('x', x(0)).attr('y', (r) => yb(r.bucket) + yi(r.model)).attr('height', yi.bandwidth())
+      .attr('width', (r) => Math.max(0, x(r.share) - x(0))).attr('rx', 3).attr('fill', (r) => color(r.model))
+      .on('pointermove', (event, r) => tip.show(event, `${r.dim_label}: ${r.bucket}`, [[color(r.model), r.model, `${pct1(r.share)} of loans (${int(r.loans)})`]]))
+      .on('pointerleave', () => tip.hide());
+    g.append('text').attr('x', (r) => x(r.share) + 4).attr('y', (r) => yb(r.bucket) + yi(r.model) + yi.bandwidth() / 2)
+      .attr('dy', '0.35em').text((r) => pct1(r.share));
+  }
+
+  const PROFILE_FMT = { loans: int, wa_score: fixed(0), wa_ltv: fixed(1), wa_dti: fixed(1), wa_rate: fixed(2), avg_loan: money,
+    purchase_share: pct1, cashout_share: pct1, fthb_share: pct1, investor_share: pct1, broker_share: pct1 };
+  function drawProfile() {
+    const status = dash.data('profile').status;
+    const data = rowsOf('profile');
+    document.querySelectorAll('#profile-grid [data-field]').forEach((el) => {
+      const model = (el.getAttribute('data-where') || '').slice('model='.length);
+      const k = el.getAttribute('data-field');
+      const r = data.find((d) => d.model === model);
+      fill(el, status, r && r[k] != null ? PROFILE_FMT[k](r[k]) : null);
+    });
+  }
+
+  dash.onData(() => {
+    const p = params();
+    for (const [id, key] of [['agency-seg', 'agency'], ['measure-seg', 'measure']]) {
+      document.querySelectorAll(`#${id} button`).forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === p[key])));
+    }
+    drawSummary(p);
+    drawSince();
+    drawMonthly(p);
+    drawWeekly(p);
+    drawEventList();
+    drawLenders();
+    drawMix(p);
+    drawProfile();
+  });
+})();
+</script>
+
+<footer class="site-foot">Built from Fannie Mae and Freddie Mac loan-level MBS issuance disclosure files; only aggregates are published. Not affiliated with Fannie Mae, Freddie Mac, FICO or VantageScore Solutions.</footer>
+</main>
+</body>
+</html>

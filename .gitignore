@@ -1,0 +1,7 @@
+# Loan-level data and anything derived from it stays on this computer; only docs/ (aggregates) is public.
+/data/
+/site/data/
+/.venv/
+__pycache__/
+*.egg-info/
+.DS_Store

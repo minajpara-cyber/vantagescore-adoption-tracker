@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VantageScore adoption tracker</title>
+<meta name="description" content="VantageScore 4.0 vs Classic FICO in Fannie Mae and Freddie Mac MBS issuance, from the GSEs' loan-level disclosure files.">
+<style>
+  :root {
+    color-scheme: light dark;
+    --font-anthropic-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --font-anthropic-serif: Georgia, "Times New Roman", serif;
+    --cds-font-size-caption: 12.5px;
+    --cds-font-size-body: 15px;
+    --cds-font-size-heading: 16px;
+    --cds-font-size-title: 30px;
+    --cds-font-weight-medium: 600;
+    --cds-gap-xs: 4px; --cds-gap-sm: 8px; --cds-gap-md: 14px; --cds-gap-lg: 24px; --cds-gap-xl: 36px;
+    --cds-pad-xs: 4px; --cds-pad-sm: 8px; --cds-pad-md: 12px; --cds-pad-lg: 18px; --cds-pad-xl: 28px;
+    --cds-radius: 10px;
+    --cds-dur-slow: 300ms;
+    --color-bg: #fbfbfa; --color-panel: #ffffff; --color-fg: #1d1d1b; --color-fg-muted: #66655f;
+    --color-border-line: #e5e4df; --color-ok: #1f7a3d; --color-warn: #a35a00; --color-bad: #c03a1a;
+    --cds-text-secondary: #66655f; --cds-border: #dddcd6; --cds-surface-popover: #ffffff;
+    --cds-shadow-popover: 0 6px 18px rgba(0, 0, 0, .12);
+    --cds-chart-muted: #bdbbb3; --cds-chart-grid: #eeede9; --cds-chart-axis: #a9a79f; --cds-chart-reference: #8d8b84;
+    --series-1: #2b66d9; --series-2: #d97b29; --series-3: #23968a; --series-4: #8a55c9;
+    --series-5: #c4467a; --series-6: #6b8e23; --series-7: #b8860b; --series-8: #4a6f8a;
+    --skeleton: #ecebe6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --color-bg: #171716; --color-panel: #201f1e; --color-fg: #ecebe6; --color-fg-muted: #a6a59e;
+      --color-border-line: #363532; --color-ok: #5cc27e; --color-warn: #e0a84a; --color-bad: #f07457;
+      --cds-text-secondary: #a6a59e; --cds-border: #43423e; --cds-surface-popover: #2a2927;
+      --cds-shadow-popover: 0 6px 18px rgba(0, 0, 0, .5);
+      --cds-chart-muted: #5f5e59; --cds-chart-grid: #2c2b29; --cds-chart-axis: #6f6e68; --cds-chart-reference: #8f8e88;
+      --series-1: #6f9ef5; --series-2: #f0a35e; --series-3: #4fc0b2; --series-4: #b48cec;
+      --series-5: #e57aa6; --series-6: #9bc15a; --series-7: #e2b64a; --series-8: #84a6c0;
+      --skeleton: #2c2b29;
+    }
+  }
+  html, body { margin: 0; background: var(--color-bg); color: var(--color-fg); }
+  body { font-family: var(--font-anthropic-sans); font-size: var(--cds-font-size-body); line-height: 1.45; }
+  #dash-root { max-width: 1240px; margin: 0 auto; padding: 28px 16px 48px; }
+  .dash-skeleton { color: transparent !important; background: var(--skeleton); border-radius: 6px; }
+  .site-foot { margin-top: var(--cds-gap-xl); font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+<script src="dash-shim.js"></script>
+</head>
+<body>
+<main id="dash-root">
+<!--PAGE-->
+<footer class="site-foot">Built from Fannie Mae and Freddie Mac loan-level MBS issuance disclosure files; only aggregates are published. Not affiliated with Fannie Mae, Freddie Mac, FICO or VantageScore Solutions.</footer>
+</main>
+</body>
+</html>
