@@ -27,6 +27,10 @@ def cmd_refresh(args):
     report = {"bundles": [], "kept_in_inbox": []}
     for b in sorted(p for p in args.downloads.glob("*.zip") if BUNDLE.match(p.name)):
         box = paths.DATA / "inbox" / b.stem.replace(" ", "_")
+        n = 1
+        while box.exists():  # an earlier bundle with this name was kept for inspection
+            box = box.with_name(f"{b.stem.replace(' ', '_')}_{n}")
+            n += 1
         box.mkdir(parents=True)  # a new, empty folder per bundle
         moved = Path(shutil.move(str(b), box / b.name))
         r = unpack_bundle(moved)

@@ -61,10 +61,16 @@ DIMS = [
 ]
 
 
+def _round(v: float) -> float:
+    # Parallel float sums differ in the last bits from run to run; rounding keeps unchanged data
+    # byte-identical (balances to the cent, shares and averages to 6 decimals).
+    return round(v, 2) if abs(v) >= 1000 else round(v, 6)
+
+
 def _rows(con, sql: str) -> list[dict]:
     cur = con.execute(sql)
     cols = [d[0] for d in cur.description]
-    return [{c: v.isoformat() if hasattr(v, "isoformat") else (round(v, 6) if isinstance(v, float) else v)
+    return [{c: v.isoformat() if hasattr(v, "isoformat") else (_round(v) if isinstance(v, float) else v)
              for c, v in zip(cols, r)} for r in cur.fetchall()]
 
 
