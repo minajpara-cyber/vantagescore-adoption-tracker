@@ -84,7 +84,8 @@ local in notes/ANALYTICS_PLAN.md)
    purpose); heat table of the largest sellers; adopters under three thresholds (first VS4 loan, 10+ in a
    month, 5%+ of a month's loans) and the largest sellers not yet over them; breadth x depth with each
    month's change split exactly into new adopters, existing adopters and lender mix; clean series at a
-   fixed Jan-Jun 2026 lender mix and without the two largest VS4 sellers; latest highlights.
+   fixed Jan-Jun 2026 lender mix and without the two largest VS4 sellers; latest highlights. Published
+   on the public site Oct 29, 2026, with the current-month range and the seller share-of-loans views.
 2. Next: score choice and FICO exposure, from loans with both scores (Oct 19 onward): the rule lenders
    use to pick a score (by how many LLPA buckets VS4 sits above or below FICO), a same-borrower
    crosswalk, a ceiling (VS4 share if every lender priced on the higher score, reweighted to the whole

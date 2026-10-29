@@ -8,7 +8,6 @@ Loan-level data never leaves the local warehouse; only these aggregates are publ
   monthly      VS4 / Classic FICO share by issue month and GSE (+ All); final once a month-end file exists
   weekly       the same by week of first intraday disclosure, from WEEKLY_START
   daily        the same by day of first disclosure (local only; too noisy to chart)
-  lenders      sellers that delivered VS4 loans since LENDER_START, with their adoption rate
   composition  borrower mix of VS4 vs Classic FICO loans since MIX_START, one row per dim x bucket x model
   profile      averages for VS4 vs Classic FICO loans since MIX_START
   summary      headline figures per GSE (+ All)
@@ -31,7 +30,7 @@ SERIES_START = "2025-11-01"
 # The portal's intraday history starts Jul 1, 2026, and a loan is republished for up to ~3 weeks
 # (90th percentile 20 days), so weeks before this would count June disclosures as new.
 WEEKLY_START = "2026-07-20"
-# Broad availability began Sep 8-10, 2026: lender table counts loans issued from September.
+# Broad availability began Sep 8-10, 2026: the summary counts sellers from loans issued from September.
 LENDER_START = "2026-09-01"
 # Borrower-mix window: issue months with meaningful VS4 volume (>4% from July 2026).
 MIX_START = "2026-07-01"
@@ -183,18 +182,6 @@ def build(out_dir: Path = paths.SITE_DATA) -> dict:
             SELECT first_intraday_date AS day, COALESCE(agency, 'All') AS agency, {_COUNTS}
             FROM loans WHERE first_intraday_date IS NOT NULL
             GROUP BY GROUPING SETS ((first_intraday_date, agency), (first_intraday_date)) ORDER BY 1, 2""",
-        "lenders": f"""
-            WITH s AS (
-              SELECT seller, {_COUNTS},
-                     count(*) FILTER (WHERE score_model = 'V' AND agency = 'FNMA') AS vs4_loans_fnma,
-                     count(*) FILTER (WHERE score_model = 'V' AND agency = 'FHLMC') AS vs4_loans_fhlmc
-              FROM loans WHERE issue_month >= DATE '{LENDER_START}' AND {in_range} AND seller IS NOT NULL
-              GROUP BY seller
-            )
-            SELECT seller, loans, vs4_loans, vs4_loans_fnma, vs4_loans_fhlmc, DATE '{LENDER_START}' AS since,
-                   vs4_loans / nullif(scored_loans, 0) AS vs4_share_of_seller,
-                   vs4_loans / sum(vs4_loans) OVER () AS share_of_all_vs4
-            FROM s WHERE vs4_loans > 0 ORDER BY vs4_loans DESC, seller""",
         "composition": "SELECT *, loans / sum(loans) OVER (PARTITION BY dim, model) AS share FROM ("
             + " UNION ALL ".join(
                 f"""SELECT '{dim}' AS dim, '{label}' AS dim_label, {case} AS bucket, {order} AS bucket_order,
