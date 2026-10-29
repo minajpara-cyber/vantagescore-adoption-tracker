@@ -86,17 +86,23 @@ local in notes/ANALYTICS_PLAN.md)
    month's change split exactly into new adopters, existing adopters and lender mix; clean series at a
    fixed Jan-Jun 2026 lender mix and without the two largest VS4 sellers; latest highlights. Published
    on the public site Oct 29, 2026, with the current-month range and the seller share-of-loans views.
-2. Next: score choice and FICO exposure, from loans with both scores (Oct 19 onward): the rule lenders
-   use to pick a score (by how many LLPA buckets VS4 sits above or below FICO), a same-borrower
-   crosswalk, a ceiling (VS4 share if every lender priced on the higher score, reweighted to the whole
-   market), and a series of loans delivered with no Classic FICO (the two GSEs differ here; explain
-   that first).
-3. Pricing: 30-yr fixed note rate VS4 vs FICO raw, matched within seller x month x purpose x occupancy
-   x LTV x score bucket x size, and at the same Classic FICO (Oct 19 onward); upfront LLPA saved per VS4
-   loan from the published grids and how much reaches the rate; note rate minus pass-through rate
-   (retained servicing). Points and lender credits are not disclosed.
-4. Borrowers: within-lender and lender-mix-adjusted comparisons, distributions rather than averages,
-   where the VS4 lift is largest.
+2. Score choice and FICO exposure, from loans with both scores (Oct 19 onward). Done Oct 29, 2026 on the
+   private dashboard: which scores loans carry, by GSE and week (the GSEs differ because of what each
+   collects or discloses, not the lenders), and the score-group toggle (all loans / both scores /
+   VantageScore only) on the Borrowers and Pricing tabs. Next: the rule lenders use to pick a score (by
+   how many LLPA buckets VS4 sits above or below FICO) and a ceiling (VS4 share if every lender priced on
+   the higher score, reweighted to the whole market).
+3. Pricing. Done Oct 29, 2026 on the private dashboard (src/gsescore/pricing.py): a model of FICO-priced
+   30-year fixed loans' note rates (additive effects for lender and channel by week, LLPA cell, loan and
+   borrower traits; fitted on four in five, checked on the fifth) gives each VS4 loan the rate a FICO
+   loan like it would carry, at the same headline score and, with both scores, at the borrower's own
+   Classic FICO; by week, seller and loan type. Next: upfront LLPA saved per VS4 loan from the published
+   grids and how much reaches the rate; note rate minus pass-through rate (retained servicing). Points
+   and lender credits are not disclosed.
+4. Borrowers. Done Oct 29, 2026 on the private dashboard (src/gsescore/borrowers.py): 19 breakdowns by
+   score group, each VS4 share next to the share expected from its lenders' own FICO loans, and averages
+   by score group. Next: where the VS4 lift over FICO is largest, and the valuation and special-program
+   codes once mapped from the disclosure spec.
 5. Forecast: diffusion fit on breadth (adopters' share of volume) x depth (toward the ceiling in 2), with
    lender scenarios.
 

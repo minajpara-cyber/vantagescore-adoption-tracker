@@ -1,4 +1,5 @@
-"""End-to-end check on synthetic files: ingest -> views -> score_model -> aggregates -> seller datasets -> as-of.
+"""End-to-end check on synthetic files: ingest -> views -> score_model -> aggregates -> seller datasets -> as-of
+-> score groups and borrower mix, plus the rate engine on planted data.
 
 Run: .venv/bin/python -I tests/test_pipeline.py
 """
@@ -107,6 +108,9 @@ for name, key in [("JPMORGAN CHASE BANK, NATIONAL ASSOCIATION", "JPMORGAN CHASE 
 import gsescore.lenders  # noqa: E402
 
 gsescore.lenders.SELLER_TOP = 3  # the 3 largest sellers plus every VS4 seller, so Small Credit Union is left out
+import gsescore.borrowers  # noqa: E402
+
+gsescore.borrowers.MIN_N = 1  # show every group, however small, so the shares below can be checked
 meta = build(home / "site" / "data")
 daily = json.loads((home / "site" / "data" / "daily.json").read_text())
 assert meta["loans"] == 42 and len(daily["rows"]) == 14, (meta, daily)  # 7 days x (one GSE + All)
@@ -162,4 +166,31 @@ assert (o["agency"], o["month"], o["day"], o["months"], o["first_month"], o["las
     "FNMA", "2026-10-01", 20, 1, "2026-09-01", "2026-09-01"), o
 for k, want in [("vs4_share", 1 / 4), ("vs4_share_lo", 1 / 12), ("vs4_share_hi", 1 / 12), ("vs4_upb_share_hi", 1 / 12)]:
     assert abs(o[k] - want) < 1e-6, (k, o[k], want)
+# Score groups: only UWM's Oct 20 loans are disclosed from Oct 19; every one carries both scores (FICO 745, VS4 765).
+cov = {(r["agency"], r["week"], r["model"]): r for r in rows("score_coverage")}
+assert (cov[("All", "all", "vs4")]["loans"], cov[("All", "all", "vs4")]["both_share"], cov[("All", "all", "fico")]["loans"]) == (3, 1.0, 7), cov
+assert not any(k[0] == "FNMA" for k in cov), cov
+mix = {(r["dim"], r["cover"], r["grp"], r["bucket"]): r for r in rows("borrowers")}
+assert mix[("gap", "both", "vs4", "20 to 39")]["share"] == 1.0 and mix[("gap", "both", "fico", "20 to 39")]["share"] == 1.0, mix
+assert not any(k[1] == "vs4only" and k[2] == "vs4" for k in mix), "no VS4 loan lacks a Classic FICO from Oct 19"
+# VS4 by GSE, all loans: 6 of 8 at Freddie. Expected from each seller's own FICO loans: Rocket (1 VS4) and UWM (4) all
+# Freddie, Wells Fargo (2) 2 of 7 Freddie, Test Bank (1) all Fannie: (1 + 4 + 2 * 2/7) / 8 = 39/56.
+fre = mix[("agency", "all", "vs4", "Freddie Mac")]
+assert abs(fre["share"] - 0.75) < 1e-6 and abs(fre["expected"] - 39 / 56) < 1e-6, fre
+prof = {(r["cover"], r["grp"]): r for r in rows("borrower_profile")}
+assert (prof[("both", "vs4")]["loans"], prof[("both", "vs4")]["wa_fico"], prof[("both", "vs4")]["avg_gap"]) == (3, 745, 20), prof
+assert rows("pricing") == [], "too few FICO loans here to fit the rate model"
+
+# Rate engine on planted data: rates are the sum of two factors' effects plus noise, and VS4 loans carry +25 bp.
+import numpy as np  # noqa: E402
+
+from gsescore import pricing  # noqa: E402
+
+rng = np.random.default_rng(0)
+a, b = rng.integers(0, 4, 4000), rng.integers(0, 3, 4000)
+vs4 = rng.random(4000) < 0.2
+y = 6 + np.array([0, 0.1, 0.2, 0.3])[a] + np.array([0, -0.05, 0.05])[b] + rng.normal(0, 0.01, 4000) + np.where(vs4, 0.25, 0)
+mu, eff = pricing._fit(y, {"a": a, "b": b}, {"a": 4, "b": 3}, ~vs4)
+premium = ((y - pricing._predict(mu, eff, {"a": a, "b": b})) * 100)[vs4].mean()
+assert abs(premium - 25) < 1, premium
 print("ok:", home)

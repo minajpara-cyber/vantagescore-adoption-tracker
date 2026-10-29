@@ -21,8 +21,9 @@ from . import paths
 PUBLIC_DATASETS = ["monthly", "weekly", "composition", "profile", "summary", "events", "sellers", "seller_monthly",
                    "seller_weekly", "seller_splits", "adoption", "adopters", "series", "highlights", "asof"]
 # What the claude.ai dashboard page reads; data/dashboard_uploads.json records the version of each it has.
-DASHBOARD_DATASETS = ["monthly", "weekly", "composition", "profile", "summary", "events", "sellers", "seller_monthly",
-                      "seller_weekly", "seller_splits", "adoption", "adopters", "series", "highlights", "asof"]
+DASHBOARD_DATASETS = ["monthly", "weekly", "summary", "events", "sellers", "seller_monthly", "seller_weekly",
+                      "seller_splits", "adoption", "adopters", "series", "highlights", "asof", "score_coverage",
+                      "borrowers", "borrower_profile", "pricing"]
 UPLOADS = paths.DATA / "dashboard_uploads.json"
 DOCS = paths.ROOT / "docs"
 PREVIEW = paths.ROOT / "build" / "preview"
