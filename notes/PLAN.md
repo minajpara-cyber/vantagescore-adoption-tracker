@@ -99,15 +99,19 @@ local in notes/ANALYTICS_PLAN.md)
    30-year fixed loans' note rates (additive effects for lender and channel by week, LLPA cell, loan and
    borrower traits; fitted on four in five, checked on the fifth) gives each VS4 loan the rate a FICO
    loan like it would carry, at the same headline score and, with both scores, at the borrower's own
-   Classic FICO; by week, seller and loan type. Next: upfront LLPA saved per VS4 loan from the published
-   grids and how much reaches the rate; note rate minus pass-through rate (retained servicing). Points
-   and lender credits are not disclosed.
+   Classic FICO; by week, seller and loan type. Next (on hold since Oct 29, 2026): upfront LLPA saved per
+   VS4 loan from the published grids and how much reaches the rate; note rate minus pass-through rate
+   (retained servicing). Points and lender credits are not disclosed.
 4. Borrowers. Done Oct 29, 2026 on the private dashboard (src/gsescore/borrowers.py): 19 breakdowns by
    score group, each VS4 share next to the share expected from its lenders' own FICO loans, and averages
    by score group. Next: where the VS4 lift over FICO is largest, and the valuation and special-program
    codes once mapped from the disclosure spec.
-5. Forecast: diffusion fit on breadth (adopters' share of volume) x depth (toward the ceiling in 2), with
-   lender scenarios.
+5. Outlook. Done Oct 29, 2026 on the private dashboard (src/gsescore/outlook.py, Outlook tab), as
+   scenarios rather than a fitted forecast: each lender's share of loans, VS4 share and ceiling (from 2)
+   in the latest two issue months; the depth the deep lenders reach (VS4 share over ceiling); VS4's share
+   as groups of lenders go that deep, up to the ceiling; how fast the deep lenders ramped and how fast
+   others are starting; three paths by month (no change, today's users go deep, and others also start at
+   the recent pace); and a lender table to add up any set of lenders.
 
 ## 5. Open items
 - Seller is not originator: correspondent aggregators (AmeriHome, PennyMac) deliver loans other lenders

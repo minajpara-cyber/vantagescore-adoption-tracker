@@ -1,5 +1,6 @@
 """End-to-end check on synthetic files: ingest -> views -> score_model -> aggregates -> seller datasets -> as-of
--> score groups and borrower mix -> score choice and ceiling, plus the rate engine on planted data.
+-> score groups and borrower mix -> score choice and ceiling -> outlook, plus the outlook and the rate engine on
+planted data.
 
 Run: .venv/bin/python -I tests/test_pipeline.py
 """
@@ -199,6 +200,60 @@ jul = ceil[("month", "All", "2026-07-01", None)]
 assert (jul["loans"], jul["better"]) == (24, 1.0) and abs(jul["actual"] - 4 / 24) < 1e-6, jul
 bands = [r for r in rows("ceiling") if r["view"] == "band"]
 assert abs(sum(r["adds_better"] for r in bands if r["key"] != "all") - next(r for r in bands if r["key"] == "all")["adds_better"]) < 1e-6, bands
+# Outlook: the same 10 loans, all UWM's; with no deep lender yet (under 100 loans), "as deep" is the ceiling itself.
+ol = rows("outlook")
+lad = {r["key"]: r for r in ol if r["view"] == "ladder"}
+assert (lad["today"]["value"], lad["users"]["value"], lad["all_deep"]["value"], lad["all_full"]["value"]) == (0.3, 1.0, 1.0, 1.0), lad
+uwm = next(r for r in ol if r["view"] == "lender" and r["id"] == "uwm")
+assert (uwm["status"], uwm["loans"], uwm["vs4_share"], uwm["ceiling"], uwm["adds_deep"]) == ("using", 10, 0.3, 1.0, 0.7), uwm
+
+# Outlook on planted tables, October 2026: A and B are deep (VS4 on 40 and 30 of 100 loans, ceilings of 50 each, so
+# together they reach 70/100 = 0.7 of their ceilings); C uses VS4 lightly; D and E not at all. Shares are of 550 loans.
+import duckdb  # noqa: E402
+
+from gsescore import outlook  # noqa: E402
+
+o = duckdb.connect()
+o.execute("""CREATE TABLE scp (month DATE, upb DOUBLE, is_v BOOLEAN, seller_id VARCHAR, has_fico BOOLEAN, has_vs4 BOOLEAN,
+             fb INT, vb INT, p_better DOUBLE, win_both BOOLEAN)""")
+planted = {"a": (100, 40, 0.5), "b": (100, 30, 0.5), "c": (100, 2, 0.4), "d": (200, 0, 0.3), "e": (50, 0, 0.5)}
+for sid, (n, v, c) in planted.items():  # A's first 30 loans carry both scores, VS4 a bucket better, all priced on VS4
+    o.executemany("INSERT INTO scp VALUES (DATE '2026-10-01', 100000, ?, ?, true, ?, 5, ?, ?, true)",
+                  [(i < v, sid, sid == "a" and i < 30, 6 if sid == "a" and i < 30 else None, c) for i in range(n)])
+o.execute("""CREATE TABLE ls AS SELECT * FROM (VALUES ('a', DATE '2026-07-01', DATE '2026-07-10', true),
+             ('a', DATE '2026-10-01', DATE '2026-10-02', true), ('b', DATE '2026-09-01', DATE '2026-09-15', true),
+             ('c', DATE '2026-09-01', DATE '2026-09-20', true)) t(id, month, first_date, is_v)""")
+o.execute("CREATE TABLE adopt_sm (id VARCHAR, month DATE, agency VARCHAR, n BIGINT, v BIGINT, u DOUBLE, vu DOUBLE)")
+monthly_v = {"a": [(7, 10), (8, 30), (9, 40), (10, 40)], "b": [(8, 5), (9, 25), (10, 30)], "c": [(9, 1), (10, 2)],
+             "d": [(9, 0), (10, 0)], "e": [(9, 0), (10, 0)]}
+o.executemany("INSERT INTO adopt_sm VALUES (?, ?, 'All', ?, ?, ?, ?)",
+              [(sid, date(2026, mo, 1), planted[sid][0], v, planted[sid][0] * 1e5, v * 1e5) for sid, ms in monthly_v.items() for mo, v in ms])
+o.execute("""CREATE TABLE adopt_f AS SELECT * FROM (VALUES ('a', 'All', DATE '2026-07-01'), ('b', 'All', DATE '2026-08-01'),
+             ('c', 'All', DATE '2026-09-01'), ('d', 'All', NULL::DATE), ('e', 'All', NULL::DATE)) t(id, agency, f_any)""")
+o.execute("CREATE TABLE entity_names AS SELECT id, upper(id) AS short, NULL::VARCHAR AS ticker FROM (VALUES ('a'), ('b'), ('c'), ('d'), ('e')) t(id)")
+o.execute("CREATE TABLE monthly AS SELECT DATE '2026-10-01' AS month, 'All' AS agency, 72 / 550 AS vs4_share, 72 / 550 AS vs4_upb_share, false AS final")
+outlook.LENDER_TOP, outlook.NEXT_N = 3, 1
+res = outlook.build_datasets(o, "2026-09-01")["outlook"]
+by = lambda view: [r for r in res if r["view"] == view]  # noqa: E731
+pr = by("params")[0]
+assert (pr["q"], pr["deep_names"], pr["users"], pr["window_to"]) == (0.7, "A and B", 3, "2026-10-01") and abs(pr["pace"] - 1 / 6) < 1e-6, pr
+lad = {r["key"]: r["value"] for r in by("ladder")}  # users: B to 0.35 and C to 0.28; next: D to 0.21; all: E to 0.35
+for key, want in [("today", 72), ("users", 103), ("next", 145), ("all_deep", 162.5), ("all_full", 225)]:
+    assert abs(lad[key] - want / 550) < 1e-6, (key, lad[key], want / 550)
+# The path a deep lender follows: A's and B's VS4 loans over their ceilings in their first three months (B has no fourth).
+assert [r["r"] for r in by("ramp") if r["id"] is None] == [0.15, 0.55, 0.7], by("ramp")
+path = {(r["case"], r["month"]): r["value"] for r in by("path")}
+# Users start next month: C at 0.4 x 0.15, then 0.4 x 0.55, then 0.28; B rises to 0.35 in the third month.
+for month, want in [("2026-10-01", 72), ("2026-11-01", 76), ("2026-12-01", 92), ("2027-01-01", 103), ("2027-10-01", 103)]:
+    assert abs(path[("users", month)] - want / 550) < 1e-6 and abs(path[("hold", month)] - 72 / 550) < 1e-6, (month, path)
+# Pace: C's start in September was 100 of the 350 loans of sellers not yet using VS4, none of 250 in October: 1/6 a month.
+# In November a sixth of D's and E's loans start, at 0.15 of their ceilings: 0.025 x (0.3 x 200 + 0.5 x 50) more.
+assert abs(path[("pace", "2026-11-01")] - (76 + 2.125) / 550) < 1e-6, path
+lenders = {r["id"]: r for r in by("lender")}
+assert list(lenders) == ["d", "a", "b", "c", "other"], lenders  # the 3 largest, C as a user, E in the rest
+assert abs(lenders["c"]["adds_deep"] - 26 / 550) < 1e-6 and lenders["c"]["status"] == "using" and lenders["d"]["next"], lenders
+assert (lenders["a"]["status"], lenders["a"]["better_loans"], lenders["a"]["better_vs4"], lenders["a"]["both_share"]) == ("deep", 30, 1.0, 0.3), lenders
+assert abs(sum(r["adds_deep"] for r in lenders.values()) - (162.5 - 72) / 550) < 1e-6, lenders
 
 # Rate engine on planted data: rates are the sum of two factors' effects plus noise, and VS4 loans carry +25 bp.
 import numpy as np  # noqa: E402

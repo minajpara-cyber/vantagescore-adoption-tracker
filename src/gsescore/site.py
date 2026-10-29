@@ -23,7 +23,7 @@ PUBLIC_DATASETS = ["monthly", "weekly", "composition", "profile", "summary", "ev
 # What the claude.ai dashboard page reads; data/dashboard_uploads.json records the version of each it has.
 DASHBOARD_DATASETS = ["monthly", "weekly", "summary", "events", "sellers", "seller_monthly", "seller_weekly",
                       "seller_splits", "adoption", "adopters", "series", "highlights", "asof", "score_coverage",
-                      "borrowers", "borrower_profile", "pricing", "choice", "ceiling"]
+                      "borrowers", "borrower_profile", "pricing", "choice", "ceiling", "outlook"]
 UPLOADS = paths.DATA / "dashboard_uploads.json"
 DOCS = paths.ROOT / "docs"
 PREVIEW = paths.ROOT / "build" / "preview"
