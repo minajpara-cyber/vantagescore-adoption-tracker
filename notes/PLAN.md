@@ -77,7 +77,8 @@ Loan-level data stays local. Only aggregates are published.
    dashboard's files, `publish` to GitHub Pages (https://minajpara-cyber.github.io/vantagescore-adoption-tracker/).
 
 **Phase 2: analytical layers** (agreed Oct 27, 2026; new views go to the private claude.ai dashboard
-first, and to the public site only once cleared)
+first, and to the public site only once cleared; the build plan for items 2-5, with early findings, stays
+local in notes/ANALYTICS_PLAN.md)
 1. Done Oct 27, 2026: lenders and adoption. Seller list matched across GSEs with parents and tickers
    (reference/sellers.csv); seller explorer (VS4 share by month and GSE, volume, weekly, channel and
    purpose); heat table of the largest sellers; adopters under three thresholds (first VS4 loan, 10+ in a

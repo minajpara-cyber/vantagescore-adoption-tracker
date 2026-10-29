@@ -124,6 +124,7 @@
         <div class="vx-lbl">VS4 share, <span class="s-cur-month" data-source="summary" data-field="current_month" data-where="agency=All">—</span> so far</div>
         <div class="vx-val s-cur-share dash-skeleton" data-source="summary" data-field="current_vs4_share" data-where="agency=All">—</div>
         <div class="vx-sub">Intraday files through <span class="s-through" data-source="summary" data-field="data_through" data-where="agency=All">—</span></div>
+        <div class="vx-sub" id="range-line">Final <span class="r-lo" data-source="asof">—</span> to <span class="r-hi" data-source="asof">—</span> if it moves as <span class="r-from" data-source="asof">—</span><span class="r-to-part">–<span class="r-to" data-source="asof">—</span></span> did <span class="r-day-part">from day <span class="r-day" data-source="asof">—</span></span><span class="r-end-part" hidden>after month-end</span></div>
       </div>
       <div class="vx-card" id="tile-final">
         <div class="vx-lbl">VS4 share, <span class="s-final-month" data-source="summary" data-field="final_month" data-where="agency=All">—</span></div>
@@ -151,9 +152,9 @@
     <section class="vx-grid" id="trend" aria-label="Adoption over time">
       <div class="vx-card" id="monthly-card">
         <h2>VS4 share by issue month</h2>
-        <p class="vx-note">Share of loans with a credit score, by the month their pool was issued. The latest month is partial and comes from intraday files.</p>
+        <p class="vx-note">Share of loans with a credit score, by the month their pool was issued. The latest month is partial and comes from intraday files; the shaded bar is where it would end if it moved to final as past months did from the same day.</p>
         <div class="vx-legend" id="monthly-legend"></div>
-        <div class="vx-chart dash-skeleton" id="monthly-chart" data-source="monthly events"></div>
+        <div class="vx-chart dash-skeleton" id="monthly-chart" data-source="monthly events asof"></div>
       </div>
       <div class="vx-card" id="weekly-card">
         <h2>VS4 share by week of first disclosure</h2>
@@ -275,6 +276,21 @@
         </div>
       </header>
       <div class="vx-grid">
+        <div class="vx-card vx-wide" id="coverage-card">
+          <h2>Sellers over the threshold, by their share of all loans</h2>
+          <p class="vx-note">Each bar is one issue month's loans with a credit score (or their balance). The colored part is the sellers over the threshold, each as its share of the month's loans, stacked in the order they reached it, earliest at the bottom. The line is VS4's share of all loans. The latest month is partial. Pick a seller to open it above.</p>
+          <div class="vx-legend" id="coverage-legend"></div>
+          <div class="vx-chart dash-skeleton" id="coverage-chart" data-source="adopters seller_monthly adoption sellers"></div>
+        </div>
+        <div class="vx-card vx-wide" id="market-card">
+          <div class="vx-row">
+            <h2>Every seller: share of loans and VS4 use</h2>
+            <label class="sx-pick"><span class="vx-lbl">Issue month</span><select class="vx-select" id="market-month" data-source="adoption"></select></label>
+          </div>
+          <p class="vx-note">Each column is a seller, as wide as its share of the month's loans (or balance) and as tall as the VS4 share of its loans, so the shaded area is VS4's share of all loans. Colored columns are sellers over the threshold. The dashed line is the VS4 share of their loans: a seller that started using VS4 that much would fill its column to the line. Pick a seller to open it above.</p>
+          <p class="vx-note">Sellers over the threshold delivered <span class="vx-num mk-ad" data-source="adoption">—</span> of <span class="mk-month" data-source="adoption">—</span> loans and used VS4 on <span class="vx-num mk-depth" data-source="adoption">—</span> of them; VS4 was <span class="vx-num mk-vs4" data-source="adoption">—</span> of all loans.</p>
+          <div class="vx-chart dash-skeleton" id="market-chart" data-source="seller_monthly adoption sellers adopters"></div>
+        </div>
         <div class="vx-card" id="newadopt-card">
           <h2>Sellers reaching the threshold, by issue month</h2>
           <p class="vx-note">Sellers meeting it for the first time; hover for their share of the month's loans and, for both GSEs, their names.</p>
@@ -362,6 +378,7 @@
         <li>The model that priced a loan comes from the Pricing Indicator the GSEs began disclosing in October. Before that, each loan disclosed only the score it was priced with, so the populated score field identifies the model.</li>
         <li>Shares count loans with a valid credit score. Pools that disclose no score, mostly re-performing loans, are left out.</li>
         <li>Issue month comes from the GSEs' month-end issuance files, the official list for each month. The latest month uses intraday files and will change until its month-end file is published.</li>
+        <li>The range shown for the latest month is where it would end if it moved to final as earlier months did. Each month from August 2026 is rebuilt as the intraday files published by each day of that month showed it, and its move from that day to its final figure is added to the latest month's share. July is left out because the intraday history, which starts July 1, misses some of its loans.</li>
         <li>The weekly series dates each loan by its first appearance in an intraday file. Loans are republished for up to a few weeks, so the series starts three weeks after the portal's intraday history begins.</li>
       </ul>
       <h2>Sellers</h2>
@@ -376,6 +393,7 @@
         <li>Each month's change in VS4 share is split exactly into three parts, seller by seller: sellers delivering VS4 for the first time; existing adopters' change in VS4 share, weighted by their share of loans; and the change in each seller's share of loans, weighted by its VS4 share.</li>
         <li>The fixed-mix series weights each seller's VS4 share by its share of loans issued January to June 2026. The other clean series leaves out the two sellers with the most VS4 loans to date.</li>
         <li>Sellers starting VS4 in the last 30 days are those whose first VS4 loan first appeared in an intraday file in that window; for loans issued before the intraday history begins (July 1, 2026), the issue month counts instead.</li>
+        <li>In the charts of sellers by their share of loans, a seller's share is its share of the GSE's loans with a credit score issued that month (or of their balance), and with one GSE picked, its threshold month is the month it met the threshold at that GSE. Sellers outside the seller list, none of which has delivered a VS4 loan, are drawn as one block.</li>
       </ul>
       <h2>Source</h2>
       <ul>
@@ -398,7 +416,7 @@
   const ADOPT_FROM = '2026-04-01';
   const CHANGE_FROM = '2026-05-01';
   const RECENT_FROM = '2026-05-01';
-  const DEFAULTS = { agency: 'All', measure: 'loans', dim: 'pricing_score', seller: 'rocket-mortgage', adopt: 'any', period: 'month', top: 25 };
+  const DEFAULTS = { agency: 'All', measure: 'loans', dim: 'pricing_score', seller: 'rocket-mortgage', adopt: 'any', period: 'month', top: 25, mapmonth: '' };
   const DAY = 864e5;
   const pct1 = d3.format('.1%');
   const ptsSigned = d3.format('+.1f');
@@ -415,6 +433,7 @@
   const enc = (s) => String(s).replace(/%/g, '%25').replace(/&/g, '%26').replace(/=/g, '%3D');
   const col = (i) => dash.colors[i % dash.colors.length];
   const agencyColor = (a) => col(Math.max(0, AGENCIES.indexOf(a)));
+  const shade = (a) => `color-mix(in srgb, ${agencyColor(a)} 30%, transparent)`;
   const C_VS4 = col(0), C_WITHIN = col(2), C_FIXED = col(1), C_EX = col(3), C_NEW = col(2), C_DEEP = col(0), C_MIX = col(1);
   const params = () => {
     const set = Object.fromEntries(Object.entries(dash.params() || {}).filter(([, v]) => v != null && v !== ''));
@@ -500,6 +519,7 @@
   root.addEventListener('change', (event) => {
     if (event.target.id === 'seller-pick') openSeller(event.target.value);
     else if (event.target.id === 'mix-dim') dash.setParams({ dim: event.target.value });
+    else if (event.target.id === 'market-month') dash.setParams({ mapmonth: event.target.value });
   });
   root.addEventListener('input', (event) => {
     if (event.target.id === 'adopters-q') drawAdopters(params());
@@ -560,6 +580,20 @@
     mark('.h-mover-from', null, null, hs, h.mover_from == null ? null : pct1(h.mover_from));
     mark('.h-mover-to', null, null, hs, h.mover_to == null ? null : pct1(h.mover_to));
     root.querySelectorAll('.h-mover-name').forEach((el) => { el.dataset.openSeller = h.mover_id || ''; });
+    // Where the current month would end if it moved as past months did from the same day.
+    const rg = rowsOf('asof').find((r) => r.kind === 'open' && r.agency === p.agency && r.month === sum.current_month);
+    const rs = statusOf('asof', 'summary');
+    const rw = `kind=open&agency=${enc(p.agency)}&month=${enc(sum.current_month ?? '')}`;
+    const lo = upb ? 'vs4_upb_share_lo' : 'vs4_share_lo', hi = upb ? 'vs4_upb_share_hi' : 'vs4_share_hi';
+    document.getElementById('range-line').hidden = rs !== 'loading' && !rg;
+    mark('.r-lo', lo, rw, rs, rg && rg[lo] != null ? pct1(rg[lo]) : null);
+    mark('.r-hi', hi, rw, rs, rg && rg[hi] != null ? pct1(rg[hi]) : null);
+    mark('.r-from', 'first_month', rw, rs, rg ? monthShort(rg.first_month) : null);
+    mark('.r-to', 'last_month', rw, rs, rg ? monthShort(rg.last_month) : null);
+    mark('.r-day', 'day', rw, rs, rg ? String(rg.day) : null);
+    root.querySelector('.r-to-part').hidden = !rg || rg.first_month === rg.last_month;
+    root.querySelector('.r-day-part').hidden = !!rg && rg.day === 31;
+    root.querySelector('.r-end-part').hidden = !rg || rg.day !== 31;
   }
 
   function prep(box, status) {
@@ -716,8 +750,9 @@
       .on('pointerleave', () => tip.hide());
   }
 
-  // VS4 share over issue months, one line per GSE, the picked one drawn strongest.
-  function agencyLines(box, status, rows, f, countKey, p, label, finalOf) {
+  // VS4 share over issue months, one line per GSE, the picked one drawn strongest. Each of `ranges`
+  // ({month, lo, hi, label}) shades where the picked GSE's month would end if it moved as `label` did.
+  function agencyLines(box, status, rows, f, countKey, p, label, finalOf, ranges = []) {
     if (!prep(box, status)) return;
     const data = rows.filter((r) => r[f] != null)
       .map((r) => ({ ...r, final: finalOf ? finalOf(r) : r.final, mid: new Date(parse(r.month).getTime() + 14.5 * DAY) }));
@@ -725,7 +760,8 @@
     const W = box.clientWidth, H = 260;
     const m = { top: 40, right: 10, bottom: 26, left: 0 };
     const svg = svgFor(box, W, H, label);
-    const y = d3.scaleLinear([0, (d3.max(data, (r) => r[f]) || 0.01) * 1.1], [H - m.bottom, m.top]).nice(5);
+    const top = Math.max(d3.max(data, (r) => r[f]) || 0, d3.max(ranges, (r) => r.hi) || 0) || 0.01;
+    const y = d3.scaleLinear([0, top * 1.1], [H - m.bottom, m.top]).nice(5);
     const yf = y.tickFormat(5, '%');
     m.left = Math.ceil(textWidth(svg, y.ticks(5).map(yf))) + 10;
     const first = d3.min(data, (r) => parse(r.month));
@@ -748,6 +784,16 @@
     }, m.top, H - m.bottom);
 
     const xf = (r) => x(r.mid);
+    const shown = ranges.filter((r) => r.lo != null && r.hi != null && parse(r.month) >= first && parse(r.month) < last);
+    const rx = (r) => x(new Date(parse(r.month).getTime() + 14.5 * DAY));
+    const bars = svg.append('g').selectAll('g').data(shown).join('g');
+    bars.append('rect').attr('x', (r) => rx(r) - 7).attr('width', 14)
+      .attr('y', (r) => y(r.hi)).attr('height', (r) => Math.max(2, y(r.lo) - y(r.hi))).attr('rx', 2)
+      .attr('fill', agencyColor(p.agency)).attr('fill-opacity', 0.3);
+    for (const k of ['lo', 'hi']) {  // caps, so a narrow range still shows around the point
+      bars.append('line').attr('x1', (r) => rx(r) - 7).attr('x2', (r) => rx(r) + 7).attr('y1', (r) => y(r[k])).attr('y2', (r) => y(r[k]))
+        .attr('stroke', agencyColor(p.agency)).attr('stroke-width', 1.5);
+    }
     for (const a of AGENCIES.filter((a) => a !== p.agency).concat(p.agency)) {
       partialLine(svg, data.filter((r) => r.agency === a), xf, (r) => r[f], y, agencyColor(a), 'final', a === p.agency);
     }
@@ -764,8 +810,10 @@
         if (!near) return;
         rule.attr('x1', x(near.t)).attr('x2', x(near.t)).attr('opacity', 1);
         const rs = AGENCIES.map((a) => data.find((r) => r.agency === a && r.month === near.mo)).filter(Boolean);
+        const rg = shown.find((r) => r.month === near.mo);
         tip.show(event, `${monthYear(near.mo)}${rs.every((r) => r.final) ? '' : ' (partial)'}`,
-          rs.map((r) => [agencyColor(r.agency), AG_NAME[r.agency], `${pct1(r[f])} of ${int(r[countKey])} loans`]));
+          rs.map((r) => [agencyColor(r.agency), AG_NAME[r.agency], `${pct1(r[f])} of ${int(r[countKey])} loans`])
+            .concat(rg ? [[shade(p.agency), `${AG_NAME[p.agency]} if it moves as ${rg.label} did`, `${pct1(rg.lo)} to ${pct1(rg.hi)}`]] : []));
       })
       .on('pointerleave', () => { rule.attr('opacity', 0); tip.hide(); });
   }
@@ -810,9 +858,15 @@
 
   function drawMonthly(p) {
     const box = document.getElementById('monthly-chart');
-    legend(document.getElementById('monthly-legend'), AGENCIES.map((a) => [agencyColor(a), AG_NAME[a], 'line', a === p.agency]));
-    agencyLines(box, statusOf('monthly', 'events'), rowsOf('monthly'), p.measure === 'upb' ? 'vs4_upb_share' : 'vs4_share',
-      'scored_loans', p, 'VS4 share by issue month');
+    const upb = p.measure === 'upb';
+    const ranges = rowsOf('asof').filter((r) => r.kind === 'open' && r.agency === p.agency).map((r) => ({
+      month: r.month, lo: r[upb ? 'vs4_upb_share_lo' : 'vs4_share_lo'], hi: r[upb ? 'vs4_upb_share_hi' : 'vs4_share_hi'],
+      label: r.first_month === r.last_month ? monthShort(r.first_month) : `${monthShort(r.first_month)}–${monthShort(r.last_month)}`,
+    }));
+    legend(document.getElementById('monthly-legend'), AGENCIES.map((a) => [agencyColor(a), AG_NAME[a], 'line', a === p.agency])
+      .concat(ranges.length ? [[shade(p.agency), 'If it moves as past months did', 'box']] : []));
+    agencyLines(box, statusOf('monthly', 'events'), rowsOf('monthly'), upb ? 'vs4_upb_share' : 'vs4_share',
+      'scored_loans', p, 'VS4 share by issue month', null, ranges);
   }
 
   function drawWeekly(p) {
@@ -1202,6 +1256,156 @@
     });
   }
 
+  // Sellers by their share of loans. firstMonths: each seller's first month over the threshold picked, at the
+  // GSE picked. The largest of those sellers get a color of their own in both charts; the rest share one.
+  const C_REST = 'var(--cds-chart-muted)';
+  function firstMonths(p) {
+    const f = `first_${p.adopt}`;
+    return new Map(rowsOf('adopters').filter((r) => r.agency === p.agency && r[f]).map((r) => [r.id, r[f]]));
+  }
+  function adopterColors(p, firsts) {
+    const f = p.measure === 'upb' ? 'mkt_share_upb_recent' : 'mkt_share_recent';
+    const top = rowsOf('sellers').filter((r) => r.level === 'seller' && firsts.has(r.id))
+      .sort((a, b) => (b[f] ?? 0) - (a[f] ?? 0)).slice(0, 6);
+    return new Map(top.map((r, i) => [r.id, col(i)]));
+  }
+  const sellerIndex = () => new Map(rowsOf('sellers').filter((r) => r.level === 'seller').map((r) => [r.id, r]));
+  const fullName = (s) => (s.ticker && !s.name.includes(s.ticker) ? `${s.name} · ${s.ticker}` : s.name);
+
+  function drawCoverage(p) {
+    const box = document.getElementById('coverage-chart');
+    const upb = p.measure === 'upb', d = p.adopt;
+    const firsts = firstMonths(p), colors = adopterColors(p, firsts), names = sellerIndex();
+    legend(document.getElementById('coverage-legend'), [...colors].map(([id, c]) => [c, (names.get(id) || {}).short || id, 'box'])
+      .concat([[C_REST, 'Other sellers over the threshold', 'box'], ['var(--color-fg)', 'VS4 share of all loans', 'line']]));
+    if (!prep(box, statusOf('adopters', 'seller_monthly', 'adoption', 'sellers'))) return;
+    const months = rowsOf('adoption').filter((r) => r.agency === p.agency && r.month >= ADOPT_FROM).sort((a, b) => d3.ascending(a.month, b.month));
+    if (!months.length) return;
+    const mf = upb ? 'mkt_share_upb' : 'mkt_share', vf = upb ? 'vs4_upb_share' : 'vs4_share';
+    const tf = upb ? `adopters_upb_share_${d}` : `adopters_share_${d}`;
+    const size = (id) => (names.get(id) || {})[upb ? 'mkt_share_upb_recent' : 'mkt_share_recent'] ?? 0;
+    const byMonth = d3.group(rowsOf('seller_monthly').filter((r) => r.level === 'seller' && r.agency === p.agency
+      && firsts.has(r.id) && r.month >= firsts.get(r.id) && r[mf] > 0), (r) => r.month);
+    const segs = [];
+    for (const mo of months) {
+      let y0 = 0;
+      const rs = (byMonth.get(mo.month) || []).sort((a, b) => d3.ascending(firsts.get(a.id), firsts.get(b.id)) || size(b.id) - size(a.id));
+      for (const r of rs) {
+        segs.push({ ...r, y0, y1: y0 + r[mf], final: mo.final });
+        y0 += r[mf];
+      }
+    }
+    const W = box.clientWidth, H = 300, m = { top: 22, right: 10, bottom: 26, left: 0 };
+    const svg = svgFor(box, W, H, 'Share of GSE loans from sellers over the adoption threshold, by seller and issue month');
+    const y = d3.scaleLinear([0, 1], [H - m.bottom, m.top]);
+    const yf = d3.format('.0%'), ticks = [0, 0.25, 0.5, 0.75, 1];
+    const keys = months.map((r) => r.month), lab = monthLabel(keys);
+    const { x, widest } = bandFrame(svg, keys, lab, y, yf, ticks, W, m);
+    yAxis(svg, y, yf, m.left, W - m.right, ticks);
+    bandAxis(svg, x, keys, lab, widest, H - m.bottom + 8);
+    const bw = Math.min(56, x.bandwidth()), off = (x.bandwidth() - bw) / 2;
+    svg.append('g').selectAll('rect').data(months).join('rect')
+      .attr('x', (r) => x(r.month) + off).attr('width', bw).attr('y', y(1)).attr('height', y(0) - y(1)).attr('rx', 3)
+      .attr('fill', 'var(--cds-chart-grid)').attr('fill-opacity', 0.5);
+    const tip = tooltip(box);
+    svg.append('g').selectAll('rect').data(segs).join('rect')
+      .attr('x', (r) => x(r.month) + off).attr('width', bw).attr('y', (r) => y(r.y1)).attr('height', (r) => Math.max(0, y(r.y0) - y(r.y1)))
+      .attr('fill', (r) => colors.get(r.id) || C_REST).attr('fill-opacity', (r) => (r.final ? 1 : 0.6))
+      .attr('stroke', 'var(--color-panel)').attr('stroke-width', 0.5).style('cursor', 'pointer')
+      .on('pointermove', (event, r) => {
+        const s = names.get(r.id) || { name: r.id };
+        tip.show(event, `${fullName(s)}, ${monthYear(r.month)}${r.final ? '' : ' (partial)'}`, [
+          [colors.get(r.id) || C_REST, `Share of ${AG_NOUN[p.agency]} ${upb ? 'balance' : 'loans'}`, pct1(r[mf])],
+          [null, 'VS4 share of its loans', r[vf] == null ? '—' : pct1(r[vf])],
+          [null, 'Over the threshold since', monthShortYear(firsts.get(r.id))],
+        ]);
+      })
+      .on('pointerleave', () => tip.hide())
+      .on('click', (event, r) => openSeller(r.id));
+    const tl = x.step() >= textWidth(svg, ['00.0%']) + 8 ? pct1 : d3.format('.0%');  // whole percents when bars are narrow
+    svg.append('g').selectAll('text').data(months.filter((r) => r[tf] > 0)).join('text')
+      .attr('x', (r) => x(r.month) + x.bandwidth() / 2).attr('y', (r) => y(r[tf]) - 6).attr('text-anchor', 'middle')
+      .style('fill', 'var(--color-fg)').style('pointer-events', 'none').text((r) => tl(r[tf]));
+    const cx = (r) => x(r.month) + x.bandwidth() / 2;
+    svg.append('path').attr('d', d3.line().defined((r) => r[vf] != null).x(cx).y((r) => y(r[vf]))(months))
+      .attr('fill', 'none').attr('stroke', 'var(--color-fg)').attr('stroke-width', 1.5).style('pointer-events', 'none');
+    svg.append('g').selectAll('circle').data(months.filter((r) => r[vf] != null)).join('circle')
+      .attr('cx', cx).attr('cy', (r) => y(r[vf])).attr('r', 2.5).attr('fill', 'var(--color-fg)').style('pointer-events', 'none');
+  }
+
+  function drawMarket(p) {
+    const box = document.getElementById('market-chart');
+    const upb = p.measure === 'upb', d = p.adopt;
+    const months = rowsOf('adoption').filter((r) => r.agency === p.agency && r.month >= ADOPT_FROM).sort((a, b) => d3.ascending(a.month, b.month));
+    const t = months.find((r) => r.month === p.mapmonth) || months[months.length - 1];
+    const sel = document.getElementById('market-month');
+    sel.classList.toggle('dash-skeleton', dash.data('adoption').status === 'loading');
+    sel.replaceChildren(...months.slice().reverse().map((r) => {
+      const o = document.createElement('option');
+      o.value = r.month;
+      o.textContent = `${monthYear(r.month)}${r.final ? '' : ' (partial)'}`;
+      o.selected = r === t;
+      return o;
+    }));
+    const af = upb ? `adopters_upb_share_${d}` : `adopters_share_${d}`, df = upb ? `vs4_within_upb_${d}` : `vs4_within_${d}`;
+    const hf = upb ? 'vs4_upb_share' : 'vs4_share', wf = upb ? 'mkt_share_upb' : 'mkt_share';
+    const where = t ? `agency=${enc(p.agency)}&month=${enc(t.month)}` : '';
+    const as = dash.data('adoption').status;
+    mark('.mk-ad', af, where, as, t && t[af] != null ? pct1(t[af]) : null);
+    mark('.mk-depth', df, where, as, t && t[df] != null ? pct1(t[df]) : null);
+    mark('.mk-vs4', hf, where, as, t && t[hf] != null ? pct1(t[hf]) : null);
+    mark('.mk-month', 'month', where, as, t ? monthYear(t.month) : null);
+    if (!prep(box, statusOf('seller_monthly', 'adoption', 'sellers', 'adopters')) || !t) return;
+    const firsts = firstMonths(p), colors = adopterColors(p, firsts), names = sellerIndex();
+    const over = (r) => firsts.has(r.id) && firsts.get(r.id) <= r.month;
+    const cols = rowsOf('seller_monthly').filter((r) => r.level === 'seller' && r.agency === p.agency && r.month === t.month && r[wf] > 0)
+      .sort((a, b) => ((names.get(a.id) || {}).rank ?? Infinity) - ((names.get(b.id) || {}).rank ?? Infinity));
+    const rest = t[upb ? 'rest_upb_share' : 'rest_share'] || 0, depth = t[df];
+    let at = 0;
+    const blocks = cols.map((r) => ({ ...r, x0: at, x1: (at += r[wf]) })).concat(rest > 0 ? [{ rest: true, x0: at, x1: at + rest }] : []);
+    const W = box.clientWidth, H = 340, m = { top: 14, right: 10, bottom: 96, left: 0 };
+    const svg = svgFor(box, W, H, `Sellers by share of ${AG_NOUN[p.agency]} loans and VS4 share of their loans, ${monthYear(t.month)}`);
+    // The scale follows sellers with at least 0.25% of loans; a narrower, taller column is cut at the top.
+    const wide = cols.filter((r) => r[wf] >= 0.0025);
+    const y = d3.scaleLinear([0, Math.max(d3.max(wide, (r) => r[hf] ?? 0) || 0, depth || 0, 0.05) * 1.12], [H - m.bottom, m.top]).nice(5).clamp(true);
+    const yf = y.tickFormat(5, '%');
+    m.left = Math.ceil(textWidth(svg, y.ticks(5).map(yf))) + 10;
+    yAxis(svg, y, yf, m.left, W - m.right);
+    const x = d3.scaleLinear([0, Math.max(1, at + rest)], [m.left, W - m.right]);
+    const bx = (b) => x(b.x0), bwd = (b) => Math.max(0.5, x(b.x1) - x(b.x0) - (x(b.x1) - x(b.x0) > 3 ? 1 : 0));
+    const tip = tooltip(box);
+    const g = svg.append('g').selectAll('g').data(blocks).join('g').style('cursor', (b) => (b.rest ? null : 'pointer'))
+      .on('pointermove', (event, b) => {
+        if (b.rest) {
+          return tip.show(event, `${int(t.rest_sellers)} other sellers, ${monthYear(t.month)}`, [
+            [null, `Share of ${AG_NOUN[p.agency]} ${upb ? 'balance' : 'loans'}`, pct1(rest)], [null, 'VS4 loans', 'none to date']]);
+        }
+        const s = names.get(b.id) || { name: b.id };
+        tip.show(event, `${fullName(s)}, ${monthYear(b.month)}${t.final ? '' : ' (partial)'}`, [
+          [null, `Share of ${AG_NOUN[p.agency]} ${upb ? 'balance' : 'loans'}`, pct1(b[wf])],
+          [colors.get(b.id) || C_REST, 'VS4 share of its loans', `${pct1(b[hf] ?? 0)} of ${int(b.scored)} loans`],
+          [null, 'Threshold', over(b) ? `met in ${monthShortYear(firsts.get(b.id))}` : 'not met'],
+        ]);
+      })
+      .on('pointerleave', () => tip.hide())
+      .on('click', (event, b) => { if (!b.rest) openSeller(b.id); });
+    g.append('rect').attr('x', bx).attr('width', bwd).attr('y', m.top).attr('height', H - m.bottom - m.top)
+      .attr('fill', 'var(--cds-chart-grid)').attr('fill-opacity', (b) => (b.rest ? 0.9 : 0.45));
+    g.filter((b) => !b.rest && b[hf] > 0).append('rect').attr('x', bx).attr('width', bwd)
+      .attr('y', (b) => y(b[hf])).attr('height', (b) => Math.max(0, y(0) - y(b[hf])))
+      .attr('fill', (b) => colors.get(b.id) || C_REST).attr('fill-opacity', (b) => (over(b) ? 1 : 0.4));
+    g.filter((b) => x(b.x1) - x(b.x0) >= 11).append('text')
+      .attr('transform', (b) => `translate(${(x(b.x0) + x(b.x1)) / 2},${H - m.bottom + 6}) rotate(-90)`)
+      .attr('dy', '0.35em').attr('text-anchor', 'end').style('pointer-events', 'none')
+      .text((b) => (b.rest ? 'Other sellers' : (names.get(b.id) || {}).short || b.id)).each(function () { clip(this, m.bottom - 10); });
+    if (depth != null) {
+      svg.append('line').attr('x1', m.left).attr('x2', W - m.right).attr('y1', y(depth)).attr('y2', y(depth))
+        .attr('stroke', 'var(--color-fg)').attr('stroke-dasharray', '4 3').style('pointer-events', 'none');
+      svg.append('text').attr('x', W - m.right).attr('y', y(depth) - 6).attr('text-anchor', 'end').style('fill', 'var(--color-fg)')
+        .style('pointer-events', 'none').text(`VS4 share of their loans: ${pct1(depth)}`);
+    }
+  }
+
   // Tables: columns are [id, dataset column, format]; the id stays put while the column follows the measure.
   function renderTable(table, rows, cols, status) {
     const s = sorts[table.id];
@@ -1364,6 +1568,8 @@
       drawWindow();
       drawExplorer(p);
       drawHeat(p);
+      drawCoverage(p);
+      drawMarket(p);
       drawNewAdopters(p);
       drawTables(p);
     } else if (current === 'borrowers') {

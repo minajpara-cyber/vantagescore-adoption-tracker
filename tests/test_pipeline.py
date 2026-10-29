@@ -1,4 +1,4 @@
-"""End-to-end check on synthetic files: ingest -> views -> score_model -> aggregates -> seller datasets.
+"""End-to-end check on synthetic files: ingest -> views -> score_model -> aggregates -> seller datasets -> as-of.
 
 Run: .venv/bin/python -I tests/test_pipeline.py
 """
@@ -63,25 +63,39 @@ write_zip(raw / "fl260903.zip", "fl260903.txt",
           [hdr] + [loan_row(400 + i, "QD0003", 9999, 740, seller="WELLS FARGO", extra=aug) for i in range(2)]
           + [loan_row(402 + i, "QD0003", 700, 9999, seller="WELLS FARGO", extra=aug) for i in range(2)]
           + [loan_row(404 + i, "QD0003", 760, 7777, extra=aug) for i in range(2)])
+# Fannie Mae September 2026, final: Aug 10 discloses 2 VS4 and 3 FICO loans; Sep 15 deletes one of the FICO
+# loans and adds 2 more; the month-end file drops one VS4 loan (pulled) and adds a FICO loan never disclosed.
+# October 2026 is still open: UWM 1 VS4, Test Bank 2 FICO and Small Credit Union 1 FICO loan, disclosed Oct 15.
+fn, sep, octo = home / "data" / "raw" / "FNMA", {"First Payment Date": "102026"}, {"First Payment Date": "112026"}
+bank = lambda i, fico, vs4, extra=sep: loan_row(i, "CA0001", fico, vs4, seller="TEST BANK", extra=extra)  # noqa: E731
+write_zip(fn / "intraday" / "FNM_ILLD_20260810_1.zip", "FNM_ILLD_20260810_1.txt",
+          [hdr, bank(500, 9999, 720), bank(507, 9999, 730)] + [bank(501 + i, 700, 9999) for i in range(3)])
+write_zip(fn / "intraday" / "FNM_ILLD_20260915_1.zip", "FNM_ILLD_20260915_1.txt",
+          [hdr, bank(504, 700, 9999), bank(505, 700, 9999), bank(503, 700, 9999, {**sep, "Loan Correction Indicator": "D"})])
+write_zip(fn / "monthend" / "FNM_ILLD_202609.zip", "FNM_ILLD_202609.txt",
+          [hdr, bank(500, 9999, 720)] + [bank(i, 700, 9999) for i in (501, 502, 504, 505, 506)])
+write_zip(fn / "intraday" / "FNM_ILLD_20261015_1.zip", "FNM_ILLD_20261015_1.txt",
+          [hdr, loan_row(510, "CA0002", 9999, 700, seller="UWM", extra=octo), bank(511, 700, 9999, octo), bank(512, 700, 9999, octo),
+           loan_row(513, "CA0002", 700, 9999, seller="SMALL CREDIT UNION", extra=octo)])
 
 from gsescore.aggregate import build  # noqa: E402
 from gsescore.ingest import ingest_paths  # noqa: E402
 from gsescore.warehouse import connect  # noqa: E402
 
 res = ingest_paths([home / "data" / "raw"])
-assert sum(r["status"] == "ingested" for r in res) == 5, res
+assert sum(r["status"] == "ingested" for r in res) == 9, res
 assert all(r["status"] == "skipped" for r in ingest_paths([home / "data" / "raw"])), "manifest should dedupe"
 
 con = connect()
 got = dict(con.execute("SELECT score_model, count(*) FROM loans GROUP BY 1").fetchall())
-assert got == {"C": 24, "V": 6, "N": 1, "X": 1}, got  # 8 C + 1 V (inferred); 3 V + 7 C + 1 N (indicator); 5 C Fannie headerless; 1 no score; Aug 2 V + 4 C
+assert got == {"C": 32, "V": 8, "N": 1, "X": 1}, got  # 8 C + 1 V (inferred); 3 V + 7 C + 1 N (indicator); 5 C Fannie headerless; 1 no score; Aug 2 V + 4 C; Sep 1 V + 5 C; Oct 1 V + 3 C
 basis = dict(con.execute("SELECT score_model_basis, count(*) FROM loans GROUP BY 1").fetchall())
-assert basis == {"inferred": 9 + 5 + 1 + 6, "pricing_indicator": 11}, basis
+assert basis == {"inferred": 9 + 5 + 1 + 6 + 6 + 4, "pricing_indicator": 11}, basis
 assert con.execute("SELECT count(*) FROM loans WHERE agency='FNMA' AND first_intraday_date = DATE '2026-06-02'").fetchone()[0] == 5
 assert con.execute("SELECT pricing_score FROM loans WHERE loan_id = 'L000000100'").fetchone()[0] == 781
 assert con.execute("SELECT pricing_score FROM loans WHERE loan_id = 'L000000210'").fetchone()[0] == 812
 
-assert con.execute("SELECT DISTINCT issue_month FROM loans ORDER BY 1").fetchall() == [(date(2026, 7, 1),), (date(2026, 8, 1),)]
+assert con.execute("SELECT DISTINCT issue_month FROM loans ORDER BY 1").fetchall() == [(date(2026, m, 1),) for m in (7, 8, 9, 10)]
 
 from gsescore.lenders import KEY_SQL  # noqa: E402
 
@@ -90,9 +104,12 @@ for name, key in [("JPMORGAN CHASE BANK, NATIONAL ASSOCIATION", "JPMORGAN CHASE 
                   ("PROVIDENT FUNDING ASSOCIATES, L.P.", "PROVIDENT FUNDING ASSOCIATES"), (None, "")]:
     assert con.execute("SELECT seller_key(?)", [name]).fetchone()[0] == key, name
 
+import gsescore.lenders  # noqa: E402
+
+gsescore.lenders.SELLER_TOP = 3  # the 3 largest sellers plus every VS4 seller, so Small Credit Union is left out
 meta = build(home / "site" / "data")
 daily = json.loads((home / "site" / "data" / "daily.json").read_text())
-assert meta["loans"] == 32 and len(daily["rows"]) == 8, (meta, daily)  # 4 days x (one GSE + All)
+assert meta["loans"] == 42 and len(daily["rows"]) == 14, (meta, daily)  # 7 days x (one GSE + All)
 monthly = json.loads((home / "site" / "data" / "monthly.json").read_text())["rows"]
 everyone = next(r for r in monthly if r["agency"] == "All" and r["month"] == "2026-07-01")
 assert (everyone["scored_loans"], everyone["vs4_loans"], everyone["final"]) == (25, 4, False), everyone
@@ -117,4 +134,32 @@ jul = next(r for r in rows("series") if r["period"] == "month" and r["agency"] =
 assert abs(jul["actual"] - 4 / 25) < 1e-6 and abs(jul["ex_top2"] - 1 / 9) < 1e-6, jul  # without UWM and Wells
 h = rows("highlights")[0]
 assert (h["data_through"], h["new_7d"], h["new_30d"], "mover_id" in h) == ("2026-10-20", 1, 1, False), h
+# First month over each threshold, by GSE: UWM at Freddie in July and Fannie in October; Wells Fargo only at Freddie.
+firsts = {(r["id"], r["agency"]): r for r in rows("adopters")}
+assert {k: r["first_any"] for k, r in firsts.items() if k[0] in ("uwm", "wells-fargo")} == {
+    ("uwm", "All"): "2026-07-01", ("uwm", "FHLMC"): "2026-07-01", ("uwm", "FNMA"): "2026-10-01",
+    ("wells-fargo", "All"): "2026-08-01", ("wells-fargo", "FHLMC"): "2026-08-01"}, firsts
+assert firsts[("uwm", "All")]["first_ten"] is None and not any(r["first_pct5"] for r in firsts.values()), firsts
+# October at Fannie: Small Credit Union, outside the seller list, is the rest; the listed sellers' shares and it add up to 1.
+octf = next(r for r in rows("adoption") if r["agency"] == "FNMA" and r["month"] == "2026-10-01")
+listed = sum(r["mkt_share"] for r in rows("seller_monthly") if r["level"] == "seller" and r["agency"] == "FNMA" and r["month"] == "2026-10-01")
+assert (octf["rest_sellers"], octf["rest_share"], listed) == (1, 0.25, 0.75), (octf, listed)
+assert "small-credit-union" not in sellers and not any(r["id"] == "small-credit-union" for r in rows("sellers")), sellers
+
+# As-of: Fannie's September by day, from the intraday files published by then, against its month-end file (1 VS4 of 6).
+asof = rows("asof")
+past = {r["day"]: r for r in asof if r["kind"] == "past"}
+assert len(past) == 31 and {(r["agency"], r["month"]) for r in asof if r["kind"] == "past"} == {("FNMA", "2026-09-01")}, asof
+for day, as_of, n, share, seen in [(14, "2026-09-14", 5, 2 / 5, 3 / 6), (15, "2026-09-15", 6, 2 / 6, 5 / 6),
+                                   (31, "2026-09-30", 6, 2 / 6, 5 / 6)]:
+    r = past[day]
+    assert (r["as_of"], r["scored_loans"]) == (as_of, n), r
+    for k, want in [("vs4_share", share), ("final_vs4_share", 1 / 6), ("gap", 1 / 6 - share), ("final_seen_share", seen)]:
+        assert abs(r[k] - want) < 1e-6, (day, k, r[k], want)
+# October is open at day 20 (data through Oct 20); September moved -1/6 from its day 20, so 1/4 would reach 1/12.
+(o,) = [r for r in asof if r["kind"] == "open"]
+assert (o["agency"], o["month"], o["day"], o["months"], o["first_month"], o["last_month"]) == (
+    "FNMA", "2026-10-01", 20, 1, "2026-09-01", "2026-09-01"), o
+for k, want in [("vs4_share", 1 / 4), ("vs4_share_lo", 1 / 12), ("vs4_share_hi", 1 / 12), ("vs4_upb_share_hi", 1 / 12)]:
+    assert abs(o[k] - want) < 1e-6, (k, o[k], want)
 print("ok:", home)

@@ -7,3 +7,5 @@ __pycache__/
 .DS_Store
 /build/
 /.claude/
+# Research notes with early findings stay on this computer.
+/notes/ANALYTICS_PLAN.md

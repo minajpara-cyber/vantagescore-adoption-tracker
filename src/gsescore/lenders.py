@@ -14,8 +14,11 @@ several sellers (Rocket Companies: Rocket Mortgage and Nationstar) also gets row
   seller_splits   VS4 share by channel and by purpose since SPLITS_START, larger sellers and adopters
   adoption        breadth x depth by issue month and GSE: adopters under each definition, new
                   adopters and their volume, VS4 share within adopters, sellers active this month,
+                  the share of loans from sellers outside the `sellers` rows (none has a VS4 loan),
                   and each month's change in VS4 share split into new adopters, deeper use at
                   existing adopters and the shift in lender mix
+  adopters        each seller's first issue month under each adoption definition, by GSE scope, for
+                  sellers that have delivered a VS4 loan
   series          clean comparisons by month and by week: actual VS4 share, at a fixed lender mix
                   (FIXED_BASE), and without the two largest VS4 sellers
   highlights      one row: sellers whose first VS4 loan was disclosed in the last 7 and 30 days (issue
@@ -224,6 +227,9 @@ def build_datasets(con, in_range: str, weekly_start: str, rows) -> dict[str, lis
         CREATE OR REPLACE TEMP TABLE adopt_f AS
         SELECT id, agency, {", ".join(f"min(month) FILTER (WHERE {c}) AS f_{d}" for d, c in DEFS.items())}
         FROM adopt_sm GROUP BY id, agency""")
+    out["adopters"] = rows(con, f"""
+        SELECT id, agency, {", ".join(f"f_{d} AS first_{d}" for d in DEFS)} FROM adopt_f WHERE f_any IS NOT NULL
+        ORDER BY id, CASE agency WHEN 'All' THEN 0 ELSE 1 END, agency""")
     per_def = []
     for d in DEFS:
         per_def.append(f"""
@@ -246,9 +252,13 @@ def build_datasets(con, in_range: str, weekly_start: str, rows) -> dict[str, lis
     # share. w1*s1 - w0*s0 = mean(w)*(s1-s0) + mean(s)*(w1-w0) exactly; a seller absent one month takes
     # the other month's s, so its whole change is mix. First-time adopters' change is all "new".
     out["adoption"] = rows(con, f"""
-        WITH x AS (SELECT sm.*, {", ".join(f"f.f_{d}" for d in DEFS)} FROM adopt_sm sm JOIN adopt_f f USING (id, agency)),
+        WITH x AS (SELECT sm.*, {", ".join(f"f.f_{d}" for d in DEFS)},
+                          sm.id IN (SELECT id FROM sellers_out WHERE level = 'seller') AS listed
+                   FROM adopt_sm sm JOIN adopt_f f USING (id, agency)),
         v AS (SELECT agency, month, count(*) FILTER (WHERE v > 0) AS active,
                      sum(n) FILTER (WHERE v > 0) AS active_n, sum(u) FILTER (WHERE v > 0) AS active_u,
+                     count(*) FILTER (WHERE NOT listed) AS rest, sum(n) FILTER (WHERE NOT listed) AS rest_n,
+                     sum(u) FILTER (WHERE NOT listed) AS rest_u,
                      {sums}
               FROM x GROUP BY agency, month),
         c AS (SELECT x.id, x.agency, x.month, x.f_any, x.n / t.scored_loans AS w, x.v / x.n AS s,
@@ -276,6 +286,8 @@ def build_datasets(con, in_range: str, weekly_start: str, rows) -> dict[str, lis
         SELECT t.agency, t.month, t.final, t.scored_loans, t.vs4_share, t.vs4_upb_share,
           coalesce(v.active, 0) AS active_sellers,
           coalesce(v.active_n, 0) / t.scored_loans AS active_share, coalesce(v.active_u, 0) / t.scored_upb AS active_upb_share,
+          coalesce(v.rest, 0) AS rest_sellers, coalesce(v.rest_n, 0) / t.scored_loans AS rest_share,
+          coalesce(v.rest_u, 0) / t.scored_upb AS rest_upb_share,
           {",".join(per_def)},
           t.d_total, CASE WHEN t.d_total IS NOT NULL THEN dec.d_new END AS d_new,
           CASE WHEN t.d_total IS NOT NULL THEN dec.d_within END AS d_within,

@@ -33,6 +33,20 @@ SECURITY_COLS = [
 ]
 META_COLS = ["agency", "kind", "file_date", "file_seq", "source_file"]
 
+# Rules the loans view applies to a loan's best record, shared with the as-of rebuild in aggregate.py,
+# which applies them to every intraday record: the model that priced the loan, and an intraday
+# record's issue month (r = the record, with first_intraday_date; s = its security).
+SCORE_MODEL_SQL = """CASE
+        WHEN pricing_indicator IS NOT NULL THEN pricing_indicator
+        WHEN vs4 IS NOT NULL AND classic_fico IS NULL THEN 'V'
+        WHEN classic_fico IS NOT NULL AND vs4 IS NULL THEN 'C'
+        WHEN classic_fico IS NOT NULL AND vs4 IS NOT NULL THEN 'B'
+        ELSE 'X'
+      END"""
+INTRADAY_ISSUE_MONTH_SQL = """COALESCE(date_trunc('month', s.issue_date)::DATE,
+                      date_add(r.first_pay_date, to_months(r.loan_age - 1))::DATE,
+                      date_trunc('month', r.first_intraday_date)::DATE)"""
+
 
 def _glob(level: str) -> str:
     return str(paths.WAREHOUSE / level / "*" / "*" / "*.parquet")
@@ -136,7 +150,7 @@ def create_views(con) -> None:
     # else first payment date + (loan age - 1) months, which reproduces the month-end month for every
     # loan in the Dec 2025 - Sep 2026 files. Intraday-only loans whose issue month has a month-end file
     # are dropped: that file is the official list (they were pulled or re-pooled).
-    con.execute("""
+    con.execute(f"""
     CREATE OR REPLACE VIEW loans AS
     WITH ranked AS (
       SELECT *,
@@ -159,21 +173,13 @@ def create_views(con) -> None:
              r.any_freddie_score AS freddie_score,
              s.issue_date AS security_issue_date,
              COALESCE(CASE WHEN r.kind = 'monthend' THEN r.file_date END,
-                      date_trunc('month', s.issue_date)::DATE,
-                      date_add(r.first_pay_date, to_months(r.loan_age - 1))::DATE,
-                      date_trunc('month', r.first_intraday_date)::DATE) AS issue_month
+                      {INTRADAY_ISSUE_MONTH_SQL}) AS issue_month
       FROM ranked r
       LEFT JOIN securities s USING (agency, security_id)
       WHERE r.rn = 1 AND NOT (r.kind = 'intraday' AND coalesce(r.loan_correction, '') = 'D')
     )
     SELECT *,
-      CASE
-        WHEN pricing_indicator IS NOT NULL THEN pricing_indicator
-        WHEN vs4 IS NOT NULL AND classic_fico IS NULL THEN 'V'
-        WHEN classic_fico IS NOT NULL AND vs4 IS NULL THEN 'C'
-        WHEN classic_fico IS NOT NULL AND vs4 IS NOT NULL THEN 'B'
-        ELSE 'X'
-      END AS score_model,
+      {SCORE_MODEL_SQL} AS score_model,
       CASE WHEN pricing_indicator IS NOT NULL THEN 'pricing_indicator' ELSE 'inferred' END AS score_model_basis,
       CASE
         WHEN pricing_indicator = 'V' OR (pricing_indicator IS NULL AND vs4 IS NOT NULL AND classic_fico IS NULL) THEN vs4

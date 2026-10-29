@@ -12,8 +12,10 @@ Loan-level data never leaves the local warehouse; only these aggregates are publ
   composition  borrower mix of VS4 vs Classic FICO loans since MIX_START, one row per dim x bucket x model
   profile      averages for VS4 vs Classic FICO loans since MIX_START
   summary      headline figures per GSE (+ All)
+  asof         how far each final month's VS4 share moved from each day of its month to final, from
+               ASOF_START, and the range that puts on each month still open
   events       policy dates drawn on the charts
-  sellers, seller_monthly, seller_weekly, seller_splits, adoption, series, highlights
+  sellers, seller_monthly, seller_weekly, seller_splits, adoption, adopters, series, highlights
                seller-level adoption, built in lenders.py
 """
 import json
@@ -22,7 +24,7 @@ from pathlib import Path
 
 from . import paths
 from .lenders import build_datasets as build_lender_datasets
-from .warehouse import connect
+from .warehouse import INTRADAY_ISSUE_MONTH_SQL, SCORE_MODEL_SQL, connect
 
 # VS4 fields went live Nov 17, 2025; the first month-end file on the portal is December 2025.
 SERIES_START = "2025-11-01"
@@ -33,6 +35,9 @@ WEEKLY_START = "2026-07-20"
 LENDER_START = "2026-09-01"
 # Borrower-mix window: issue months with meaningful VS4 volume (>4% from July 2026).
 MIX_START = "2026-07-01"
+# First month the as-of rebuild covers: July's loans were partly disclosed before the intraday history
+# begins (Jul 1), and only 81-96% of them appear in it.
+ASOF_START = "2026-08-01"
 
 EVENTS = [
     ("2026-05-01", "Limited VS4 rollout"),
@@ -119,6 +124,46 @@ def build(out_dir: Path = paths.SITE_DATA) -> dict:
                ELSE EXISTS (SELECT 1 FROM fin WHERE fin.month = g.month AND fin.agency = g.agency) END AS final
         FROM g""")
 
+    # Each final month's share as the intraday files published by each day of the month gave it, under the
+    # loans view's rules: a loan's latest record sets its issue month and model, a later delete removes
+    # it, and a loan pulled before the month-end file still counts. Day 31 is the month's last day.
+    con.execute(f"""
+        CREATE OR REPLACE TEMP TABLE asof_past AS
+        WITH r AS (
+          SELECT agency, security_id, file_date, first_pay_date, loan_age, vs4, classic_fico,
+                 COALESCE(issuance_upb, orig_loan_amt) AS upb, coalesce(loan_correction, '') = 'D' AS deleted,
+                 lead(file_date) OVER w AS next_date, max(pricing_indicator) OVER w AS pricing_indicator,
+                 min(file_date) OVER (PARTITION BY agency, loan_id) AS first_intraday_date
+          FROM loan_records WHERE kind = 'intraday' AND loan_id IS NOT NULL AND loan_id <> ''
+          WINDOW w AS (PARTITION BY agency, loan_id ORDER BY file_date, file_seq, coalesce(loan_correction, '') = 'D' DESC)
+        ),
+        e AS (
+          SELECT r.agency, r.file_date, r.next_date, r.upb, {INTRADAY_ISSUE_MONTH_SQL} AS month,
+                 {SCORE_MODEL_SQL} AS score_model
+          FROM r LEFT JOIN securities s USING (agency, security_id) WHERE NOT r.deleted
+        ),
+        d AS (
+          SELECT month, day, least(month + (day - 1)::INT, last_day(month)) AS as_of
+          FROM (SELECT DISTINCT month FROM monthly WHERE final AND month >= DATE '{ASOF_START}'), range(1, 32) t(day)
+        ),
+        g AS (
+          SELECT COALESCE(e.agency, 'All') AS agency, d.month, d.day, d.as_of, {_COUNTS}
+          FROM d JOIN e ON e.month = d.month AND e.file_date <= d.as_of AND coalesce(e.next_date, DATE '9999-12-31') > d.as_of
+          GROUP BY GROUPING SETS ((e.agency, d.month, d.day, d.as_of), (d.month, d.day, d.as_of))
+        ),
+        seen AS (
+          SELECT COALESCE(agency, 'All') AS agency, issue_month AS month, first_intraday_date, count(*) AS n
+          FROM loans WHERE kind = 'monthend' AND score_model <> 'X' AND issue_month >= DATE '{ASOF_START}'
+          GROUP BY GROUPING SETS ((agency, issue_month, first_intraday_date), (issue_month, first_intraday_date))
+        ),
+        a AS (SELECT *, {_SHARES} FROM g)
+        SELECT a.agency, a.month, a.day, a.as_of, a.scored_loans, a.vs4_share, a.vs4_upb_share,
+               f.vs4_share AS final_vs4_share, f.vs4_upb_share AS final_vs4_upb_share,
+               (SELECT coalesce(sum(n), 0) FROM seen WHERE seen.agency = a.agency AND seen.month = a.month
+                  AND seen.first_intraday_date <= a.as_of) / f.scored_loans AS final_seen_share,
+               f.vs4_share - a.vs4_share AS gap, f.vs4_upb_share - a.vs4_upb_share AS gap_upb
+        FROM a JOIN monthly f ON f.agency = a.agency AND f.month = a.month AND f.final""")
+
     datasets = {
         "monthly": "SELECT * FROM monthly ORDER BY month, agency",
         "weekly": f"""
@@ -201,6 +246,27 @@ def build(out_dir: Path = paths.SITE_DATA) -> dict:
             LEFT JOIN m p ON p.agency = lf.agency AND p.month = (lf.final_month - INTERVAL 1 MONTH)::DATE
             JOIN m l ON l.agency = lf.agency AND l.month = lf.last_month
             ORDER BY CASE lf.agency WHEN 'All' THEN 0 ELSE 1 END, lf.agency""",
+        # 'past' rows: asof_past. 'open' rows: each month without its month-end file yet, at the latest
+        # day disclosed (31 once the month is over), with the range it reaches if it moves to final as
+        # the earlier months did from the same day.
+        "asof": """
+            WITH o AS (
+              SELECT m.agency, m.month, t.through AS as_of, m.scored_loans, m.vs4_share, m.vs4_upb_share,
+                     CASE WHEN t.through >= last_day(m.month) THEN 31 ELSE day(t.through) END AS day
+              FROM monthly m, (SELECT max(first_intraday_date) AS through FROM loans) t
+              WHERE NOT m.final AND t.through >= m.month
+            ),
+            rng AS (
+              SELECT 'open' AS kind, o.agency, o.month, o.day, o.as_of, o.scored_loans, o.vs4_share, o.vs4_upb_share,
+                     count(*) AS months, min(p.month) AS first_month, max(p.month) AS last_month,
+                     greatest(o.vs4_share + min(p.gap), 0) AS vs4_share_lo, least(o.vs4_share + max(p.gap), 1) AS vs4_share_hi,
+                     greatest(o.vs4_upb_share + min(p.gap_upb), 0) AS vs4_upb_share_lo,
+                     least(o.vs4_upb_share + max(p.gap_upb), 1) AS vs4_upb_share_hi
+              FROM o JOIN asof_past p ON p.agency = o.agency AND p.day = o.day AND p.month < o.month
+              GROUP BY o.agency, o.month, o.day, o.as_of, o.scored_loans, o.vs4_share, o.vs4_upb_share
+            )
+            SELECT * FROM (SELECT * FROM rng UNION ALL BY NAME SELECT 'past' AS kind, * FROM asof_past)
+            ORDER BY kind, CASE agency WHEN 'All' THEN 0 ELSE 1 END, agency, month, day""",
     }
     written = {}
     for name, sql in datasets.items():
