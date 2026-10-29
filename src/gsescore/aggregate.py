@@ -19,6 +19,8 @@ Loan-level data never leaves the local warehouse; only these aggregates are publ
   score_coverage, borrowers, borrower_profile
                which scores loans carry, and borrower mix by score group, built in borrowers.py
   pricing      VS4 note rates against a model of FICO-priced loans' rates, built in pricing.py
+  choice, ceiling
+               when lenders price on VS4, and how high its share could go, built in scores.py
 """
 import json
 from datetime import datetime, timezone
@@ -28,6 +30,7 @@ from . import paths
 from .borrowers import build_datasets as build_borrower_datasets
 from .lenders import build_datasets as build_lender_datasets
 from .pricing import build_pricing
+from .scores import build_datasets as build_score_datasets
 from .warehouse import INTRADAY_ISSUE_MONTH_SQL, SCORE_MODEL_SQL, connect
 
 # VS4 fields went live Nov 17, 2025; the first month-end file on the portal is December 2025.
@@ -269,6 +272,7 @@ def build(out_dir: Path = paths.SITE_DATA) -> dict:
     written["events"] = len(EVENTS)
     more = build_lender_datasets(con, in_range, WEEKLY_START, _rows)
     more |= build_borrower_datasets(con, in_range, MIX_START, _rows)  # needs the seller map lenders.py made
+    more |= build_score_datasets(con, in_range, MIX_START, _rows)
     more["pricing"] = build_pricing(con, WEEKLY_START, in_range)
     for name, rows in more.items():
         (out_dir / f"{name}.json").write_text(json.dumps({"rows": rows}, separators=(",", ":")))

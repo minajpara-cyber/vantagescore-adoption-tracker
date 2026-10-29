@@ -1,5 +1,5 @@
 """End-to-end check on synthetic files: ingest -> views -> score_model -> aggregates -> seller datasets -> as-of
--> score groups and borrower mix, plus the rate engine on planted data.
+-> score groups and borrower mix -> score choice and ceiling, plus the rate engine on planted data.
 
 Run: .venv/bin/python -I tests/test_pipeline.py
 """
@@ -111,6 +111,9 @@ gsescore.lenders.SELLER_TOP = 3  # the 3 largest sellers plus every VS4 seller, 
 import gsescore.borrowers  # noqa: E402
 
 gsescore.borrowers.MIN_N = 1  # show every group, however small, so the shares below can be checked
+import gsescore.scores  # noqa: E402
+
+gsescore.scores.MIN_N = gsescore.scores.MIN_CHOICE = 1
 meta = build(home / "site" / "data")
 daily = json.loads((home / "site" / "data" / "daily.json").read_text())
 assert meta["loans"] == 42 and len(daily["rows"]) == 14, (meta, daily)  # 7 days x (one GSE + All)
@@ -180,6 +183,22 @@ assert abs(fre["share"] - 0.75) < 1e-6 and abs(fre["expected"] - 39 / 56) < 1e-6
 prof = {(r["cover"], r["grp"]): r for r in rows("borrower_profile")}
 assert (prof[("both", "vs4")]["loans"], prof[("both", "vs4")]["wa_fico"], prof[("both", "vs4")]["avg_gap"]) == (3, 745, 20), prof
 assert rows("pricing") == [], "too few FICO loans here to fit the rate model"
+
+# Score choice: UWM's Oct 20 loans carry FICO 745 (bucket 740-759) and VS4 765 (760-779), one bucket better; 3 of 10 priced on VS4.
+rule = {(r["scope"], r["agency"], r["key"]): r for r in rows("choice") if r["view"] == "rule"}
+assert set(rule) == {("All", "All", "1"), ("All", "FHLMC", "1"), ("uwm", "All", "1")}, rule
+assert (rule[("All", "All", "1")]["loans"], rule[("All", "All", "1")]["vs4_share"]) == (10, 0.3), rule
+pull = {r["scope"]: r for r in rows("choice") if r["view"] == "pull"}
+assert set(pull) == {"uwm"} and (pull["uwm"]["loans"], pull["uwm"]["both_share"]) == (10, 1.0), pull
+# Ceiling: those 10 count as observed (VS4 better on all); VS4-only loans count as VS4; FICO-only loans take the rate
+# measured on loans with both scores, here the overall one (no FICO bucket other than 740-759 has any): all better.
+ceil = {(r["view"], r["agency"], r["start"], r["key"]): r for r in rows("ceiling")}
+both = ceil[("both", "All", "2026-10-19", None)]
+assert (both["loans"], both["actual"], both["better"], both["observed_share"]) == (10, 0.3, 1.0, 1.0), both
+jul = ceil[("month", "All", "2026-07-01", None)]
+assert (jul["loans"], jul["better"]) == (24, 1.0) and abs(jul["actual"] - 4 / 24) < 1e-6, jul
+bands = [r for r in rows("ceiling") if r["view"] == "band"]
+assert abs(sum(r["adds_better"] for r in bands if r["key"] != "all") - next(r for r in bands if r["key"] == "all")["adds_better"]) < 1e-6, bands
 
 # Rate engine on planted data: rates are the sum of two factors' effects plus noise, and VS4 loans carry +25 bp.
 import numpy as np  # noqa: E402

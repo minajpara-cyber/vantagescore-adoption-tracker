@@ -13,8 +13,9 @@ Each VS4 loan's rate is compared with what the model gives a FICO-priced loan li
   own_fico  with the borrower's own Classic FICO, for VS4 loans that disclose both (from BOTH_START)
 
 Groups (the dashboard's score toggle): all (VS4 loans first disclosed from WEEKLY_START), both (VS4
-loans that also carry a Classic FICO, from BOTH_START) and vs4only (VS4 loans with no Classic FICO,
-from BOTH_START). Each is checked against the held-out FICO loans of the same window.
+loans that also carry a Classic FICO) and vs4only (VS4 loans with no Classic FICO), the last two among
+loans disclosed with every score delivered (records from BOTH_START on, which carry the Pricing
+Indicator). Each is checked against the held-out FICO loans of the same group of records.
 
   pricing   view x cover x basis x key: n, premium_bp (mean actual minus expected rate, basis points),
             se_bp, median_bp, check_n / check_bp for the held-out FICO loans in the same cell, and
@@ -48,7 +49,7 @@ def _load(con, weekly_start: str, in_range: str):
     # Needs seller_map and seller_key from lenders.py on this connection. Ordered so the fit is repeatable.
     return con.execute(f"""
         SELECT l.agency, date_trunc('week', l.first_intraday_date)::DATE::VARCHAR AS week,
-               l.first_intraday_date >= DATE '{BOTH_START}' AS both_era, m.id AS seller_id,
+               l.pricing_indicator IS NOT NULL AS both_era, m.id AS seller_id,
                coalesce(l.channel, '?') AS channel,
                CASE WHEN l.purpose = 'P' THEN 'P' WHEN l.purpose = 'C' THEN 'C' ELSE 'R' END AS purpose,
                coalesce(l.occupancy, '?') AS occupancy, least(coalesce(l.units, 1), 2) AS units,

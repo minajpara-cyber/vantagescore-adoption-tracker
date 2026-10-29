@@ -2,9 +2,10 @@
 
 Score groups (the dashboard's toggle), each comparing VS4-priced with Classic FICO-priced loans:
   all      every loan issued from MIX_START
-  both     loans first disclosed from BOTH_START that carry both scores
-  vs4only  VS4-priced loans first disclosed from BOTH_START with no Classic FICO, against every
-           FICO-priced loan disclosed then
+  both     loans disclosed with every score delivered (records from BOTH_START on, which all carry the
+           Pricing Indicator) that carry both scores
+  vs4only  VS4-priced loans disclosed that way with no Classic FICO, against every FICO-priced loan
+           disclosed that way
 
   score_coverage    loans by GSE (+ All), week of first disclosure from BOTH_START (week "all": every week)
                     and pricing model, with how many carry both scores and how many only the one priced on
@@ -87,7 +88,8 @@ def build_datasets(con, in_range: str, mix_start: str, rows) -> dict[str, list[d
                l.vs4 - l.classic_fico AS gap,
                coalesce(l.loan_term = 360 AND l.amort_type = 'FRM', false) AS fixed30,
                l.issue_month >= DATE '{mix_start}' AS win_all,
-               coalesce(l.first_intraday_date >= DATE '{BOTH_START}', false) AS win_both
+               l.pricing_indicator IS NOT NULL AS win_both,  -- the record carries every score delivered
+               coalesce(l.first_intraday_date >= DATE '{BOTH_START}', false) AS first_new
         FROM loans l JOIN seller_map m ON m.key = seller_key(l.seller)
         WHERE l.score_model IN ('V', 'C') AND ({in_range})""")
     # Each score group's two sides, and the FICO-priced loans its VS4 side is held up against.
@@ -172,7 +174,7 @@ def build_datasets(con, in_range: str, mix_start: str, rows) -> dict[str, list[d
                count(*) FILTER (WHERE has_fico AND has_vs4) / count(*) AS both_share,
                count(*) FILTER (WHERE NOT (has_fico AND has_vs4)) / count(*) AS one_share,
                week + 7 <= current_date AS complete
-        FROM bw WHERE win_both
+        FROM bw WHERE first_new
         GROUP BY GROUPING SETS ((agency, week, score_model), (week, score_model), (agency, score_model), (score_model))
         ORDER BY week NULLS FIRST, CASE COALESCE(agency, 'All') WHEN 'All' THEN 0 WHEN 'FNMA' THEN 1 ELSE 2 END, model DESC""")
     return {"score_coverage": coverage, "borrowers": borrowers, "borrower_profile": profile}
