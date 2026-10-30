@@ -26,6 +26,7 @@
         <button type="button" role="tab" id="tab-scores" aria-controls="scores" data-tab="scores" aria-selected="false">Why lenders choose</button>
         <button type="button" role="tab" id="tab-borrowers" aria-controls="borrowers" data-tab="borrowers" aria-selected="false">Borrowers</button>
         <button type="button" role="tab" id="tab-pricing" aria-controls="pricing" data-tab="pricing" aria-selected="false">Pricing</button>
+        <button type="button" role="tab" id="tab-market" aria-controls="market" data-tab="market" aria-selected="false">Whole market</button>
         <button type="button" role="tab" id="tab-method" aria-controls="method" data-tab="method" aria-selected="false">Method</button>
       </nav>
       <div class="vx-controls" id="controls">
@@ -192,6 +193,7 @@
   <section class="vx-panel" id="scores" role="tabpanel" aria-labelledby="tab-scores" hidden></section>
   <section class="vx-panel" id="borrowers" role="tabpanel" aria-labelledby="tab-borrowers" hidden></section>
   <section class="vx-panel" id="pricing" role="tabpanel" aria-labelledby="tab-pricing" hidden></section>
+  <section class="vx-panel" id="market" role="tabpanel" aria-labelledby="tab-market" hidden></section>
   <section class="vx-panel" id="method" role="tabpanel" aria-labelledby="tab-method" hidden></section>
 
   <template id="tpl-outlook">
@@ -928,6 +930,116 @@
     </section>
   </template>
 
+  <template id="tpl-market">
+    <section class="vx-sec" id="market-sec" aria-labelledby="market-h">
+      <header class="vx-sec-h">
+        <h2 id="market-h">Beyond Fannie and Freddie: which score do lenders rely on?</h2>
+        <p><span data-term="hmda">HMDA</span>, the federal record nearly every lender files, names the score model behind each credit decision on every kind of loan. <span class="mk-year" data-source="whole_market" data-field="year" data-where="view=meta">—</span> is the starting line: lenders began delivering VS4 to Fannie and Freddie in 2026. The next file arrives about June <span class="mk-next">—</span>.</p>
+      </header>
+      <div class="vx-tiles">
+        <div class="vx-card">
+          <div class="vx-lbl">First-lien loans naming a FICO model</div>
+          <div class="vx-val mk-first-fico dash-skeleton" data-source="whole_market" data-field="fico" data-where="view=segment&amp;key=first">—</div>
+          <div class="vx-sub">A floor. <span class="mk-first-unknown" data-source="whole_market" data-field="unknown" data-where="view=segment&amp;key=first">—</span> name no model</div>
+        </div>
+        <div class="vx-card">
+          <div class="vx-lbl">First-lien loans naming VantageScore</div>
+          <div class="vx-val mk-first-vs dash-skeleton" data-source="whole_market" data-field="vs" data-where="view=segment&amp;key=first">—</div>
+          <div class="vx-sub">A floor</div>
+        </div>
+        <div class="vx-card">
+          <div class="vx-lbl">Home equity loans naming a FICO model</div>
+          <div class="vx-val mk-eq-fico dash-skeleton" data-source="whole_market" data-field="fico" data-where="view=segment&amp;key=equity">—</div>
+          <div class="vx-sub">A floor. <span class="mk-eq-new" data-source="whole_market" data-field="fico_new" data-where="view=segment&amp;key=equity">—</span> on <span data-term="ficonew">newer FICO</span></div>
+        </div>
+        <div class="vx-card">
+          <div class="vx-lbl">Home equity loans naming VantageScore</div>
+          <div class="vx-val mk-eq-vs dash-skeleton" data-source="whole_market" data-field="vs" data-where="view=segment&amp;key=equity">—</div>
+          <div class="vx-sub">A floor. <span class="mk-eq-vs4" data-source="whole_market" data-field="vs4" data-where="view=segment&amp;key=equity">—</span> on VS4</div>
+        </div>
+      </div>
+      <section class="vx-card" id="mk-seg-card" aria-labelledby="mk-seg-h">
+        <h2 id="mk-seg-h">Out of every 100 loans made in <span class="mk-year" data-source="whole_market" data-field="year" data-where="view=meta">—</span>, which score did the lender name?</h2>
+        <p class="vx-note">Only a named model counts. Grey is unknown: it could be either score, or none, so the shares naming FICO and VantageScore are floors. Loans sold to Fannie or Freddie that year had to be priced on Classic FICO, so that row shows how carefully lenders fill in this field.</p>
+        <div class="vx-legend mk-legend"></div>
+        <div class="vx-chart mk-bars" id="mk-seg-bars" data-source="whole_market"></div>
+        <details class="vx-more">
+          <summary>The table <span>with loans, dollars and every code</span></summary>
+          <div class="vx-tablebox">
+            <table class="vx-table" id="mk-seg-table" data-source="whole_market" data-row-key="view,key">
+              <thead><tr>
+                <th scope="col" class="vx-l" data-field="label">Kind of loan</th>
+                <th scope="col" data-field="n">Loans</th>
+                <th scope="col" class="vx-opt" data-field="usd_bn">$bn</th>
+                <th scope="col" data-field="classic">Classic FICO</th>
+                <th scope="col" data-field="fico_new">Newer FICO</th>
+                <th scope="col" data-field="vs4">VS4</th>
+                <th scope="col" class="vx-opt" data-field="vs_old">VantageScore 2.0, 3.0</th>
+                <th scope="col" class="vx-opt" data-field="multi">More than one model</th>
+                <th scope="col" class="vx-opt" data-field="other">Other model</th>
+                <th scope="col" data-field="none">No score reported</th>
+              </tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </details>
+      </section>
+      <section class="vx-card" id="mk-lender-card" aria-labelledby="mk-lender-h">
+        <div class="vx-row">
+          <h2 id="mk-lender-h">Which lenders named what?</h2>
+          <div class="vx-seg" data-param="mscope" role="group" aria-label="Which lenders">
+            <button type="button" data-v="all">Biggest</button><button type="button" data-v="first">Biggest in first-lien</button><button type="button" data-v="equity">Biggest in home equity</button><button type="button" data-v="vs">Most VantageScore</button><button type="button" data-v="fico_new">Most newer FICO</button>
+          </div>
+        </div>
+        <p class="vx-note">Each lender's loans made that year, named as it files. A "model not named" is a reporting choice, not a score: a lender that marks its loans this way may still be on FICO.</p>
+        <div class="vx-legend mk-legend"></div>
+        <div class="vx-chart mk-bars" id="mk-lender-bars" data-source="whole_market"></div>
+        <details class="vx-more">
+          <summary>The table <span>with up to 25 lenders</span></summary>
+          <div class="vx-tablebox">
+            <table class="vx-table" id="mk-lender-table" data-source="whole_market" data-row-key="view,scope,rank">
+              <thead><tr>
+                <th scope="col" class="vx-l" data-field="name">Lender</th>
+                <th scope="col" data-field="n">Loans</th>
+                <th scope="col" class="vx-opt" data-field="equity_share">In home equity</th>
+                <th scope="col" data-field="classic">Classic FICO</th>
+                <th scope="col" data-field="fico_new">Newer FICO</th>
+                <th scope="col" data-field="vs4">VS4</th>
+                <th scope="col" class="vx-opt" data-field="vs_old">VantageScore 2.0, 3.0</th>
+                <th scope="col" class="vx-opt" data-field="multi">More than one model</th>
+                <th scope="col" class="vx-opt" data-field="other">Other model</th>
+                <th scope="col" data-field="none">No score reported</th>
+              </tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </details>
+      </section>
+      <div class="vx-grid">
+        <section class="vx-card vx-wide" id="mk-model-card" aria-labelledby="mk-model-h">
+          <h2 id="mk-model-h">Who uses each model?</h2>
+          <p class="vx-note">A loan counts under each model it names, so these add to a little more than the market. Classic FICO is three bureaus' versions of one score, so one lender can appear under several.</p>
+          <div class="vx-tablebox">
+            <table class="vx-table" id="mk-model-table" data-source="whole_market" data-row-key="view,code">
+              <thead><tr>
+                <th scope="col" class="vx-l" data-field="name">Model named</th>
+                <th scope="col" data-field="n">Loans</th>
+                <th scope="col" data-field="equity_share">In home equity</th>
+                <th scope="col" class="vx-l" data-field="users">Biggest users</th>
+              </tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+        <section class="vx-card vx-wide" id="mk-apps-card" aria-labelledby="mk-apps-h">
+          <h2 id="mk-apps-h">How many applications does it take to make one loan?</h2>
+          <p class="vx-note">Applications are not score pulls, and this record cannot show how many pulls each one took. But it is the one public count of applications that never fund, which sets a reference point for the pulls per funded loan assumed under FICO's exposure on the Outlook tab.</p>
+          <div id="mk-apps-bars" data-source="whole_market"></div>
+        </section>
+      </div>
+    </section>
+  </template>
+
   <template id="tpl-method">
     <section class="vx-card" id="glossary-card">
       <h2>What the words mean</h2>
@@ -1039,6 +1151,19 @@
         </ul>
       </details>
       <details class="vx-more">
+        <summary>The whole market, from HMDA</summary>
+        <ul>
+        <li>HMDA is the federal record of mortgage applications that nearly every lender files each year. It names the score model the lender relied on for the credit decision. A year's public file arrives about the following June, so this page is a starting line, not a live count.</li>
+        <li>A named model is a fact. "More than one model" and "other model" name nothing further, and "not applicable" or "exempt" says nothing: smaller lenders can be exempt, and some loans, such as streamlined refinances, may use no score at all. None of these count as FICO or VantageScore, so the shares naming each are floors.</li>
+        <li>The fields cover the applicant and the co-applicant, and a lender can name the model in either. A loan with two named models counts once on the bars, under the first of VS4, older VantageScore, newer FICO and Classic FICO. In the table of models it counts under each.</li>
+        <li>Each loan made counts once, sorted in this order. Home equity and second liens: any line of credit or junior lien. Left out: multifamily and reverse mortgages. Then FHA, VA and USDA; sold to Fannie or Freddie; business purpose; jumbo, above the conforming limit; and conforming size by who bought it.</li>
+        <li>The buyer is whoever bought the loan in the same calendar year. A loan sold the next year shows as not sold, and a loan sold to an aggregator on its way to a GSE or a securitizer shows the aggregator. So the Fannie and Freddie and private securitizer rows are smaller than those markets, and not sold that year is more than what lenders keep.</li>
+        <li>A check on the field: loans sold to Fannie or Freddie that year had to be priced on Classic FICO, so what else they name shows how loosely lenders fill it in.</li>
+        <li>Applications per loan counts every application a lender took, funded or not, leaving out loans it bought. Lender names are as filed, and a lender's record covers the loans it made.</li>
+        <li>Source: <a class="vx-link" href="https://ffiec.cfpb.gov/data-publication/snapshot-national-loan-level-dataset" target="_blank" rel="noopener noreferrer">the public HMDA file</a> and the <a class="vx-link" href="https://files.ffiec.cfpb.gov/documentation/2024-hmda-fig.pdf" target="_blank" rel="noopener noreferrer">filing guide's list of score models</a>.</li>
+        </ul>
+      </details>
+      <details class="vx-more">
         <summary>Downloads</summary>
         <ul>
         <li>Sources on this dashboard downloads any dataset's rows as CSV. The Excel workbook, with these tables and the exposure calculator as live formulas, is rebuilt with each refresh in the exports folder of the project on this computer.</li>
@@ -1059,3 +1184,4 @@
 <script src="app.js"></script>
 <script src="tools.js"></script>
 <script src="visuals.js"></script>
+<script src="market.js"></script>

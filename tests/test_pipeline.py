@@ -534,4 +534,79 @@ y = 6 + np.array([0, 0.1, 0.2, 0.3])[a] + np.array([0, -0.05, 0.05])[b] + rng.no
 mu, eff = pricing._fit(y, {"a": a, "b": b}, {"a": 4, "b": 3}, ~vs4)
 premium = ((y - pricing._predict(mu, eff, {"a": a, "b": b})) * 100)[vs4].mean()
 assert abs(premium - 25) < 1, premium
+# HMDA on planted files: a named model counts wherever the lender put it, each loan lands in one segment, a model's users are counted under it, and the raw files go only once the count ties to the lenders' filings.
+from gsescore import hmda  # noqa: E402
+from gsescore import paths as gse_paths  # noqa: E402
+
+hmda.LENDER_MIN = 1
+H_HEAD = ["activity_year", *hmda.KEEP_TEXT, *hmda.KEEP_INT, "income"]
+
+
+def lar(lei, a=3, c=10, action=1, purchaser=0, loan_type=1, lien=1, open_end=2, reverse=2, biz=2, limit="C", dwelling="Single Family (1-4 Units):Site-Built"):
+    v = {"activity_year": 2025, "lei": lei, "conforming_loan_limit": limit, "derived_dwelling_category": dwelling, "action_taken": action, "purchaser_type": purchaser, "loan_type": loan_type, "loan_purpose": 1, "lien_status": lien,
+         "reverse_mortgage": reverse, "open_end_line_of_credit": open_end, "business_or_commercial_purpose": biz, "loan_amount": 300000, "occupancy_type": 1, "applicant_credit_score_type": a, "co_applicant_credit_score_type": c,
+         "submission_of_application": 1, "initially_payable_to_institution": 1, "aus_1": 6, "income": "NA"}
+    return lei, ",".join(str(v[h]) for h in H_HEAD)
+
+
+planted = [lar("A", a=1, purchaser=1) for _ in range(10)] + [
+    lar("C", biz=1, purchaser=3),  # sold to a GSE, whatever its purpose
+    lar("A", a=9, c=2, loan_type=2), lar("A", a=9, c=9, loan_type=2),  # FHA: named in the co-applicant's field; nothing named
+    lar("B", a=6, loan_type=3),  # VA, older VantageScore
+    lar("B", a=15, c=9, lien=2), lar("B", a=9, c=15, lien=2), lar("B", a=1, c=15, lien=2), lar("B", a=11, open_end=1), lar("B", lien=2),  # home equity: VS4 in either field and over FICO; a first-lien line of credit
+    lar("C", a=7, limit="NC"), lar("C", a=8, purchaser=5), lar("C", a=1111, c=1111, purchaser=71), lar("C", a=12), lar("C", biz=1),  # jumbo, private, another buyer, not sold, business
+    lar("C", reverse=1), lar("C", dwelling="Multifamily:Site-Built"),  # left out
+    lar("A", a=2, action=3, loan_type=2), lar("A", a=9, c=9, action=4, loan_type=2),  # FHA applications that never funded
+    lar("A", a=9, c=9, action=6),  # bought, not made
+]
+h_raw = home / "data" / "hmda" / "raw" / "2025"
+h_raw.mkdir(parents=True)
+
+
+def write_h_zips(extra=0):
+    with zipfile.ZipFile(h_raw / "2025_public_lar_csv.zip", "w") as z:
+        z.writestr("2025_public_lar_csv.csv", "\n".join([",".join(H_HEAD)] + [r for _, r in planted]) + "\n")
+        z.writestr("__MACOSX/._2025_public_lar_csv.csv", "not a table")
+    counts = {k: sum(1 for lei, _ in planted if lei == k) for k in "ABC"}
+    names = {"A": "BIG MORTGAGE, LLC", "B": "Second Bank", "C": "THIRD CREDIT UNION (68671)"}
+    with zipfile.ZipFile(h_raw / "2025_public_ts_csv.zip", "w") as z:
+        z.writestr("2025_public_ts_csv.csv", "lei,respondent_name,lar_count\n" + "".join(f'{k},"{names[k]}",{counts[k] + (extra if k == "C" else 0)}\n' for k in "ABC"))
+
+
+write_h_zips(extra=1)
+try:
+    hmda.ingest(2025)
+    raise AssertionError("a count that does not tie should stop the load")
+except ValueError:
+    assert (h_raw / "2025_public_lar_csv.zip").exists() and (h_raw / "2025_public_ts_csv.zip").exists()
+assert hmda.build_datasets() == {"whole_market": []} and not (h_raw / "2025_public_lar.csv").exists()  # nothing loaded, and the unpacked file is gone
+write_h_zips()
+h_in = hmda.ingest(2025)
+assert h_in["records"] == len(planted) and h_in["kept"] == len(planted) - 1 and not (home / "data" / "hmda" / "raw").exists(), h_in
+wm = hmda.build_datasets()["whole_market"]
+seg = {r["key"]: r for r in wm if r["view"] == "segment"}
+assert seg["gse"]["n"] == 11 and seg["gse"]["classic"] == 1
+assert seg["fha"]["n"] == 2 and seg["fha"]["classic"] == 0.5 and seg["fha"]["none"] == 0.5 and seg["fha"]["unknown"] == 0.5
+assert seg["va"]["vs_old"] == 1 and seg["va"]["vs"] == 1
+assert seg["equity"]["n"] == 5 and seg["equity"]["vs4"] == 0.6 and seg["equity"]["fico_new"] == 0.2 and seg["equity"]["classic"] == 0.2 and seg["equity"]["fico"] == 0.4 and seg["equity"]["vs"] == 0.6
+assert seg["jumbo"]["multi"] == 1 and seg["jumbo"]["unnamed"] == 1 and seg["private"]["other"] == 1 and seg["other_buyer"]["none"] == 1 and seg["not_sold"]["fico_new"] == 1 and seg["business"]["classic"] == 1
+assert seg["all"]["n"] == 24 and seg["first"]["n"] == 19, (seg["all"]["n"], seg["first"]["n"])
+assert abs(sum(seg["all"][k] for k in hmda.SHARES) - 1) < 1e-5
+assert seg["gse"]["first_lien"] and not seg["equity"]["first_lien"]
+h_meta = next(r for r in wm if r["view"] == "meta")
+assert h_meta["year"] == 2025 and h_meta["records"] == len(planted) and h_meta["n"] == 26 and h_meta["lenders"] == 3, h_meta
+model = {r["code"]: r for r in wm if r["view"] == "model"}
+assert model[15]["n"] == 3 and model[15]["equity_share"] == 1 and model[15]["users"] == "Second Bank (3)" and model[1]["n"] == 11 and model[14]["n"] == 0, model[15]
+apps = {r["key"]: r for r in wm if r["view"] == "apps"}
+assert apps["fha"]["n"] == 2 and apps["fha"]["apps"] == 4 and apps["fha"]["per_loan"] == 2, apps["fha"]
+vs_first = [r for r in wm if r["view"] == "lender" and r["scope"] == "vs"][0]
+assert vs_first["name"] == "Second Bank" and vs_first["n"] == 6 and vs_first["equity_share"] == round(5 / 6, 6), vs_first
+biggest = [r for r in wm if r["view"] == "lender" and r["scope"] == "all"]
+assert biggest[0]["name"] == "Big Mortgage" and biggest[0]["n"] == 12 and {r["name"] for r in biggest} == {"Big Mortgage", "Second Bank", "Third Credit Union"}, biggest[0]
+assert hmda.short_name("CROSSCOUNTRY MORTGAGE, LLC") == "CrossCountry Mortgage" and hmda.short_name("US BANK, N.A.") == "US Bank" and hmda.short_name("DHI Mortgage Company, LTD.") == "DHI Mortgage" and hmda.short_name("loanDepot.com LLC") == "loanDepot.com"
+(gse_paths.SITE_DATA / "whole_market.json").write_text(json.dumps({"rows": wm}))
+with zipfile.ZipFile(build_workbook()) as z:
+    book_xml = z.read("xl/workbook.xml").decode()
+assert all(f'name="{n}"' in book_xml for n in ("Whole market", "Whole market lenders", "Score models")), book_xml[:400]
+
 print("ok:", home)

@@ -8,5 +8,6 @@ DATA = ROOT / "data"
 RAW = DATA / "raw"              # downloaded files, untouched: raw/{FNMA,FHLMC}/{intraday,monthend,monthly}/
 WAREHOUSE = DATA / "warehouse"  # one parquet per ingested file: warehouse/{loan,security}/{agency}/{kind}/
 MANIFEST = WAREHOUSE / "manifest.jsonl"
+HMDA = DATA / "hmda"              # the federal mortgage record, one parquet per year
 DB = DATA / "gse.duckdb"
 SITE_DATA = ROOT / "site" / "data"

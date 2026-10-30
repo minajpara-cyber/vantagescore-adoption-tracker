@@ -24,7 +24,7 @@ PUBLIC_DATASETS = ["monthly", "weekly", "composition", "profile", "summary", "ev
 DASHBOARD_DATASETS = ["monthly", "weekly", "summary", "events", "sellers", "seller_monthly", "seller_weekly",
                       "seller_splits", "adoption", "adopters", "series", "asof", "borrowers", "borrower_profile",
                       "pricing", "choice", "ceiling", "outlook", "rules", "score_mix", "lender_stage", "statements", "fees",
-                      "week_note", "assumptions", "lender_mix", "closing"]
+                      "week_note", "assumptions", "lender_mix", "closing", "whole_market"]
 UPLOADS = paths.DATA / "dashboard_uploads.json"
 DOCS = paths.ROOT / "docs"
 PREVIEW = paths.ROOT / "build" / "preview"

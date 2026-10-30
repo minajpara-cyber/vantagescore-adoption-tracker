@@ -104,6 +104,7 @@ def _read_me(b: _Book, through: str):
         ("Rules: how often each lender prices on VS4 with its score under and over 20 points above FICO, by week.", None),
         ("VS4 share by month, Loans by month: the largest lenders and every lender with a ticker, both GSEs.", None),
         ("Weekly note, Statements: what changed each week; what companies and others have said, with links.", None),
+        ("Whole market, Whole market lenders, Score models: which score lenders named on every kind of loan in the latest HMDA file, which lenders named what, and who uses each model.", None),
         ("", None),
         ("Read these with care", "bold"),
         ("Two things in these files are facts: a score that shows, and the Pricing Indicator saying which score priced the loan. A score that does not show is unknown, not absent. So priced on VS4 is exact, the share showing a score is a floor on loans that have it, and the share showing only one score is a ceiling on loans that have only that one.", None),
@@ -115,6 +116,7 @@ def _read_me(b: _Book, through: str):
         ("The rate model is a comparison of like loans, not a test of cause. Points and lender credits are not disclosed, so a saving can reach the borrower without showing in the note rate.", None),
         ("Until late September the files show only the score that priced a loan, so the earlier part of Carrying VS4 is a floor. Pulls on loans that never fund cannot be seen anywhere in these files.", None),
         ("The exposure calculator is arithmetic on your inputs, not a forecast. It covers loans sold to the GSEs only; FHA accepts VS4 from January 1, 2027.", None),
+        ("HMDA is annual and names the model the lender relied on. A named model is a fact; more than one model, other model, not applicable and exempt are unknown, so the shares naming FICO and VantageScore are floors. The buyer is whoever bought the loan that calendar year.", None),
         ("Not affiliated with Fannie Mae, Freddie Mac, FICO or VantageScore Solutions.", None),
     ]
     for i, (text, style) in enumerate(lines):
@@ -490,6 +492,24 @@ def _statements(b: _Book):
     b.table(ws, 3, [("Date", "date", "day", 12), ("Who", "who", "text", 22), ("Statement", "statement", "wrap", 110), ("Source", lambda r: (r["source"] or "Source", r["url"]) if r["url"] else None, "link", 28)], rows)
 
 
+def _whole_market(b: _Book):
+    rows = _rows("whole_market")
+    meta = next((r for r in rows if r["view"] == "meta"), None)
+    if not meta:
+        return
+    shares = [("Classic FICO", "classic", "pct", 9), ("Newer FICO", "fico_new", "pct", 9), ("VS4", "vs4", "pct", 9), ("VantageScore 2.0, 3.0", "vs_old", "pct", 11), ("More than one model", "multi", "pct", 10), ("Other model", "other", "pct", 9), ("No score reported", "none", "pct", 9)]
+    ws = b.sheet("Whole market", f"Which score lenders named on loans made in {meta['year']}, from HMDA", "A named model is a fact and the rest is unknown, so what is named is a floor. Each loan counts once; multifamily and reverse mortgages are left out.")
+    next_row = b.table(ws, 3, [("Kind of loan", "label", "text", 44), ("Loans", "n", "int", 11), ("$bn", "usd_bn", "usdm", 10), *shares], sorted((r for r in rows if r["view"] == "segment"), key=lambda r: r["order"]))
+    ws.write(next_row + 1, 0, "Applications taken for each loan made, funded or not", b.fmt("text", bold=True))
+    b.table(ws, next_row + 2, [("Kind of loan", "label", "text", 44), ("Loans", "n", "int", 11), ("Applications", "apps", "int", 10), ("Per loan", "per_loan", "num", 9)], [r for r in rows if r["view"] == "apps"])
+    ws = b.sheet("Whole market lenders", f"Which score each lender named on loans made in {meta['year']}, from HMDA", "The biggest lenders in each group. Names as filed; a lender's record covers the loans it made.")
+    groups = {"all": "Biggest", "first": "Biggest in first-lien", "equity": "Biggest in home equity", "vs": "Most VantageScore", "fico_new": "Most newer FICO"}
+    lenders = sorted((r for r in rows if r["view"] == "lender"), key=lambda r: (list(groups).index(r["scope"]), r["rank"]))
+    b.table(ws, 3, [("Group", lambda r: groups[r["scope"]], "text", 22), ("Rank", "rank", "int", 6), ("Lender", "name", "text", 34), ("Loans", "n", "int", 10), ("In home equity", "equity_share", "pct", 9), *shares], lenders)
+    ws = b.sheet("Score models", f"Who used each score model on loans made in {meta['year']}, from HMDA", "A loan counts under each model it names.")
+    b.table(ws, 3, [("Model named", "name", "text", 28), ("Loans", "n", "int", 11), ("In home equity", "equity_share", "pct", 9), ("Biggest users", "users", "text", 90)], [r for r in rows if r["view"] == "model"])
+
+
 def build_workbook() -> Path:
     summary = next((r for r in _rows("summary") if r["agency"] == "All"), {})
     through = str(summary.get("data_through") or date.today().isoformat())[:10]
@@ -511,6 +531,7 @@ def build_workbook() -> Path:
     _rates(b)
     _rules(b)
     _by_month(b)
+    _whole_market(b)
     _notes(b)
     _statements(b)
     b.book.close()

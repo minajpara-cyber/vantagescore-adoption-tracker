@@ -11,3 +11,5 @@ __pycache__/
 /.claude/
 # Research notes with early findings stay on this computer.
 /notes/ANALYTICS_PLAN.md
+/notes/NON_CONFORMING_SOURCES.md
+/notes/GINNIE_FHA_SOURCES.md

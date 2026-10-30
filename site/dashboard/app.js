@@ -4,7 +4,7 @@
   const AG_NAME = { All: 'Both GSEs', FNMA: 'Fannie Mae', FHLMC: 'Freddie Mac' };
   const AG_NOUN = { All: 'GSE', FNMA: 'Fannie Mae', FHLMC: 'Freddie Mac' };
   const MODELS = ['VantageScore 4.0', 'Classic FICO'];
-  const TABS = ['overview', 'outlook', 'lenders', 'scores', 'borrowers', 'pricing', 'method'];
+  const TABS = ['overview', 'outlook', 'lenders', 'scores', 'borrowers', 'pricing', 'market', 'method'];
   const DEF_FIRST = { any: 'first_vs4_month', ten: 'first_10_month', pct5: 'first_5pct_month' };
   // Months drawn on the adoption and seller charts: VS4 deliveries begin in April 2026.
   const ADOPT_FROM = '2026-04-01';
@@ -41,6 +41,7 @@
     if (!['month', 'close'].includes(p.cperiod)) p.cperiod = 'week';
     if (!['carrying', 'rising'].includes(p.lsort)) p.lsort = 'share';
     if (p.ccohort !== 'latest') p.ccohort = 'all';
+    if (!['all', 'first', 'equity', 'vs', 'fico_new'].includes(p.mscope)) p.mscope = 'all';
     return p;
   };
   const rowsOf = (id) => {
@@ -72,7 +73,7 @@
       panels[k].hidden = k !== t;
       root.querySelector(`.vx-tabs [data-tab="${k}"]`).setAttribute('aria-selected', String(k === t));
     }
-    document.getElementById('controls').hidden = t === 'borrowers' || t === 'pricing' || t === 'method';
+    document.getElementById('controls').hidden = t === 'borrowers' || t === 'pricing' || t === 'market' || t === 'method';
     document.getElementById('agency-seg').hidden = t === 'outlook';  // the outlook covers both GSEs together
   }
   function show(t) {
@@ -2201,7 +2202,7 @@
     window.vx.after.forEach((fn) => fn());
   }
   window.vx = { root, rowsOf, statusOf, int, pct1, money, usdM, olName, openSeller, entityOf, monthShort, monthYear, monthLabel, shortDay, reachText, prep, svgFor, bandFrame, yAxis, bandAxis, bandHover, legend, tooltip, textWidth,
-    MIX_GROUPS, ADOPT_FROM, AG_NAME, show, col, redraw: draw, after: [], hooks: { overview: [], outlook: [], lenders: [], scores: [], borrowers: [], pricing: [], method: [] } };
+    MIX_GROUPS, ADOPT_FROM, AG_NAME, show, col, mark, redraw: draw, after: [], hooks: { overview: [], outlook: [], lenders: [], scores: [], borrowers: [], pricing: [], market: [], method: [] } };
 
   // A link names a page (#lenders) or a seller (#seller-rocket-mortgage); the page opens it as it loads.
   const named = decodeURIComponent(location.hash.slice(1));

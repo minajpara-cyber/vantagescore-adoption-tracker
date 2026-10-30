@@ -1,4 +1,4 @@
-"""Command line: gsescore {have,unpack,refresh,ingest,status,build,export,note,site,preview,publish,dashboard-changes,dashboard-record,sql}."""
+"""Command line: gsescore {have,unpack,refresh,ingest,hmda,status,build,export,note,site,preview,publish,dashboard-changes,dashboard-record,sql}."""
 import argparse
 import json
 import re
@@ -110,6 +110,11 @@ def cmd_ingest(args):
     print(f"ingested {counts['ingested']}, skipped {counts['skipped']} (already in manifest)")
 
 
+def cmd_hmda(args):
+    from .hmda import ingest
+    print(json.dumps(ingest(args.year), indent=1))
+
+
 def cmd_status(args):
     from .warehouse import connect
     con = connect()
@@ -169,6 +174,9 @@ def main():
     s.add_argument("paths", nargs="*", type=Path)
     s.add_argument("--force", action="store_true", help="re-ingest files already in the manifest")
     s.set_defaults(fn=cmd_ingest)
+    s = sub.add_parser("hmda", help="load a year's HMDA zips from data/hmda/raw/<year>/ into a small parquet, then delete them")
+    s.add_argument("year", type=int)
+    s.set_defaults(fn=cmd_hmda)
     sub.add_parser("status", help="show warehouse coverage").set_defaults(fn=cmd_status)
     sub.add_parser("build", help="build site/data/*.json and data/gse.duckdb").set_defaults(fn=cmd_build)
     sub.add_parser("export", help="build the analyst workbook in exports/ from site/data").set_defaults(fn=cmd_export)

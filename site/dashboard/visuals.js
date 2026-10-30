@@ -390,6 +390,11 @@
     ['closing', 'Closing month', 'The month the loan closed, as near as the files allow: its first payment month less two. A recent month is still arriving, so a label such as 60% in estimates how much of it has come through so far.'],
     ['lender', 'Lender', 'The company that delivered the loan to the GSE. It is not always the one that made the loan.'],
     ['bp', 'bp', 'Basis point, a hundredth of a percentage point. A pt is a full percentage point.'],
+    ['hmda', 'HMDA', 'The Home Mortgage Disclosure Act record: a yearly federal filing by nearly every mortgage lender, covering each application whatever became of it. It names the score model the lender relied on for the credit decision.'],
+    ['classic', 'Classic FICO', 'The older FICO versions the GSEs have long required: Equifax Beacon 5.0, Experian Fair Isaac v2 and TransUnion FICO Classic 04 or 98.'],
+    ['ficonew', 'Newer FICO', 'FICO 8, FICO 9, FICO 10 and FICO 10T. Still FICO, but not the versions the GSEs have long required.'],
+    ['unnamed', 'Model not named', 'The lender said it relied on more than one model, or on another model, without saying which. It could be FICO or VantageScore, so it counts as neither.'],
+    ['noscore', 'No score reported', 'The lender marked the field not applicable, or it is exempt from reporting it. Some loans, such as streamlined refinances, may use no score at all. It does not mean FICO.'],
   ];
   const termOf = new Map(TERMS.map((t) => [t[0], t]));
 
