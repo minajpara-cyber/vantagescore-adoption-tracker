@@ -18,7 +18,7 @@
   .vx-seg button[aria-pressed="true"] { background: var(--color-panel); color: var(--color-fg); font-weight: var(--cds-font-weight-medium); }
   .vx-panel { display: flex; flex-direction: column; gap: var(--cds-gap-lg); }
   .vx-card { background: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: var(--cds-pad-lg); min-width: 0; }
-  .vx-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 9.5rem), 1fr)); gap: var(--cds-gap-md); }
+  .vx-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr)); gap: var(--cds-gap-md); }
   .vx-lbl, .vx-sub { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
   .vx-sub + .vx-sub { margin-top: 2px; }
   .vx-val { margin: var(--cds-gap-xs) 0; font-family: var(--font-anthropic-serif); font-weight: 400; font-size: var(--cds-font-size-title); line-height: 1.15; font-variant-numeric: tabular-nums; }
@@ -66,7 +66,6 @@
   .vx-cmp > div { padding: var(--cds-pad-xs) 0; border-bottom: 1px solid var(--color-border-line); }
   .vx-cmp .vx-h { color: var(--color-fg-muted); font-weight: var(--cds-font-weight-medium); }
   .vx-cmp .vx-v { text-align: right; }
-  .vx-cmp [hidden], .vx-seg[hidden], .cover-note:empty { display: none; }
   .vx-method ul { margin: var(--cds-gap-sm) 0 0; padding-left: 1.1rem; display: grid; gap: var(--cds-gap-xs); max-width: 92ch; font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
   .vx-method h2 + ul { margin-bottom: var(--cds-gap-lg); }
   .vx-fail { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: var(--cds-gap-xs); font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
@@ -80,10 +79,6 @@
   .vx-stat-v { margin-top: 2px; font-size: var(--cds-font-size-heading); font-weight: var(--cds-font-weight-medium); font-variant-numeric: tabular-nums; }
   .sx-charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); gap: var(--cds-gap-lg) var(--cds-gap-xl); }
   .sx-charts h3 { margin-bottom: var(--cds-gap-sm); }
-  .ol-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  .vx-table input.ol-check { margin: 0; accent-color: var(--color-fg); vertical-align: middle; cursor: pointer; }
-  .vx-table .ol-tick { width: 1rem; padding-right: 0; }
-  .ol-pick-line { margin-top: 0; color: var(--color-fg); }
   .vx [data-dash-source-state=empty] { color: transparent; }
   .vx [data-dash-source-state=refreshing] { opacity: .5; transition: opacity var(--cds-dur-slow); }
 </style>
@@ -108,11 +103,8 @@
     <div class="vx-bar">
       <nav class="vx-tabs" role="tablist" aria-label="Pages">
         <button type="button" role="tab" id="tab-overview" aria-controls="overview" data-tab="overview" aria-selected="true">Overview</button>
-        <button type="button" role="tab" id="tab-outlook" aria-controls="outlook" data-tab="outlook" aria-selected="false">Outlook</button>
         <button type="button" role="tab" id="tab-lenders" aria-controls="lenders" data-tab="lenders" aria-selected="false">Lenders</button>
-        <button type="button" role="tab" id="tab-scores" aria-controls="scores" data-tab="scores" aria-selected="false">Score choice</button>
         <button type="button" role="tab" id="tab-borrowers" aria-controls="borrowers" data-tab="borrowers" aria-selected="false">Borrowers</button>
-        <button type="button" role="tab" id="tab-pricing" aria-controls="pricing" data-tab="pricing" aria-selected="false">Pricing</button>
         <button type="button" role="tab" id="tab-method" aria-controls="method" data-tab="method" aria-selected="false">Method</button>
       </nav>
       <div class="vx-controls" id="controls">
@@ -154,11 +146,6 @@
         <div class="vx-lbl">Biggest rise in VS4 share, <span class="h-mover-from-month" data-source="highlights" data-field="mover_from_month" data-row="0">—</span> to <span class="h-mover-to-month" data-source="highlights" data-field="mover_to_month" data-row="0">—</span></div>
         <div class="vx-val"><span class="h-mover-change dash-skeleton" data-source="highlights" data-field="mover_change_pts" data-row="0">—</span> <span class="vx-unit">pts</span></div>
         <div class="vx-sub"><button type="button" class="vx-link h-mover-name" data-source="highlights" data-field="mover_name" data-row="0">—</button>: <span class="h-mover-from" data-source="highlights" data-field="mover_from" data-row="0">—</span> to <span class="h-mover-to" data-source="highlights" data-field="mover_to" data-row="0">—</span></div>
-      </div>
-      <div class="vx-card" id="tile-ceiling">
-        <div class="vx-lbl">VS4 share if every lender priced on the better score</div>
-        <div class="vx-val ce-better dash-skeleton" data-source="ceiling" data-field="better" data-where="view=both&amp;agency=All">—</div>
-        <div class="vx-sub">Against <span class="ce-actual" data-source="ceiling" data-field="actual" data-where="view=both&amp;agency=All">—</span> actual, on loans disclosed with every score since Oct 19, 2026</div>
       </div>
     </section>
 
@@ -220,105 +207,9 @@
     </section>
   </section>
 
-  <section class="vx-panel" id="outlook" role="tabpanel" aria-labelledby="tab-outlook" hidden></section>
   <section class="vx-panel" id="lenders" role="tabpanel" aria-labelledby="tab-lenders" hidden></section>
-  <section class="vx-panel" id="scores" role="tabpanel" aria-labelledby="tab-scores" hidden></section>
   <section class="vx-panel" id="borrowers" role="tabpanel" aria-labelledby="tab-borrowers" hidden></section>
-  <section class="vx-panel" id="pricing" role="tabpanel" aria-labelledby="tab-pricing" hidden></section>
   <section class="vx-panel" id="method" role="tabpanel" aria-labelledby="tab-method" hidden></section>
-
-  <template id="tpl-outlook">
-    <section class="vx-sec" id="outlook-sec" aria-labelledby="outlook-h">
-      <header class="vx-sec-h">
-        <h2 id="outlook-h">Where VS4's share could go</h2>
-        <p>Scenarios, not a forecast. Each starts from loans disclosed with every score delivered and issued <span class="ol-window" data-source="outlook" data-field="window_from" data-where="view=params">—</span>, both GSEs: every lender's share of them, its VS4 share, and its ceiling, the share it would reach pricing on VS4 whenever VS4 lands in a better fee bucket. The deep lenders, <span class="ol-deep-names" data-source="outlook" data-field="deep_names" data-where="view=params">—</span>, price on VS4 for <span class="vx-num ol-q" data-source="outlook" data-field="q" data-where="view=params">—</span> of what their ceilings allow. A lender "as deep" prices on VS4 at that rate.</p>
-      </header>
-      <div class="vx-tiles">
-        <div class="vx-card">
-          <div class="vx-lbl">VS4 share today</div>
-          <div class="vx-val ol-today dash-skeleton" data-source="outlook" data-field="value" data-where="view=ladder&amp;key=today">—</div>
-          <div class="vx-sub"><span class="ol-users" data-source="outlook" data-field="users" data-where="view=params">—</span> lenders using VS4 deliver <span class="ol-user-share" data-source="outlook" data-field="user_share" data-where="view=params">—</span> of loans</div>
-        </div>
-        <div class="vx-card">
-          <div class="vx-lbl">If lenders using VS4 go as deep</div>
-          <div class="vx-val ol-users-v dash-skeleton" data-source="outlook" data-field="value" data-where="view=ladder&amp;key=users">—</div>
-          <div class="vx-sub">Reached by <span class="ol-users-by" data-source="outlook" data-field="month">—</span> along the deep lenders' path</div>
-        </div>
-        <div class="vx-card">
-          <div class="vx-lbl"><span class="ol-end" data-source="outlook" data-field="end_month" data-where="view=params">—</span> at the recent pace</div>
-          <div class="vx-val ol-pace-v dash-skeleton" data-source="outlook" data-field="value">—</div>
-          <div class="vx-sub">Other lenders keep starting at <span class="ol-pace" data-source="outlook" data-field="pace" data-where="view=params">—</span> a month, and all go as deep</div>
-        </div>
-        <div class="vx-card">
-          <div class="vx-lbl">Every lender as deep</div>
-          <div class="vx-val ol-alldeep dash-skeleton" data-source="outlook" data-field="value" data-where="view=ladder&amp;key=all_deep">—</div>
-          <div class="vx-sub">The ceiling, every lender pricing on VS4 whenever it is better: <span class="ol-full" data-source="outlook" data-field="value" data-where="view=ladder&amp;key=all_full">—</span></div>
-        </div>
-      </div>
-    </section>
-    <section class="vx-grid">
-      <div class="vx-card vx-wide" id="ol-path-card">
-        <h2>Three paths</h2>
-        <p class="vx-note">Actual VS4 share by issue month (the latest partial), then month by month: no lender changes; lenders already using VS4 go as deep, starting next month along the path the deep lenders took; and, on top of that, other lenders start at the recent pace and go as deep too. The shaded months are scenarios.</p>
-        <div class="vx-legend" id="ol-path-legend"></div>
-        <div class="vx-chart dash-skeleton" id="ol-path-chart" data-source="outlook"></div>
-      </div>
-      <div class="vx-card" id="ol-ladder-card">
-        <h2>Where it settles</h2>
-        <p class="vx-note">VS4's share once each group of lenders prices on VS4 as deeply as the deep lenders, adding one group at a time, against the ceiling.</p>
-        <div class="vx-chart dash-skeleton" id="ol-ladder-chart" data-source="outlook"></div>
-      </div>
-      <div class="vx-card" id="ol-ramp-card">
-        <h2>How fast the deep lenders got there</h2>
-        <p class="vx-note">Each deep lender's VS4 share as a share of its ceiling, by months since its first VS4 loan, and the path the cases give a lender that goes deep: the deep lenders together while at least two have the month, then their depth today.</p>
-        <div class="vx-legend" id="ol-ramp-legend"></div>
-        <div class="vx-chart vx-chart-sm dash-skeleton" id="ol-ramp-chart" data-source="outlook"></div>
-      </div>
-    </section>
-    <section class="vx-card" id="ol-lender-card">
-      <div class="vx-row">
-        <h2>Lenders that would move it</h2>
-        <div class="vx-seg" id="ol-pick" role="group" aria-label="Pick lenders">
-          <button type="button" data-pick="users">Using VS4</button><button type="button" data-pick="next">Plus the largest not using it</button><button type="button" data-pick="all">All</button><button type="button" data-pick="none">Clear</button>
-        </div>
-      </div>
-      <p class="vx-note">The largest lenders and every other lender using VS4, by share of loans in the window. As deep: each lender's VS4 share at the deep lenders' rate of its own ceiling. Adds: what that adds to the market's VS4 share. Uses VS4 when better: among its loans with both scores where VS4 lands in a better bucket (20 or more), the share priced on VS4. Pick lenders to add them up.</p>
-      <p class="vx-note ol-pick-line">Picked <span class="vx-num ol-pick-n">0 lenders</span>: VS4 share <span class="vx-num ol-pick-v">—</span> <span class="ol-pick-d"></span></p>
-      <div class="vx-tablebox">
-        <table class="vx-table" id="ol-table" data-source="outlook" data-row-key="view,id" data-sort>
-          <thead><tr>
-            <th scope="col" class="vx-l ol-tick"><span class="ol-sr">Pick</span></th>
-            <th scope="col" class="vx-l vx-name" data-col="name" data-field="short" data-type="text"><button type="button">Lender</button></th>
-            <th scope="col" class="vx-l vx-opt" data-col="status" data-field="status" data-type="text"><button type="button">VS4 use</button></th>
-            <th scope="col" data-col="share" data-field="share"><button type="button">Share of loans</button></th>
-            <th scope="col" data-col="vs4" data-field="vs4_share"><button type="button">VS4 now</button></th>
-            <th scope="col" class="vx-opt" data-col="better" data-field="better_vs4"><button type="button">Uses VS4 when better</button></th>
-            <th scope="col" class="vx-opt" data-col="both" data-field="both_share"><button type="button">Both scores</button></th>
-            <th scope="col" class="vx-opt" data-col="ceiling" data-field="ceiling"><button type="button">Ceiling</button></th>
-            <th scope="col" class="vx-opt" data-col="deep" data-field="deep"><button type="button">As deep</button></th>
-            <th scope="col" data-col="adds" data-field="adds_deep"><button type="button">Adds (pts)</button></th>
-          </tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </section>
-    <section class="vx-card" id="ol-pace-card">
-      <h2>How fast lenders are starting</h2>
-      <p class="vx-note">By issue month since VS4 opened to every lender: lenders delivering their first VS4 loan, their share of all loans, the share of loans from lenders that had never delivered one, and the start rate, the first over the second. The pace case uses the rate over all these months.</p>
-      <div class="vx-tablebox">
-        <table class="vx-table" id="ol-pace-table" data-source="outlook" data-row-key="view,key">
-          <thead><tr>
-            <th scope="col" class="vx-l" data-field="month">Issue month</th>
-            <th scope="col" data-field="new_sellers">Lenders starting</th>
-            <th scope="col" data-field="new_share">Their share of loans</th>
-            <th scope="col" class="vx-opt" data-field="pool_share">Not yet using VS4</th>
-            <th scope="col" data-field="rate">Start rate</th>
-          </tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </section>
-  </template>
 
   <template id="tpl-lenders">
     <section class="vx-card" id="seller-card" aria-labelledby="sx-heading">
@@ -337,7 +228,6 @@
         <div><div class="vx-lbl">Share of all VS4 loans</div><div class="vx-stat-v sx-ofall dash-skeleton" data-source="sellers" data-field="share_of_all_vs4">—</div></div>
         <div><div class="vx-lbl">First VS4 loan</div><div class="vx-stat-v sx-first dash-skeleton" data-source="sellers" data-field="first_vs4_month">—</div></div>
         <div><div class="vx-lbl">Bought from correspondents</div><div class="vx-stat-v sx-corr dash-skeleton" data-source="sellers" data-field="corr_share_recent">—</div></div>
-        <div><div class="vx-lbl">Delivered with both scores, from Oct 19</div><div class="vx-stat-v sx-pull dash-skeleton" data-source="choice" data-field="both_share">—</div></div>
       </div>
       <div class="sx-charts">
         <div id="sx-share">
@@ -449,183 +339,34 @@
     </section>
   </template>
 
-  <template id="tpl-scores">
-    <section class="vx-sec" id="choice-sec" aria-labelledby="choice-h">
-      <header class="vx-sec-h">
-        <div class="vx-row">
-          <h2 id="choice-h">When lenders price on VS4</h2>
-          <select class="vx-select" id="choice-scope" aria-label="Lender" data-source="choice"></select>
-        </div>
-        <p>Loans that carry both scores, by how many of the GSEs' upfront-fee score buckets (639 or less, then 20-point steps to 780 and over) the VS4 score sits above or below the Classic FICO, and the share priced on VS4. A lender that orders both can price on either. All lenders follow the GSE picked above; a single lender covers both GSEs, and its bars need 20 or more loans.</p>
-      </header>
-      <div class="vx-card" id="choice-card">
-        <div class="vx-legend" id="choice-legend" data-source="choice"></div>
-        <div class="vx-chart dash-skeleton" id="choice-chart" data-source="choice"></div>
-      </div>
-    </section>
-    <section class="vx-sec" id="ceiling-sec" aria-labelledby="ceiling-h">
-      <header class="vx-sec-h">
-        <h2 id="ceiling-h">How high VS4's share could go</h2>
-        <p>The ceiling is VS4's share if every lender ordered both scores and priced on VS4 whenever it lands in a better bucket; the upper line counts every loan where VS4 is no worse. Loans with both scores count as they are and VS4-only loans as VS4; a loan with only a Classic FICO takes the rate measured on loans with both scores in its Classic FICO bucket, purpose, channel and GSE. Months before every score was disclosed are estimates, because their loans show only one score. The lenders that order both scores today are not a random sample, and matching on those traits does not correct for that.</p>
-      </header>
-      <div class="vx-sec">
-        <div class="vx-card" id="ceiling-card">
-          <h2>Actual share against the ceiling</h2>
-          <p class="vx-note">By issue month, for the GSE picked above; the latest month is partial. Hollow points on a dashed line are estimates.</p>
-          <div class="vx-legend" id="ceiling-legend" data-source="ceiling"></div>
-          <div class="vx-chart dash-skeleton" id="ceiling-chart" data-source="ceiling"></div>
-        </div>
-        <div class="vx-card" id="band-card">
-          <h2>Where the headroom is</h2>
-          <p class="vx-note">Loans disclosed with every score delivered (records from Oct 19, 2026), both GSEs, by Classic FICO bucket: each bucket's share of loans, how often VS4 lands in a better bucket, and what that adds to the ceiling. The last column adds up to the All loans row.</p>
-          <div class="vx-tablebox">
-            <table class="vx-table" id="band-table" data-source="ceiling" data-row-key="view,key">
-              <thead><tr>
-                <th scope="col" class="vx-l" data-field="label">Classic FICO</th>
-                <th scope="col" data-field="loan_share">Share of loans</th>
-                <th scope="col" data-field="better">VS4 better</th>
-                <th scope="col" class="vx-opt" data-field="not_worse">VS4 no worse</th>
-                <th scope="col" class="vx-opt" data-field="measured">Loans with both</th>
-                <th scope="col" data-field="adds_better">Adds to ceiling</th>
-              </tr></thead>
-              <tbody></tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </section>
-  </template>
-
   <template id="tpl-borrowers">
-    <section class="vx-card" id="score-cover-card">
-      <h2>Which scores the loans carry</h2>
-      <p class="vx-note">Loans first disclosed from Oct 19, 2026, when the GSEs began disclosing every score a lender delivered and which one priced the loan. The same lenders deliver VS4-priced loans to Freddie Mac without a Classic FICO far more often than to Fannie Mae, so the gap between the GSEs reflects what each collects or discloses, not the lender. A loan delivered without a Classic FICO may still have had one ordered.</p>
-      <div class="vx-grid">
-        <div class="vx-tablebox">
-          <table class="vx-table" id="score-cover-table" data-source="score_coverage" data-row-key="agency,week,model">
-            <thead><tr>
-              <th scope="col" class="vx-l" data-field="agency">GSE</th>
-              <th scope="col" class="vx-l" data-field="model">Priced on</th>
-              <th scope="col" data-field="loans">Loans</th>
-              <th scope="col" data-field="both_share">With both scores</th>
-              <th scope="col" data-field="one_share">Only the score priced on</th>
-            </tr></thead>
-            <tbody></tbody>
-          </table>
-        </div>
-        <div>
-          <h3>VS4-priced loans with no Classic FICO, by week of first disclosure</h3>
-          <div class="vx-legend" id="score-cover-legend" data-source="score_coverage"></div>
-          <div class="vx-chart vx-chart-sm dash-skeleton" id="score-cover-chart" data-source="score_coverage"></div>
-        </div>
-      </div>
-    </section>
-
-    <section class="vx-sec" id="borrower-compare" aria-labelledby="borrower-compare-h">
-      <header class="vx-sec-h">
+    <section class="vx-grid" id="mix" aria-label="Borrower mix">
+      <div class="vx-card" id="mix-card">
+        <h2>Borrower mix, VS4 vs Classic FICO</h2>
+        <p class="vx-note">Share of each model's loans issued since <span class="s-mix-since" data-source="composition" data-field="since" data-row="0">—</span>, both GSEs.</p>
         <div class="vx-row">
-          <h2 id="borrower-compare-h">VS4 borrowers against Classic FICO borrowers</h2>
-          <div class="vx-seg" data-param="cover" role="group" aria-label="Loans compared"><button type="button" data-v="all">All loans</button><button type="button" data-v="both">Both scores</button><button type="button" data-v="vs4only">VantageScore only</button></div>
+          <select class="vx-select" id="mix-dim" aria-label="Breakdown" data-source="composition"></select>
+          <div class="vx-legend" id="mix-legend"></div>
         </div>
-        <p class="cover-note"></p>
-      </header>
-      <div class="vx-grid">
-        <div class="vx-card" id="mix-card">
-          <div class="vx-row">
-            <h2>Borrower mix</h2>
-            <select class="vx-select" id="mix-dim" aria-label="Breakdown" data-source="borrowers"></select>
-          </div>
-          <p class="vx-note">Share of each side's loans in each group. The tick on a VS4 bar is the share expected if VS4 loans matched their own lenders' Classic FICO loans: the gap between bar and tick is which borrowers lenders put on VS4, apart from which lenders use it.</p>
-          <div class="vx-legend" id="mix-legend" data-source="borrowers"></div>
-          <div class="vx-chart dash-skeleton" id="mix-chart" data-source="borrowers"></div>
-        </div>
-        <div class="vx-card" id="profile-card">
-          <h2>Average loan</h2>
-          <p class="vx-note">Balance-weighted score, LTV, DTI and rate. The rate covers 30-year fixed loans only and is not adjusted for loan mix or lender; the Pricing tab is.</p>
-          <div class="vx-cmp" id="profile-grid">
-            <div class="vx-h"></div><div class="vx-h vx-v">VantageScore 4.0</div><div class="vx-h vx-v">Classic FICO</div>
-            <div>Loans</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="loans" data-grp="vs4">—</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="loans" data-grp="fico">—</div>
-            <div>Credit score used for pricing</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="wa_score" data-grp="vs4">—</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="wa_score" data-grp="fico">—</div>
-            <div data-covers="both">Classic FICO</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="wa_fico" data-grp="vs4" data-covers="both">—</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="wa_fico" data-grp="fico" data-covers="both">—</div>
-            <div data-covers="both">VantageScore 4.0</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="wa_vs4" data-grp="vs4" data-covers="both">—</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="wa_vs4" data-grp="fico" data-covers="both">—</div>
-            <div data-covers="both">VS4 minus Classic FICO (points)</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="avg_gap" data-grp="vs4" data-covers="both">—</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="avg_gap" data-grp="fico" data-covers="both">—</div>
-            <div>Loan-to-value (%)</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="wa_ltv" data-grp="vs4">—</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="wa_ltv" data-grp="fico">—</div>
-            <div>Debt-to-income (%)</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="wa_dti" data-grp="vs4">—</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="wa_dti" data-grp="fico">—</div>
-            <div>Note rate, 30-year fixed (%)</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="wa_rate_30" data-grp="vs4">—</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="wa_rate_30" data-grp="fico">—</div>
-            <div>Average loan size</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="avg_loan" data-grp="vs4">—</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="avg_loan" data-grp="fico">—</div>
-            <div>Purchase loans</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="purchase_share" data-grp="vs4">—</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="purchase_share" data-grp="fico">—</div>
-            <div>Cash-out refinances</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="cashout_share" data-grp="vs4">—</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="cashout_share" data-grp="fico">—</div>
-            <div>First-time homebuyers</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="fthb_share" data-grp="vs4">—</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="fthb_share" data-grp="fico">—</div>
-            <div>Investor properties</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="investor_share" data-grp="vs4">—</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="investor_share" data-grp="fico">—</div>
-            <div>Broker channel</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="broker_share" data-grp="vs4">—</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="broker_share" data-grp="fico">—</div>
-            <div>With mortgage insurance</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="mi_share" data-grp="vs4">—</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="mi_share" data-grp="fico">—</div>
-            <div>30-year fixed</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="fixed30_share" data-grp="vs4">—</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="fixed30_share" data-grp="fico">—</div>
-          </div>
-        </div>
+        <div class="vx-chart dash-skeleton" id="mix-chart" data-source="composition"></div>
       </div>
-    </section>
-  </template>
-
-  <template id="tpl-pricing">
-    <section class="vx-sec" id="pricing-head" aria-labelledby="pricing-h">
-      <header class="vx-sec-h">
-        <div class="vx-row">
-          <h2 id="pricing-h">VS4 note rates against comparable Classic FICO loans</h2>
-          <div class="vx-row">
-            <div class="vx-seg" data-param="cover" role="group" aria-label="Loans compared"><button type="button" data-v="all">All loans</button><button type="button" data-v="both">Both scores</button><button type="button" data-v="vs4only">VantageScore only</button></div>
-            <div class="vx-seg" id="basis-seg" data-param="basis" role="group" aria-label="Compared at">
-              <button type="button" data-v="headline">Same headline score</button><button type="button" data-v="own_fico">Borrower's own FICO</button>
-            </div>
-          </div>
+      <div class="vx-card" id="profile-card">
+        <h2>Average loan, VS4 vs Classic FICO</h2>
+        <p class="vx-note">Loans issued since <span class="s-profile-since" data-source="profile" data-field="since" data-row="0">—</span>, both GSEs. Score, LTV, DTI and note rate are balance-weighted; the rate is not adjusted for loan mix or lender.</p>
+        <div class="vx-cmp" id="profile-grid">
+          <div class="vx-h"></div><div class="vx-h vx-v">VantageScore 4.0</div><div class="vx-h vx-v">Classic FICO</div>
+          <div>Loans</div><div class="vx-v dash-skeleton" data-source="profile" data-field="loans" data-where="model=VantageScore 4.0">—</div><div class="vx-v dash-skeleton" data-source="profile" data-field="loans" data-where="model=Classic FICO">—</div>
+          <div>Credit score used for pricing</div><div class="vx-v dash-skeleton" data-source="profile" data-field="wa_score" data-where="model=VantageScore 4.0">—</div><div class="vx-v dash-skeleton" data-source="profile" data-field="wa_score" data-where="model=Classic FICO">—</div>
+          <div>Loan-to-value (%)</div><div class="vx-v dash-skeleton" data-source="profile" data-field="wa_ltv" data-where="model=VantageScore 4.0">—</div><div class="vx-v dash-skeleton" data-source="profile" data-field="wa_ltv" data-where="model=Classic FICO">—</div>
+          <div>Debt-to-income (%)</div><div class="vx-v dash-skeleton" data-source="profile" data-field="wa_dti" data-where="model=VantageScore 4.0">—</div><div class="vx-v dash-skeleton" data-source="profile" data-field="wa_dti" data-where="model=Classic FICO">—</div>
+          <div>Note rate (%)</div><div class="vx-v dash-skeleton" data-source="profile" data-field="wa_rate" data-where="model=VantageScore 4.0">—</div><div class="vx-v dash-skeleton" data-source="profile" data-field="wa_rate" data-where="model=Classic FICO">—</div>
+          <div>Average loan size</div><div class="vx-v dash-skeleton" data-source="profile" data-field="avg_loan" data-where="model=VantageScore 4.0">—</div><div class="vx-v dash-skeleton" data-source="profile" data-field="avg_loan" data-where="model=Classic FICO">—</div>
+          <div>Purchase loans</div><div class="vx-v dash-skeleton" data-source="profile" data-field="purchase_share" data-where="model=VantageScore 4.0">—</div><div class="vx-v dash-skeleton" data-source="profile" data-field="purchase_share" data-where="model=Classic FICO">—</div>
+          <div>Cash-out refinances</div><div class="vx-v dash-skeleton" data-source="profile" data-field="cashout_share" data-where="model=VantageScore 4.0">—</div><div class="vx-v dash-skeleton" data-source="profile" data-field="cashout_share" data-where="model=Classic FICO">—</div>
+          <div>First-time homebuyers</div><div class="vx-v dash-skeleton" data-source="profile" data-field="fthb_share" data-where="model=VantageScore 4.0">—</div><div class="vx-v dash-skeleton" data-source="profile" data-field="fthb_share" data-where="model=Classic FICO">—</div>
+          <div>Investor properties</div><div class="vx-v dash-skeleton" data-source="profile" data-field="investor_share" data-where="model=VantageScore 4.0">—</div><div class="vx-v dash-skeleton" data-source="profile" data-field="investor_share" data-where="model=Classic FICO">—</div>
+          <div>Broker channel</div><div class="vx-v dash-skeleton" data-source="profile" data-field="broker_share" data-where="model=VantageScore 4.0">—</div><div class="vx-v dash-skeleton" data-source="profile" data-field="broker_share" data-where="model=Classic FICO">—</div>
         </div>
-        <p>Each VS4 loan's 30-year fixed note rate minus the rate a model of Classic FICO-priced loans gives the same loan <span class="pricing-basis">at the same headline score</span>: the same lender and channel in the same week, the same LLPA score, LTV and purpose cell, and the same occupancy, property, loan size, DTI, mortgage insurance, state and number of borrowers. Positive means VS4 borrowers pay more. Discount points and lender credits are not disclosed.</p>
-        <p class="cover-note"></p>
-      </header>
-      <div class="vx-tiles" id="pricing-tiles">
-        <div class="vx-card">
-          <div class="vx-lbl">VS4 rate against the expected FICO rate</div>
-          <div class="vx-val"><span class="pr-net dash-skeleton" data-source="pricing" data-field="net_bp">—</span> <span class="vx-unit">bp</span></div>
-          <div class="vx-sub">Net of the model's miss on held-out FICO loans from the same weeks (<span class="pr-check" data-source="pricing" data-field="check_bp">—</span> bp)</div>
-        </div>
-        <div class="vx-card">
-          <div class="vx-lbl">Before that check</div>
-          <div class="vx-val"><span class="pr-premium dash-skeleton" data-source="pricing" data-field="premium_bp">—</span> <span class="vx-unit">bp</span></div>
-          <div class="vx-sub">Standard error <span class="pr-se" data-source="pricing" data-field="se_bp">—</span> bp; median <span class="pr-median" data-source="pricing" data-field="median_bp">—</span> bp</div>
-        </div>
-        <div class="vx-card">
-          <div class="vx-lbl">VS4 loans compared</div>
-          <div class="vx-val pr-n dash-skeleton" data-source="pricing" data-field="n">—</div>
-          <div class="vx-sub">30-year fixed, <span class="pr-window">first disclosed</span> from <span class="pr-since" data-source="pricing" data-field="since">—</span></div>
-        </div>
-        <div class="vx-card">
-          <div class="vx-lbl">Model's typical miss on held-out FICO loans</div>
-          <div class="vx-val"><span class="pr-rmse dash-skeleton" data-source="pricing" data-field="rmse_bp" data-where="view=fit">—</span> <span class="vx-unit">bp</span></div>
-          <div class="vx-sub">R² <span class="pr-r2" data-source="pricing" data-field="r2" data-where="view=fit">—</span>; <span class="pr-held" data-source="pricing" data-field="n" data-where="view=fit">—</span> loans held out, <span class="pr-trained" data-source="pricing" data-field="n_train" data-where="view=fit">—</span> trained on</div>
-        </div>
-      </div>
-    </section>
-    <section class="vx-grid" id="pricing-charts">
-      <div class="vx-card" id="pricing-week-card">
-        <h2>By week of first disclosure</h2>
-        <p class="vx-note">Bars: VS4 loans' rate against the model in basis points, with two standard errors either side. Diamonds: held-out FICO loans the same week, which should sit near zero.</p>
-        <div class="vx-legend" id="pricing-week-legend" data-source="pricing"></div>
-        <div class="vx-chart dash-skeleton" id="pricing-week-chart" data-source="pricing"></div>
-      </div>
-      <div class="vx-card" id="pricing-seller-card">
-        <h2>By seller</h2>
-        <p class="vx-note">Each seller's VS4 loans against the model, which already prices that seller's own FICO loans; diamonds are its held-out FICO loans. Sellers with 20 or more VS4 loans, with their count.</p>
-        <div class="vx-chart dash-skeleton" id="pricing-seller-chart" data-source="pricing"></div>
-      </div>
-      <div class="vx-card" id="pricing-segment-card">
-        <div class="vx-row"><h2>By type of loan</h2><select class="vx-select" id="pricing-dim" aria-label="Breakdown" data-source="pricing"></select></div>
-        <p class="vx-note">Groups by the VS4 loan's own characteristics; the score is the one used for pricing.</p>
-        <div class="vx-chart dash-skeleton" id="pricing-segment-chart" data-source="pricing"></div>
-      </div>
-      <div class="vx-card" id="pricing-hist-card">
-        <h2>Spread of rates against the model</h2>
-        <p class="vx-note">Share of loans by how far the rate sits above or below the model, VS4 against held-out FICO loans from the same weeks.</p>
-        <div class="vx-legend" id="pricing-hist-legend" data-source="pricing"></div>
-        <div class="vx-chart dash-skeleton" id="pricing-hist-chart" data-source="pricing"></div>
       </div>
     </section>
   </template>
@@ -654,32 +395,6 @@
         <li>Sellers starting VS4 in the last 30 days are those whose first VS4 loan first appeared in an intraday file in that window; for loans issued before the intraday history begins (July 1, 2026), the issue month counts instead.</li>
         <li>In the charts of sellers by their share of loans, a seller's share is its share of the GSE's loans with a credit score issued that month (or of their balance), and with one GSE picked, its threshold month is the month it met the threshold at that GSE. Sellers outside the seller list, none of which has delivered a VS4 loan, are drawn as one block.</li>
       </ul>
-      <h2>Score groups</h2>
-      <ul>
-        <li>From Oct 19, 2026 the GSEs disclose every score the lender delivered, not only the one that priced the loan, and a Pricing Indicator saying which did; every record published from then on carries it, including loans first disclosed earlier and republished. Both scores: such loans that carry a Classic FICO and a VS4 score. VantageScore only: such loans priced on VS4 with no Classic FICO, set against every FICO-priced loan disclosed that way. All loans: every VS4- and FICO-priced loan issued since July 2026. The table of which scores loans carry counts loans by the week they first appeared, from Oct 19.</li>
-        <li>Both GSEs let a lender choose Classic FICO or VS4 for each loan run through Desktop Underwriter or Loan Product Advisor, with one model for every borrower on the loan; manually underwritten loans still need Classic FICO. The same lenders deliver VS4 loans to Freddie Mac without a Classic FICO far more often than to Fannie Mae, so that gap reflects what each GSE collects or discloses. A loan delivered without a Classic FICO may still have had one ordered.</li>
-        <li>In the borrower mix, the share expected for VS4 loans is what it would be if each lender's VS4 loans looked like that lender's own Classic FICO loans in the same window; lenders with fewer than 20 FICO loans count at the market's mix.</li>
-      </ul>
-      <h2>Score choice</h2>
-      <ul>
-        <li>The GSEs' upfront fees step at nine credit score buckets: 639 or less, 20-point steps from 640 to 779, and 780 and over. For a loan that carries both scores, the bucket gap is its VS4 bucket minus its Classic FICO bucket.</li>
-        <li>The ceiling counts loans with both scores as they are, VS4-priced loans with no Classic FICO as VS4, and gives each loan with only a Classic FICO the rate at which VS4 lands in a better bucket among loans with both scores in its Classic FICO bucket, purpose, channel and GSE (its bucket and GSE, or its bucket alone, where fewer than 30 such loans). It assumes VS4 relates to Classic FICO the same way in every month and at every lender.</li>
-        <li>Records from before Oct 19, 2026 show only the score that priced the loan, so those rules would overstate lenders already choosing between scores: every VS4 loan would count as better, and their Classic FICO loans would take a rate that ignores that they passed on VS4. Months made up of such records are therefore estimates. A lender that delivered a VS4 loan that month takes its own ceiling on loans disclosed with every score (in that GSE, else both GSEs, with at least 30 such loans; failing that, its VS4 loans take the rate over all such VS4 loans). Other lenders' loans follow the rules above. This assumes a lender's borrowers change little from month to month.</li>
-      </ul>
-      <h2>Rate model</h2>
-      <ul>
-        <li>A model of the note rates of Classic FICO-priced 30-year fixed loans first disclosed from July 20, 2026. It adds an effect for each of: week of first disclosure, GSE, seller and channel, seller and channel in that week, LLPA credit score bucket by LTV bucket by purpose, occupancy, units, property type, loan size, DTI, mortgage insurance, state, first-time buyer and number of borrowers. Each effect is shrunk toward zero where it rests on few loans. It is fitted on four in five of those loans, chosen by loan id, and checked on the fifth.</li>
-        <li>Each VS4 loan's rate is compared with the rate the model gives the same loan priced on Classic FICO: with its VS4 score in the FICO slot (the same headline score) or, for loans that carry one, with the borrower's own Classic FICO. The headline figure subtracts what the model misses on held-out FICO loans from the same weeks.</li>
-        <li>Discount points and lender credits are not disclosed, so a lower LLPA can reach the borrower as a credit rather than a lower rate. Lock dates are not disclosed either; the week of first disclosure stands in for them.</li>
-      </ul>
-      <h2>Outlook</h2>
-      <ul>
-        <li>The outlook starts from loans disclosed with every score delivered (records that carry the Pricing Indicator) and issued in the latest two issue months, both GSEs together. For each lender it takes its share of those loans, its VS4 share and its ceiling: the share of its loans that would be priced on VS4 if it did so whenever VS4 lands in a better fee bucket, counted as for the ceiling under Score choice.</li>
-        <li>A lender's depth is its VS4 share over its ceiling. Deep lenders have 100 or more such loans and price on VS4 for at least half of what their ceiling allows. A lender "as deep" prices on VS4 for the share of its own ceiling the deep lenders reach together, or keeps its own VS4 share where that is higher. Each lender's share of loans stays as it is in the window.</li>
-        <li>Lenders using VS4 are those with a VS4 loan first disclosed since September 2026, when VS4 opened to every lender; a lender with VS4 loans before then and none since shows as stopped. The recent pace pools the issue months since then: loans from lenders delivering their first VS4 loan over loans from lenders that had never delivered one.</li>
-        <li>In the paths, a lender that goes deep follows the deep lenders' depth month by month from their first VS4 loan, taken together while at least two of them reach that month and never falling, then levels off at their depth today. Lenders using VS4 start along it the month after the latest; in the pace case, each month the recent pace of the remaining lenders' loans starts along it too, from the same month.</li>
-        <li>These are scenarios, not a forecast. They rest on the ceiling, which assumes VS4 relates to Classic FICO the same way at every lender, and on how a few lenders have behaved so far. A lender that orders both scores but prices on Classic FICO may never go deep. For a lender already using VS4, a loan delivered with only a Classic FICO takes the rate at which VS4 is better on comparable loans; if that lender ordered VS4 and left it off because it was not better, its ceiling is lower than shown.</li>
-      </ul>
       <h2>Source</h2>
       <ul>
         <li>Fannie Mae PoolTalk and Freddie Mac MBS disclosure loan-level issuance files, intraday and month-end, through <span class="s-through" data-source="summary" data-field="data_through" data-where="agency=All">—</span>. Only these aggregates leave the computer that built them.</li>
@@ -695,13 +410,13 @@
   const AG_NAME = { All: 'Both GSEs', FNMA: 'Fannie Mae', FHLMC: 'Freddie Mac' };
   const AG_NOUN = { All: 'GSE', FNMA: 'Fannie Mae', FHLMC: 'Freddie Mac' };
   const MODELS = ['VantageScore 4.0', 'Classic FICO'];
-  const TABS = ['overview', 'outlook', 'lenders', 'scores', 'borrowers', 'pricing', 'method'];
+  const TABS = ['overview', 'lenders', 'borrowers', 'method'];
   const DEF_FIRST = { any: 'first_vs4_month', ten: 'first_10_month', pct5: 'first_5pct_month' };
   // Months drawn on the adoption and seller charts: VS4 deliveries begin in April 2026.
   const ADOPT_FROM = '2026-04-01';
   const CHANGE_FROM = '2026-05-01';
   const RECENT_FROM = '2026-05-01';
-  const DEFAULTS = { agency: 'All', measure: 'loans', dim: 'pricing_score', seller: 'rocket-mortgage', adopt: 'any', period: 'month', top: 25, mapmonth: '', cover: 'all', basis: 'headline', pdim: 'purpose', cscope: 'All' };
+  const DEFAULTS = { agency: 'All', measure: 'loans', dim: 'pricing_score', seller: 'rocket-mortgage', adopt: 'any', period: 'month', top: 25, mapmonth: '' };
   const DAY = 864e5;
   const pct1 = d3.format('.1%');
   const ptsSigned = d3.format('+.1f');
@@ -726,8 +441,6 @@
     p.top = Number(p.top) === 50 ? 50 : 25;
     if (!DEF_FIRST[p.adopt]) p.adopt = 'any';
     if (p.period !== 'week') p.period = 'month';
-    if (!['all', 'both', 'vs4only'].includes(p.cover)) p.cover = 'all';
-    if (p.cover !== 'both' || p.basis !== 'own_fico') p.basis = 'headline';
     return p;
   };
   const rowsOf = (id) => {
@@ -759,8 +472,7 @@
       panels[k].hidden = k !== t;
       root.querySelector(`.vx-tabs [data-tab="${k}"]`).setAttribute('aria-selected', String(k === t));
     }
-    document.getElementById('controls').hidden = t === 'borrowers' || t === 'pricing' || t === 'method';
-    document.getElementById('agency-seg').hidden = t === 'outlook';  // the outlook covers both GSEs together
+    document.getElementById('controls').hidden = t === 'borrowers' || t === 'method';
   }
   function show(t) {
     if (!TABS.includes(t)) return;
@@ -778,8 +490,7 @@
     if (card) card.scrollIntoView({ block: 'start' });
   }
 
-  const sorts = { 'adopters-table': { col: 'loans', dir: 'descending' }, 'runway-table': { col: 'rank', dir: 'ascending' },
-    'ol-table': { col: 'adds', dir: 'descending' } };
+  const sorts = { 'adopters-table': { col: 'loans', dir: 'descending' }, 'runway-table': { col: 'rank', dir: 'ascending' } };
   root.addEventListener('click', (event) => {
     const tab = event.target.closest('.vx-tabs [data-tab]');
     if (tab) return show(tab.dataset.tab);
@@ -794,10 +505,8 @@
       const k = th.dataset.col;
       s.dir = k === s.col ? (s.dir === 'descending' ? 'ascending' : 'descending') : (th.dataset.type === 'text' ? 'ascending' : 'descending');
       s.col = k;
-      return th.closest('table').id === 'ol-table' ? drawOutlookTable(params()) : drawTables(params());
+      return drawTables(params());
     }
-    const pick = event.target.closest('#ol-pick button[data-pick]');
-    if (pick) return pickLenders(pick.dataset.pick);
     const row = event.target.closest('table.vx-pickable tbody tr[data-key]');
     if (row) return openSeller(row.dataset.key);
     const link = event.target.closest('[data-open-seller]');
@@ -808,15 +517,8 @@
     if (row && event.key === 'Enter') openSeller(row.dataset.key);
   });
   root.addEventListener('change', (event) => {
-    if (event.target.classList.contains('ol-check')) {
-      if (event.target.checked) olPicked.add(event.target.value);
-      else olPicked.delete(event.target.value);
-      return drawOutlookPick(params());
-    }
     if (event.target.id === 'seller-pick') openSeller(event.target.value);
     else if (event.target.id === 'mix-dim') dash.setParams({ dim: event.target.value });
-    else if (event.target.id === 'pricing-dim') dash.setParams({ pdim: event.target.value });
-    else if (event.target.id === 'choice-scope') dash.setParams({ cscope: event.target.value });
     else if (event.target.id === 'market-month') dash.setParams({ mapmonth: event.target.value });
   });
   root.addEventListener('input', (event) => {
@@ -1354,8 +1056,6 @@
     mark('.sx-ofall', 'share_of_all_vs4', where, st, v('share_of_all_vs4', pct1));
     mark('.sx-first', 'first_vs4_month', where, st, v('first_vs4_month', monthShortYear));
     mark('.sx-corr', 'corr_share_recent', where, st, v('corr_share_recent', pct1));
-    const pull = e ? rowsOf('choice').find((r) => r.view === 'pull' && r.scope === e.id) : null;
-    mark('.sx-pull', 'both_share', e ? `view=pull&scope=${enc(e.id)}` : '', dash.data('choice').status, pull ? pct1(pull.both_share) : null);
 
     const fin = finalMap();
     const mine = e ? rowsOf('seller_monthly').filter((r) => r.id === e.id && r.level === e.level) : [];
@@ -1789,654 +1489,64 @@
     });
   }
 
-  // ---- Score choice ----
-  const GAP_TICK = { '-3': '−3 or less', '-2': '−2', '-1': '−1', 0: '0', '0top': '0 (780+)', 1: '+1', 2: '+2', 3: '+3 or more' };
-
-  function drawChoice(p) {
-    const st = dash.data('choice').status;
-    const rule = rowsOf('choice').filter((r) => r.view === 'rule');
-    const sel = document.getElementById('choice-scope');
-    const totals = new Map(rule.filter((r) => r.agency === 'All').map((r) => [r.scope, r.scope_loans]));
-    const scopes = [...new Map(rule.filter((r) => r.agency === 'All').map((r) => [r.scope, r.scope_label])).entries()]
-      .sort((a, b) => (a[0] === 'All' ? -1 : b[0] === 'All' ? 1 : totals.get(b[0]) - totals.get(a[0])));
-    const sig = scopes.map(([v]) => v).join(',');
-    if (sel.dataset.sig !== sig) {
-      sel.replaceChildren(...scopes.map(([v, l]) => new Option(v === 'All' ? l : `${l} (${int(totals.get(v))} loans)`, v)));
-      sel.dataset.sig = sig;
-    }
-    const scope = scopes.some(([v]) => v === p.cscope) ? p.cscope : 'All';
-    sel.value = scope;
-    const agency = scope === 'All' ? p.agency : 'All';
-    const data = rule.filter((r) => r.scope === scope && r.agency === agency).sort((a, b) => a.order - b.order);
-    const ref = new Map(scope === 'All' ? [] : rule.filter((r) => r.scope === 'All' && r.agency === 'All').map((r) => [r.key, r]));
-    const name = scope === 'All' ? (agency === 'All' ? 'All lenders' : `All lenders, ${AG_NAME[agency]}`) : (data[0] ? data[0].scope_label : '');
-    legend(document.getElementById('choice-legend'), [[C_VS4, `Share priced on VS4: ${name}`, 'box']]
-      .concat(ref.size ? [['var(--color-fg)', 'All lenders', 'line']] : []));
-    const box = document.getElementById('choice-chart');
-    if (!prep(box, st) || !data.length) return;
-    const W = box.clientWidth, H = 270, m = { top: 22, right: 10, bottom: 46, left: 0 };
-    const svg = svgFor(box, W, H, 'Share of loans with both scores priced on VS4, by bucket gap');
-    const keys = [...new Set(rule.filter((r) => r.scope === 'All').sort((a, b) => a.order - b.order).map((r) => r.key))];
-    const lab = (k) => GAP_TICK[k] ?? k;
-    const y = d3.scaleLinear([0, 1], [H - m.bottom, m.top]);
-    const yf = d3.format('.0%');
-    const { x, widest } = bandFrame(svg, keys, lab, y, yf, 5, W, m);
-    yAxis(svg, y, yf, m.left, W - m.right);
-    bandAxis(svg, x, keys, lab, widest, H - m.bottom + 8);
-    svg.append('text').attr('x', (m.left + W - m.right) / 2).attr('y', H - 4).attr('text-anchor', 'middle')
-      .text('VS4 score bucket minus Classic FICO bucket');
-    const bw = Math.min(40, x.bandwidth()), off = (x.bandwidth() - bw) / 2, cx = (r) => x(r.key) + x.bandwidth() / 2;
-    svg.append('g').selectAll('rect').data(data).join('rect')
-      .attr('x', (r) => x(r.key) + off).attr('width', bw).attr('y', (r) => y(r.vs4_share))
-      .attr('height', (r) => Math.max(0, y(0) - y(r.vs4_share))).attr('rx', 3).attr('fill', C_VS4);
-    if (bw >= textWidth(svg, ['100%']) + 2) {
-      svg.append('g').selectAll('text').data(data).join('text').attr('x', cx)
-        .attr('y', (r) => y(Math.max(r.vs4_share, ref.has(r.key) ? ref.get(r.key).vs4_share : 0)) - 9)
-        .attr('text-anchor', 'middle').style('fill', 'var(--color-fg)').text((r) => d3.format('.0%')(r.vs4_share));
-    }
-    svg.append('g').selectAll('path').data(data.filter((r) => ref.has(r.key))).join('path')
-      .attr('d', d3.symbol(d3.symbolDiamond, 44)).attr('transform', (r) => `translate(${cx(r)},${y(ref.get(r.key).vs4_share)})`)
-      .attr('fill', 'var(--color-panel)').attr('stroke', 'var(--color-fg)');
-    bandHover(svg, box, x, data, 'key', m, H, (r) => [r.label, [[C_VS4, name, `${pct1(r.vs4_share)} of ${int(r.loans)} loans`]]
-      .concat(ref.has(r.key) ? [['var(--color-fg)', 'All lenders', `${pct1(ref.get(r.key).vs4_share)} of ${int(ref.get(r.key).loans)}`]] : [])]);
-  }
-
-  function drawCeiling(p) {
-    const box = document.getElementById('ceiling-chart');
-    const k = p.measure === 'upb' ? '_upb' : '';
-    const lines = [[`actual${k}`, 'Actual', C_VS4], [`better${k}`, 'If every lender priced on the better score', col(1)],
-      [`not_worse${k}`, 'If VS4 were used wherever it is no worse', col(3)]];
-    legend(document.getElementById('ceiling-legend'), lines.map(([, l, c], i) => [c, l, 'line', i === 0]));
-    if (!prep(box, dash.data('ceiling').status)) return;
-    const data = rowsOf('ceiling').filter((r) => r.view === 'month' && r.agency === p.agency).sort((a, b) => (a.start < b.start ? -1 : 1));
-    if (!data.length) return;
-    const W = box.clientWidth, H = 240, m = { top: 12, right: 10, bottom: 26, left: 0 };
-    const svg = svgFor(box, W, H, 'VS4 share by issue month against its ceiling');
-    const y = d3.scaleLinear([0, (d3.max(data, (r) => d3.max(lines, ([f]) => r[f] ?? 0)) || 0.01) * 1.08], [H - m.bottom, m.top]).nice(5);
-    const yf = y.tickFormat(5, '%');
-    const keys = data.map((r) => r.start), lab = monthLabel(keys);
-    const { x, widest } = bandFrame(svg, keys, lab, y, yf, 5, W, m);
-    yAxis(svg, y, yf, m.left, W - m.right);
-    bandAxis(svg, x, keys, lab, widest, H - m.bottom + 8);
-    const xc = (r) => x(r.start) + x.bandwidth() / 2;
-    lines.slice(1).forEach(([f, , c]) => estimateLine(svg, data, xc, (r) => r[f], y, c));
-    partialLine(svg, data, xc, (r) => r[lines[0][0]], y, lines[0][2], 'final');
-    bandHover(svg, box, x, data, 'start', m, H, (r) => [`${monthYear(r.start)}${r.final ? '' : ' (partial)'}`,
-      lines.map(([f, l, c], i) => [c, i && r.estimated ? `${l} (estimate)` : l, pct1(r[f])]).concat([[null, 'Loans', int(r.loans)]])]);
-  }
-
-  // A line whose early periods are estimates: dashed with hollow points up to the first measured period.
-  function estimateLine(svg, rows, xf, vf, y, color) {
-    const ok = rows.filter((r) => vf(r) != null);
-    const firm = ok.filter((r) => !r.estimated), est = ok.filter((r) => r.estimated);
-    const line = d3.line().x(xf).y((r) => y(vf(r)));
-    const style = (path) => path.attr('fill', 'none').attr('stroke', color).attr('stroke-width', 2)
-      .attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round');
-    if (firm.length > 1) style(svg.append('path').attr('d', line(firm)));
-    if (est.length) style(svg.append('path').attr('d', line(est.concat(firm.slice(0, 1))))).attr('stroke-dasharray', '4 4');
-    svg.append('g').selectAll('circle').data(ok).join('circle')
-      .attr('cx', xf).attr('cy', (r) => y(vf(r))).attr('r', 2.5)
-      .attr('fill', (r) => (r.estimated ? 'var(--color-panel)' : color)).attr('stroke', color).attr('stroke-width', 1.5);
-  }
-
-  function drawBands() {
-    const table = document.getElementById('band-table');
-    const st = dash.data('ceiling').status;
-    const rows = rowsOf('ceiling').filter((r) => r.view === 'band').sort((a, b) => a.order - b.order);
-    table.closest('.vx-tablebox').classList.toggle('dash-skeleton', st === 'loading');
-    const body = table.tBodies[0];
-    body.replaceChildren();
-    for (const r of rows) {
-      const tr = body.insertRow();
-      tr.dataset.key = [r.view, r.key].map(keyPart).join(',');
-      [[r.label, 'vx-l'], [pct1(r.loan_share)], [pct1(r.better)], [pct1(r.not_worse), 'vx-opt'], [int(r.measured), 'vx-opt'], [pct1(r.adds_better)]]
-        .forEach(([text, cls]) => {
-          const td = tr.insertCell();
-          td.textContent = text;
-          if (cls) td.className = cls;
-        });
-    }
-  }
-
-  function drawCeilingTile(p) {
-    const st = dash.data('ceiling').status;
-    const k = p.measure === 'upb' ? '_upb' : '';
-    const r = rowsOf('ceiling').find((d) => d.view === 'both' && d.agency === p.agency) || {};
-    const where = `view=both&agency=${enc(p.agency)}`;
-    mark('.ce-better', `better${k}`, where, st, r[`better${k}`] == null ? null : pct1(r[`better${k}`]));
-    mark('.ce-actual', `actual${k}`, where, st, r[`actual${k}`] == null ? null : pct1(r[`actual${k}`]));
-  }
-
-  // ---- Outlook ----
-  const OL_STATUS = { deep: 'Deep', using: 'Started', stopped: 'Stopped', none: 'Not yet' };
-  const C_HOLD = 'var(--color-fg-muted)', C_USERS = col(2), C_PACE = col(4), C_ALLDEEP = col(3), C_CEIL = col(1);
-  const OL_CASES = [['hold', 'No lender changes', C_HOLD], ['users', 'Lenders using VS4 go as deep', C_USERS],
-    ['pace', 'Others also start at the recent pace', C_PACE]];
-  const olPicked = new Set();
-  const olRows = (v) => rowsOf('outlook').filter((r) => r.view === v);
-  const olName = (r) => (r.ticker && !String(r.short).includes(r.ticker) ? `${r.short} (${r.ticker})` : r.short);
-  const orDash = (fmt) => (v) => (v == null ? '—' : fmt(v));
-
-  function drawOutlook(p) {
-    const st = dash.data('outlook').status;
-    const k = p.measure === 'upb' ? '_upb' : '';
-    const pr = olRows('params')[0] || {};
-    const lad = new Map(olRows('ladder').map((r) => [r.key, r]));
-    const path = olRows('path');
-    const pw = 'view=params';
-    const val = (r, f, fmt) => (r && r[f] != null ? fmt(r[f]) : null);
-    const span = pr.window_from === pr.window_to ? monthYear : null;
-    mark('.ol-window', 'window_from', pw, st, pr.window_from
-      ? (span ? span(pr.window_to) : `${monthShortYear(pr.window_from)} to ${monthShortYear(pr.window_to)}`) : null);
-    mark('.ol-deep-names', 'deep_names', pw, st, pr.deep_names || null);
-    mark('.ol-q', `q${k}`, pw, st, val(pr, `q${k}`, pct1));
-    mark('.ol-users', 'users', pw, st, val(pr, 'users', int));
-    mark('.ol-user-share', `user_share${k}`, pw, st, val(pr, `user_share${k}`, pct1));
-    mark('.ol-pace', `pace${k}`, pw, st, val(pr, `pace${k}`, pct1));
-    mark('.ol-end', 'end_month', pw, st, val(pr, 'end_month', monthShortYear));
-    for (const [cls, key] of [['ol-today', 'today'], ['ol-users-v', 'users'], ['ol-alldeep', 'all_deep'], ['ol-full', 'all_full']]) {
-      mark(`.${cls}`, `value${k}`, `view=ladder&key=${key}`, st, val(lad.get(key), `value${k}`, pct1));
-    }
-    const end = path.find((r) => r.case === 'pace' && r.month === pr.end_month);
-    mark('.ol-pace-v', `value${k}`, `view=path&case=pace&month=${enc(pr.end_month ?? '')}`, st, val(end, `value${k}`, pct1));
-    // The first month the users case comes within 0.05 points of where it settles.
-    const goal = (lad.get('users') || {})[`value${k}`];
-    const by = goal == null ? null : path.filter((r) => r.case === 'users' && r[`value${k}`] >= goal - 0.0005)
-      .sort((a, b) => (a.month < b.month ? -1 : 1))[0];
-    mark('.ol-users-by', 'month', by ? `view=path&case=users&month=${enc(by.month)}` : null, st, by ? monthShortYear(by.month) : null);
-    const next = root.querySelector('#ol-pick [data-pick="next"]');
-    if (next && pr.next_n) next.textContent = `Plus the ${pr.next_n} largest`;
-    drawOutlookPaths(st, k, path, lad, pr);
-    drawOutlookLadder(st, k, lad, pr);
-    drawOutlookRamp(st, k, pr);
-    drawOutlookTable(p);
-    drawOutlookPace(st, k);
-  }
-
-  function drawOutlookPaths(st, k, path, lad, pr) {
-    const box = document.getElementById('ol-path-chart');
-    const f = `value${k}`;
-    legend(document.getElementById('ol-path-legend'), [[C_VS4, 'Actual', 'line', true]].concat(OL_CASES.map(([, l, c]) => [c, l, 'line'])));
-    if (!prep(box, st) || !path.length) return;
-    const refs = [['all_deep', 'Every lender as deep', C_ALLDEEP], ['all_full', 'Ceiling', C_CEIL]]
-      .map(([key, label, color]) => ({ label, color, v: (lad.get(key) || {})[f] })).filter((r) => r.v != null);
-    const months = [...new Set(path.map((r) => r.month))].sort();
-    const W = box.clientWidth, H = 300, m = { top: 12, right: 10, bottom: 26, left: 0 };
-    const svg = svgFor(box, W, H, 'VS4 share by issue month, actual and three cases');
-    const top = Math.max(d3.max(path, (r) => r[f] ?? 0), d3.max(refs, (r) => r.v) ?? 0) || 0.01;
-    const y = d3.scaleLinear([0, top * 1.08], [H - m.bottom, m.top]).nice(5);
-    const yf = y.tickFormat(5, '%');
-    const lab = monthLabel(months);
-    const { x, widest } = bandFrame(svg, months, lab, y, yf, 5, W, m);
-    const xc = (mo) => x(mo) + x.bandwidth() / 2;
-    if (pr.window_to && x(pr.window_to) != null) {
-      const x0 = xc(pr.window_to);
-      svg.append('rect').attr('x', x0).attr('width', Math.max(0, W - m.right - x0)).attr('y', m.top)
-        .attr('height', H - m.top - m.bottom).attr('fill', 'var(--cds-chart-grid)').attr('fill-opacity', 0.6);
-    }
-    yAxis(svg, y, yf, m.left, W - m.right);
-    bandAxis(svg, x, months, lab, widest, H - m.bottom + 8);
-    for (const r of refs) {
-      svg.append('line').attr('x1', m.left).attr('x2', W - m.right).attr('y1', y(r.v)).attr('y2', y(r.v))
-        .attr('stroke', r.color).attr('stroke-width', 1.5).attr('stroke-dasharray', '5 4');
-      svg.append('text').attr('x', m.left + 6).attr('y', y(r.v) - 6).text(`${r.label}: ${pct1(r.v)}`);
-    }
-    const line = d3.line().x((r) => xc(r.month)).y((r) => y(r[f]));
-    for (const [c, , color] of OL_CASES) {
-      svg.append('path').attr('d', line(path.filter((r) => r.case === c && r[f] != null))).attr('fill', 'none')
-        .attr('stroke', color).attr('stroke-width', 2).attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round');
-    }
-    partialLine(svg, path.filter((r) => r.case === 'actual'), (r) => xc(r.month), (r) => r[f], y, C_VS4, 'final');
-    bandHover(svg, box, x, months.map((month) => ({ month })), 'month', m, H, (r) => {
-      const at = new Map(path.filter((d) => d.month === r.month && d[f] != null).map((d) => [d.case, d]));
-      const lines = at.has('actual') ? [[C_VS4, at.get('actual').final ? 'Actual' : 'Actual so far', pct1(at.get('actual')[f])]] : [];
-      for (const [c, l, color] of OL_CASES) if (at.has(c)) lines.push([color, l, pct1(at.get(c)[f])]);
-      return [monthYear(r.month), lines];
-    });
-  }
-
-  function drawOutlookLadder(st, k, lad, pr) {
-    const box = document.getElementById('ol-ladder-chart');
-    if (!prep(box, st)) return;
-    const f = `value${k}`;
-    const names = { today: 'Today', users: 'Lenders using VS4 go as deep', next: `Plus the ${pr.next_n ?? ''} largest not using it`,
-      all_deep: 'Every lender as deep', all_full: 'Every lender at its ceiling' };
-    const items = ['today', 'users', 'next', 'all_deep', 'all_full'].map((key) => lad.get(key)).filter((r) => r && r[f] != null);
-    if (!items.length) return;
-    // Labels sit left of the bars, or above them where the card is narrow.
-    const W = box.clientWidth, narrow = W < 480, rowH = narrow ? 48 : 34, m = { top: 4, right: 12, bottom: 24, left: 0 };
-    const H = m.top + m.bottom + items.length * rowH;
-    box.style.minHeight = `${H}px`;
-    const svg = svgFor(box, W, H, "VS4's share once each group of lenders goes as deep as the deep lenders");
-    m.left = narrow ? Math.ceil(textWidth(svg, ['0%']) / 2) + 2
-      : Math.min(Math.ceil(textWidth(svg, items.map((r) => names[r.key]))) + 14, Math.max(120, Math.floor(W * 0.45)));
-    const tail = Math.ceil(textWidth(svg, ['00.0% (+00.0 pts)'])) + 8;
-    const x = d3.scaleLinear([0, d3.max(items, (r) => r[f])], [m.left, Math.max(m.left + 40, W - m.right - tail)]).nice(4);
-    const ticks = x.ticks(Math.max(2, Math.min(4, Math.floor((x.range()[1] - m.left) / 48))));
-    svg.append('g').selectAll('line').data(ticks).join('line').attr('x1', (v) => x(v)).attr('x2', (v) => x(v))
-      .attr('y1', m.top).attr('y2', H - m.bottom).attr('stroke', (v) => (v === 0 ? 'var(--cds-chart-axis)' : 'var(--cds-chart-grid)'));
-    svg.append('g').attr('transform', `translate(0,${H - m.bottom + 8})`)
-      .call(d3.axisBottom(x).tickValues(ticks).tickFormat(d3.format('.0%')).tickSize(0)).call(styleAxis);
-    const yb = d3.scaleBand(items.map((r) => r.key), [m.top, H - m.bottom]).paddingInner(0.3);
-    const top = (r) => yb(r.key) + (narrow ? 18 : 0), bh = narrow ? yb.bandwidth() - 18 : yb.bandwidth();
-    const cy = (r) => top(r) + bh / 2;
-    const color = (r) => (r.key === 'all_full' ? C_CEIL : C_VS4);
-    const g = svg.append('g').selectAll('g').data(items).join('g');
-    g.append('text').attr('x', narrow ? m.left + 4 : m.left - 10).attr('y', (r) => (narrow ? yb(r.key) + 7 : cy(r))).attr('dy', '0.35em')
-      .attr('text-anchor', narrow ? 'start' : 'end').style('fill', 'var(--color-fg)').text((r) => names[r.key])
-      .each(function () { clip(this, narrow ? W - m.left : m.left - 14); });
-    g.append('rect').attr('x', m.left).attr('width', (r) => Math.max(1, x(r[f]) - m.left)).attr('y', top)
-      .attr('height', bh).attr('rx', 3).attr('fill', color).attr('fill-opacity', (r) => (r.key === 'today' ? 1 : 0.7));
-    g.append('text').attr('x', (r) => x(r[f]) + 6).attr('y', cy).attr('dy', '0.35em').style('fill', 'var(--color-fg)')
-      .text((r, i) => (i ? `${pct1(r[f])} (${pts(r[f] - items[i - 1][f])})` : pct1(r[f])));
-    const tip = tooltip(box);
-    g.append('rect').attr('x', 0).attr('width', W).attr('y', (r) => yb(r.key) - 3).attr('height', yb.bandwidth() + 6)
-      .attr('fill', 'transparent')
-      .on('pointermove', (event, r) => tip.show(event, names[r.key], [[color(r), 'VS4 share', pct1(r[f])]]
-        .concat(r.key === 'today' ? [] : [[null, 'Lenders moved', int(r.lenders)]])))
-      .on('pointerleave', () => tip.hide());
-  }
-
-  function drawOutlookRamp(st, k, pr) {
-    const box = document.getElementById('ol-ramp-chart');
-    const ramp = olRows('ramp');
-    const each = ramp.filter((r) => r.id != null), pooled = ramp.filter((r) => r.id == null).sort((a, b) => a.m - b.m);
-    const ids = [...new Map(each.map((r) => [r.id, r.short])).entries()];
-    const colorOf = new Map(ids.map(([id], i) => [id, col(i + 5)]));
-    legend(document.getElementById('ol-ramp-legend'), ids.map(([id, s]) => [colorOf.get(id), s, 'line'])
-      .concat([['var(--color-fg)', 'Path the cases use', 'line', true]]));
-    if (!prep(box, st) || !ramp.length) return;
-    const qf = `q${k}`, q = pr[qf];
-    const pathAt = (mm) => (mm < pooled.length ? pooled[mm][`r${k}`] : q);
-    const keys = d3.range(0, Math.max(d3.max(each, (r) => r.m) ?? 0, pooled.length) + 2);
-    const W = box.clientWidth, H = 210, m = { top: 12, right: 10, bottom: 40, left: 0 };
-    const svg = svgFor(box, W, H, "Deep lenders' VS4 share as a share of their ceiling, by months since their first VS4 loan");
-    const y = d3.scaleLinear([0, Math.max(1, d3.max(each, (r) => r[qf] ?? 0) ?? 0)], [H - m.bottom, m.top]).nice(4);
-    const yf = d3.format('.0%');
-    const lab = (mm) => String(mm);
-    const { x, widest } = bandFrame(svg, keys, lab, y, yf, 4, W, m);
-    yAxis(svg, y, yf, m.left, W - m.right, 4);
-    bandAxis(svg, x, keys, lab, widest, H - m.bottom + 8);
-    svg.append('text').attr('x', (m.left + W - m.right) / 2).attr('y', H - 4).attr('text-anchor', 'middle').text('Months since first VS4 loan');
-    const xc = (mm) => x(mm) + x.bandwidth() / 2;
-    for (const [id] of ids) {
-      const rows = each.filter((r) => r.id === id && r[qf] != null).sort((a, b) => a.m - b.m);
-      svg.append('path').attr('d', d3.line().x((r) => xc(r.m)).y((r) => y(r[qf]))(rows)).attr('fill', 'none')
-        .attr('stroke', colorOf.get(id)).attr('stroke-width', 1.5);
-    }
-    if (q != null) {
-      svg.append('path').attr('d', d3.line()(keys.map((mm) => [xc(mm), y(pathAt(mm))]))).attr('fill', 'none')
-        .attr('stroke', 'var(--color-fg)').attr('stroke-width', 2.5).attr('stroke-linejoin', 'round');
-    }
-    bandHover(svg, box, x, keys.map((mm) => ({ mm })), 'mm', m, H, (r) => [
-      r.mm === 0 ? 'First VS4 month' : `${r.mm} month${r.mm === 1 ? '' : 's'} on`,
-      ids.map(([id, s]) => [colorOf.get(id), s, (each.find((d) => d.id === id && d.m === r.mm) || {})[qf]])
-        .filter((l) => l[2] != null).map(([c, s, v]) => [c, s, pct1(v)])
-        .concat(q != null ? [['var(--color-fg)', 'Path the cases use', pct1(pathAt(r.mm))]] : [])]);
-  }
-
-  function drawOutlookTable(p) {
-    const table = document.getElementById('ol-table');
-    if (!table) return;
-    const st = dash.data('outlook').status;
-    const upb = p.measure === 'upb', k = upb ? '_upb' : '';
-    const cols = [['name', 'short', (v, r) => olName(r)],
-      ['status', 'status', (v, r) => (v === 'other' ? `${int(r.sellers)} sellers` : OL_STATUS[v] || v)],
-      ['share', `share${k}`, pct1], ['vs4', upb ? 'vs4_upb_share' : 'vs4_share', pct1], ['better', 'better_vs4', pct1],
-      ['both', 'both_share', pct1], ['ceiling', `ceiling${k}`, pct1], ['deep', `deep${k}`, pct1],
-      ['adds', `adds_deep${k}`, (v) => fixed(1)(v * 100)]];
-    const s = sorts['ol-table'];
-    table.querySelectorAll('th[data-col]').forEach((th) => {
-      const c = cols.find((x) => x[0] === th.dataset.col);
-      if (c) th.setAttribute('data-field', c[1]);
-      if (th.dataset.col === s.col) th.setAttribute('aria-sort', s.dir);
-      else th.removeAttribute('aria-sort');
-    });
-    const sc = cols.find((x) => x[0] === s.col) || cols[cols.length - 1];
-    const rows = olRows('lender');
-    const sorted = rows.filter((r) => r.id !== 'other').sort((a, b) => {
-      const va = a[sc[1]], vb = b[sc[1]];
-      if (va == null || vb == null) return (va == null) - (vb == null) || a.rank - b.rank;
-      const c = typeof va === 'string' ? va.localeCompare(vb) : va - vb;
-      return (s.dir === 'ascending' ? c : -c) || a.rank - b.rank;
-    }).concat(rows.filter((r) => r.id === 'other'));
-    table.closest('.vx-tablebox').classList.toggle('dash-skeleton', st === 'loading');
-    const heads = table.tHead.rows[0].cells;
-    const body = table.tBodies[0];
-    body.replaceChildren();
-    for (const r of sorted) {
-      const tr = body.insertRow();
-      tr.dataset.key = ['lender', r.id].map(keyPart).join(',');
-      const cell = tr.insertCell();
-      cell.className = heads[0].className;
-      const tick = document.createElement('input');
-      tick.type = 'checkbox';
-      tick.className = 'ol-check';
-      tick.value = r.id;
-      tick.checked = olPicked.has(r.id);
-      tick.setAttribute('aria-label', `Pick ${olName(r)}`);
-      cell.append(tick);
-      cols.forEach(([, f, fmt], i) => {
-        const td = tr.insertCell();
-        td.textContent = r[f] == null ? '—' : fmt(r[f], r);
-        td.className = heads[i + 1].className;
-      });
-    }
-    drawOutlookPick(p);
-  }
-
-  // The picked lenders as deep as the deep lenders, everyone else as today.
-  function drawOutlookPick(p) {
-    if (!root.querySelector('.ol-pick-line')) return;
-    const k = p.measure === 'upb' ? '_upb' : '';
-    const today = (olRows('ladder').find((r) => r.key === 'today') || {})[`value${k}`];
-    const picked = olRows('lender').filter((r) => olPicked.has(r.id));
-    const add = d3.sum(picked, (r) => r[`adds_deep${k}`] || 0);
-    const n = d3.sum(picked, (r) => r.sellers || 1);
-    root.querySelector('.ol-pick-n').textContent = `${int(n)} lender${n === 1 ? '' : 's'}`;
-    root.querySelector('.ol-pick-v').textContent = today == null ? '—' : pct1(today + add);
-    root.querySelector('.ol-pick-d').textContent = picked.length ? `(${pts(add)} from today)` : '';
-  }
-
-  function pickLenders(how) {
-    olPicked.clear();
-    for (const r of olRows('lender')) {
-      const using = r.status === 'deep' || r.status === 'using';
-      if (how === 'all' || ((how === 'users' || how === 'next') && using) || (how === 'next' && r.next)) olPicked.add(r.id);
-    }
-    drawOutlookTable(params());
-  }
-
-  function drawOutlookPace(st, k) {
-    const table = document.getElementById('ol-pace-table');
-    if (!table) return;
-    const rows = olRows('pace').sort((a, b) => (a.key === 'all') - (b.key === 'all') || (a.month < b.month ? -1 : 1));
-    const fields = ['month', 'new_sellers', `new_share${k}`, `pool_share${k}`, `rate${k}`];
-    const heads = table.tHead.rows[0].cells;
-    fields.forEach((f, i) => heads[i].setAttribute('data-field', f));
-    table.closest('.vx-tablebox').classList.toggle('dash-skeleton', st === 'loading');
-    const body = table.tBodies[0];
-    body.replaceChildren();
-    for (const r of rows) {
-      const tr = body.insertRow();
-      tr.dataset.key = ['pace', r.key].map(keyPart).join(',');
-      [r.key === 'all' ? 'All months' : monthYear(r.month), orDash(int)(r.new_sellers), orDash(pct1)(r[fields[2]]),
-        orDash(pct1)(r[fields[3]]), orDash(pct1)(r[fields[4]])].forEach((text, i) => {
-        const td = tr.insertCell();
-        td.textContent = text;
-        td.className = heads[i].className;
-      });
-    }
-  }
-
   // ---- Borrowers ----
-  const GRP_NAME = { vs4: 'VantageScore 4.0', fico: 'Classic FICO' };
-  const COVER_NOTE = {
-    all: 'Every VS4-priced and Classic FICO-priced loan, issued since July 2026 for the borrower mix and first disclosed since July 20, 2026 for rates.',
-    both: 'Loans disclosed with every score delivered (records since Oct 19, 2026) that carry both scores: priced on VS4 against priced on Classic FICO.',
-    vs4only: 'VS4-priced loans with no Classic FICO among loans disclosed with every score delivered (records since Oct 19, 2026), against every FICO-priced loan disclosed that way.',
-  };
-  const keyPart = (v) => encodeURIComponent(String(v));
-  const bpSigned = (v) => (Math.abs(v) < 0.05 ? '0.0' : d3.format('+.1f')(v));
-  const bpTick = (v) => (v === 0 ? '0' : d3.format('+')(v));
-
-  function drawScoreCover() {
-    const table = document.getElementById('score-cover-table');
-    const st = dash.data('score_coverage').status;
-    const all = rowsOf('score_coverage');
-    table.closest('.vx-tablebox').classList.toggle('dash-skeleton', st === 'loading');
-    const body = table.tBodies[0];
-    body.replaceChildren();
-    for (const r of all.filter((d) => d.week === 'all')) {
-      const tr = body.insertRow();
-      tr.dataset.key = [r.agency, r.week, r.model].map(keyPart).join(',');
-      [[AG_NAME[r.agency] || r.agency, 'vx-l'], [GRP_NAME[r.model], 'vx-l'], [int(r.loans)], [pct1(r.both_share)], [pct1(r.one_share)]]
-        .forEach(([text, cls]) => {
-          const td = tr.insertCell();
-          td.textContent = text;
-          if (cls) td.className = cls;
-        });
+  function drawSince() {
+    for (const [cls, id] of [['s-mix-since', 'composition'], ['s-profile-since', 'profile']]) {
+      const r = rowsOf(id)[0];
+      root.querySelectorAll('.' + cls).forEach((el) => fill(el, dash.data(id).status, r && r.since ? monthYear(r.since) : null));
     }
-    const box = document.getElementById('score-cover-chart');
-    const gses = ['FNMA', 'FHLMC'];
-    legend(document.getElementById('score-cover-legend'), gses.map((a) => [agencyColor(a), AG_NAME[a], 'box']));
-    if (!prep(box, st)) return;
-    const data = all.filter((r) => r.week !== 'all' && r.model === 'vs4' && r.agency !== 'All');
-    if (!data.length) return;
-    const weeks = [...new Set(data.map((r) => r.week))].sort();
-    const W = box.clientWidth, H = 180, m = { top: 18, right: 10, bottom: 26, left: 0 };
-    const svg = svgFor(box, W, H, 'VS4-priced loans with no Classic FICO by week and GSE');
-    const y = d3.scaleLinear([0, Math.max(0.05, d3.max(data, (r) => r.one_share)) * 1.15], [H - m.bottom, m.top]).nice(4);
-    const yf = d3.format('.0%');
-    const { x, widest } = bandFrame(svg, weeks, shortDay, y, yf, 4, W, m);
-    yAxis(svg, y, yf, m.left, W - m.right, 4);
-    bandAxis(svg, x, weeks, shortDay, widest, H - m.bottom + 8);
-    const xi = d3.scaleBand(gses, [0, x.bandwidth()]).padding(0.15);
-    svg.append('g').selectAll('rect').data(data).join('rect')
-      .attr('x', (r) => x(r.week) + xi(r.agency)).attr('width', xi.bandwidth())
-      .attr('y', (r) => y(r.one_share)).attr('height', (r) => Math.max(0, y(0) - y(r.one_share))).attr('rx', 3)
-      .attr('fill', (r) => agencyColor(r.agency)).attr('fill-opacity', (r) => (r.complete ? 1 : 0.5));
-    if (xi.bandwidth() >= textWidth(svg, ['100%']) + 4) {
-      svg.append('g').selectAll('text').data(data).join('text')
-        .attr('x', (r) => x(r.week) + xi(r.agency) + xi.bandwidth() / 2).attr('y', (r) => y(r.one_share) - 5)
-        .attr('text-anchor', 'middle').style('fill', 'var(--color-fg)').text((r) => d3.format('.0%')(r.one_share));
-    }
-    bandHover(svg, box, x, weeks.map((w) => ({ week: w })), 'week', m, H, (o) => [`Week of ${shortDay(o.week)}`,
-      data.filter((r) => r.week === o.week).map((r) => [agencyColor(r.agency), AG_NAME[r.agency], `${pct1(r.one_share)} of ${int(r.loans)} VS4-priced loans`])]);
   }
 
   function drawMix(p) {
     const box = document.getElementById('mix-chart');
     const dimSel = document.getElementById('mix-dim');
-    const all = rowsOf('borrowers').filter((r) => r.cover === p.cover);
+    const all = rowsOf('composition');
     const dims = [...new Map(all.map((r) => [r.dim, r.dim_label])).entries()];
-    const sig = `${p.cover}:${dims.map(([d]) => d).join(',')}`;
-    if (dimSel.dataset.sig !== sig) {
-      dimSel.replaceChildren(...dims.map(([v, l]) => new Option(l, v)));
-      dimSel.dataset.sig = sig;
-    }
+    if (dims.length && dimSel.options.length !== dims.length) dimSel.replaceChildren(...dims.map(([v, l]) => new Option(l, v)));
     const dim = dims.some(([v]) => v === p.dim) ? p.dim : dims.length ? dims[0][0] : null;
     if (dim) dimSel.value = dim;
+    const color = (model) => (model === MODELS[0] ? C_VS4 : 'var(--cds-chart-muted)');
+    legend(document.getElementById('mix-legend'), MODELS.map((mdl) => [color(mdl), mdl, 'box']));
+    if (!prep(box, dash.data('composition').status)) return;
     const data = all.filter((r) => r.dim === dim).sort((a, b) => a.bucket_order - b.bucket_order);
-    const grps = ['vs4', 'fico'].filter((g) => data.some((r) => r.grp === g));
-    const hasExp = data.some((r) => r.grp === 'vs4' && r.expected != null);
-    const color = (g) => (g === 'vs4' ? C_VS4 : 'var(--cds-chart-muted)');
-    legend(document.getElementById('mix-legend'), grps.map((g) => [color(g), `${GRP_NAME[g]}, ${int(data.find((r) => r.grp === g).group_loans)} loans`, 'box'])
-      .concat(hasExp ? [['var(--color-fg)', 'VS4 if it matched its lenders’ FICO loans', 'line']] : []));
-    if (!prep(box, dash.data('borrowers').status)) return;
     const buckets = [...new Set(data.map((r) => r.bucket))];
     if (!buckets.length) return;
     const W = box.clientWidth, barH = 11, gap = 14;
-    const groupH = grps.length * barH + 4;
+    const groupH = MODELS.length * barH + 4;
     const m = { top: 4, right: 0, bottom: 4, left: 0 };
     const H = m.top + m.bottom + buckets.length * (groupH + gap);
     box.style.minHeight = `${H}px`;
     const svg = svgFor(box, W, H, 'Borrower mix of VS4 and Classic FICO loans');
     m.left = Math.ceil(textWidth(svg, buckets)) + 10;
     m.right = Math.ceil(textWidth(svg, data.map((r) => pct1(r.share)))) + 8;
-    const x = d3.scaleLinear([0, d3.max(data, (r) => Math.max(r.share, r.expected ?? 0)) || 1], [m.left, W - m.right]);
+    const x = d3.scaleLinear([0, d3.max(data, (r) => r.share) || 1], [m.left, W - m.right]);
     const yb = d3.scaleBand(buckets, [m.top, H - m.bottom]).paddingInner(gap / (groupH + gap));
-    const yi = d3.scaleBand(grps, [0, yb.bandwidth()]).paddingInner(0.2);
+    const yi = d3.scaleBand(MODELS, [0, yb.bandwidth()]).paddingInner(0.2);
     svg.append('g').selectAll('text').data(buckets).join('text')
       .attr('x', m.left - 10).attr('y', (b) => yb(b) + yb.bandwidth() / 2).attr('dy', '0.35em')
       .attr('text-anchor', 'end').style('fill', 'var(--color-fg)').text((b) => b);
     svg.append('line').attr('x1', x(0)).attr('x2', x(0)).attr('y1', m.top).attr('y2', H - m.bottom).attr('stroke', 'var(--cds-chart-axis)');
     const tip = tooltip(box);
     const g = svg.append('g').selectAll('g').data(data).join('g');
-    const top = (r) => yb(r.bucket) + yi(r.grp);
-    g.append('rect').attr('x', x(0)).attr('y', top).attr('height', yi.bandwidth())
-      .attr('width', (r) => Math.max(0, x(r.share) - x(0))).attr('rx', 3).attr('fill', (r) => color(r.grp));
-    g.filter((r) => r.grp === 'vs4' && r.expected != null).append('line')
-      .attr('x1', (r) => x(r.expected)).attr('x2', (r) => x(r.expected))
-      .attr('y1', (r) => top(r) - 3).attr('y2', (r) => top(r) + yi.bandwidth() + 3)
-      .attr('stroke', 'var(--color-fg)').attr('stroke-width', 2);
-    g.append('text').attr('x', (r) => x(Math.max(r.share, r.grp === 'vs4' ? r.expected ?? 0 : 0)) + 5)
-      .attr('y', (r) => top(r) + yi.bandwidth() / 2).attr('dy', '0.35em').text((r) => pct1(r.share));
-    g.append('rect').attr('x', 0).attr('width', W).attr('y', top).attr('height', yi.bandwidth()).attr('fill', 'transparent')
-      .on('pointermove', (event, r) => tip.show(event, `${r.dim_label}: ${r.bucket}`, [
-        [color(r.grp), GRP_NAME[r.grp], `${pct1(r.share)} (${int(r.loans)} of ${int(r.group_loans)})`],
-      ].concat(r.grp === 'vs4' && r.expected != null ? [['var(--color-fg)', 'If it matched its lenders’ FICO loans', pct1(r.expected)]] : [])))
+    g.append('rect').attr('x', x(0)).attr('y', (r) => yb(r.bucket) + yi(r.model)).attr('height', yi.bandwidth())
+      .attr('width', (r) => Math.max(0, x(r.share) - x(0))).attr('rx', 3).attr('fill', (r) => color(r.model))
+      .on('pointermove', (event, r) => tip.show(event, `${r.dim_label}: ${r.bucket}`, [[color(r.model), r.model, `${pct1(r.share)} of loans (${int(r.loans)})`]]))
       .on('pointerleave', () => tip.hide());
+    g.append('text').attr('x', (r) => x(r.share) + 4).attr('y', (r) => yb(r.bucket) + yi(r.model) + yi.bandwidth() / 2)
+      .attr('dy', '0.35em').text((r) => pct1(r.share));
   }
 
-  const PROFILE_FMT = { loans: int, wa_score: fixed(0), wa_fico: fixed(0), wa_vs4: fixed(0), avg_gap: d3.format('+.1f'),
-    wa_ltv: fixed(1), wa_dti: fixed(1), wa_rate_30: fixed(2), avg_loan: money, purchase_share: pct1, cashout_share: pct1,
-    fthb_share: pct1, investor_share: pct1, broker_share: pct1, mi_share: pct1, fixed30_share: pct1 };
-  function drawProfile(p) {
-    const status = dash.data('borrower_profile').status;
-    const data = rowsOf('borrower_profile');
-    root.querySelectorAll('#profile-grid [data-covers]').forEach((el) => { el.hidden = el.dataset.covers !== p.cover; });
+  const PROFILE_FMT = { loans: int, wa_score: fixed(0), wa_ltv: fixed(1), wa_dti: fixed(1), wa_rate: fixed(2), avg_loan: money,
+    purchase_share: pct1, cashout_share: pct1, fthb_share: pct1, investor_share: pct1, broker_share: pct1 };
+  function drawProfile() {
+    const status = dash.data('profile').status;
+    const data = rowsOf('profile');
     root.querySelectorAll('#profile-grid [data-field]').forEach((el) => {
-      const grp = el.dataset.grp, k = el.getAttribute('data-field');
-      el.setAttribute('data-where', `cover=${p.cover}&grp=${grp}`);
-      const r = data.find((d) => d.cover === p.cover && d.grp === grp);
+      const model = (el.getAttribute('data-where') || '').slice('model='.length);
+      const k = el.getAttribute('data-field');
+      const r = data.find((d) => d.model === model);
       fill(el, status, r && r[k] != null ? PROFILE_FMT[k](r[k]) : null);
     });
-  }
-
-  // ---- Pricing ----
-  const PDIMS = { purpose: 'Loan purpose', score: 'Credit score used for pricing', ltv: 'Loan-to-value', channel: 'Origination channel', size: 'Loan size' };
-  const BASIS_TEXT = { headline: 'at the same headline score', own_fico: 'at the borrower’s own Classic FICO' };
-
-  function drawPricing(p) {
-    const st = dash.data('pricing').status;
-    const rows = rowsOf('pricing');
-    const mine = (r) => r.cover === p.cover && r.basis === p.basis;
-    const o = rows.find((r) => r.view === 'overall' && mine(r)) || {};
-    const fit = rows.find((r) => r.view === 'fit') || {};
-    const where = `view=overall&cover=${p.cover}&basis=${p.basis}`;
-    const one = d3.format('.1f');
-    mark('.pr-net', 'net_bp', where, st, o.net_bp == null ? null : bpSigned(o.net_bp));
-    mark('.pr-check', 'check_bp', where, st, o.check_bp == null ? null : bpSigned(o.check_bp));
-    mark('.pr-premium', 'premium_bp', where, st, o.premium_bp == null ? null : bpSigned(o.premium_bp));
-    mark('.pr-se', 'se_bp', where, st, o.se_bp == null ? null : one(o.se_bp));
-    mark('.pr-median', 'median_bp', where, st, o.median_bp == null ? null : bpSigned(o.median_bp));
-    mark('.pr-n', 'n', where, st, o.n == null ? null : int(o.n));
-    mark('.pr-since', 'since', where, st, o.since ? longDay(o.since) : null);
-    mark('.pr-rmse', null, null, st, fit.rmse_bp == null ? null : one(fit.rmse_bp));
-    mark('.pr-r2', null, null, st, fit.r2 == null ? null : d3.format('.2f')(fit.r2));
-    mark('.pr-held', null, null, st, fit.n == null ? null : int(fit.n));
-    mark('.pr-trained', null, null, st, fit.n_train == null ? null : int(fit.n_train));
-    document.getElementById('basis-seg').hidden = p.cover !== 'both';
-    root.querySelectorAll('.pr-window').forEach((el) => { el.textContent = p.cover === 'all' ? 'first disclosed' : 'disclosed with every score'; });
-    root.querySelectorAll('.pricing-basis').forEach((el) => { el.textContent = BASIS_TEXT[p.basis]; });
-    drawPricingWeeks(st, rows.filter((r) => r.view === 'week' && mine(r)).sort((a, b) => a.order - b.order));
-    hbarsBp(document.getElementById('pricing-seller-chart'), st, rows.filter((r) => r.view === 'seller' && mine(r)).sort((a, b) => a.order - b.order).slice(0, 12),
-      'VS4 rate against the model by seller');
-    const sel = document.getElementById('pricing-dim');
-    if (sel.options.length !== Object.keys(PDIMS).length) sel.replaceChildren(...Object.entries(PDIMS).map(([v, l]) => new Option(l, v)));
-    sel.value = PDIMS[p.pdim] ? p.pdim : 'purpose';
-    hbarsBp(document.getElementById('pricing-segment-chart'), st,
-      rows.filter((r) => r.view === 'segment' && mine(r) && r.dim === sel.value).sort((a, b) => a.order - b.order),
-      'VS4 rate against the model by type of loan');
-    drawPricingHist(st, rows.filter((r) => r.view === 'hist' && mine(r)).sort((a, b) => a.order - b.order));
-  }
-
-  function pricingTip(r) {
-    return [
-      [C_VS4, 'VS4 loans', `${bpSigned(r.premium_bp)} bp (± ${d3.format('.1f')(2 * (r.se_bp || 0))}) on ${int(r.n)}`],
-      ['var(--color-fg)', 'Held-out FICO loans', r.check_bp == null ? 'too few to show' : `${bpSigned(r.check_bp)} bp on ${int(r.check_n)}`],
-      [null, 'Net', r.net_bp == null ? '—' : `${bpSigned(r.net_bp)} bp`],
-    ];
-  }
-
-  function drawPricingWeeks(st, data) {
-    const box = document.getElementById('pricing-week-chart');
-    legend(document.getElementById('pricing-week-legend'), [[C_VS4, 'VS4 loans', 'box'], ['var(--color-fg)', 'Held-out FICO loans', 'line']]);
-    if (!prep(box, st) || !data.length) return;
-    const W = box.clientWidth, H = 240, m = { top: 12, right: 10, bottom: 26, left: 0 };
-    const svg = svgFor(box, W, H, 'VS4 rate against the model by week of first disclosure');
-    const lo = Math.min(0, d3.min(data, (r) => r.premium_bp - 2 * (r.se_bp || 0)), d3.min(data, (r) => r.check_bp ?? 0));
-    const hi = Math.max(0, d3.max(data, (r) => r.premium_bp + 2 * (r.se_bp || 0)), d3.max(data, (r) => r.check_bp ?? 0));
-    const y = d3.scaleLinear([lo, hi], [H - m.bottom, m.top]).nice(5);
-    const keys = data.map((r) => r.key);
-    const { x, widest } = bandFrame(svg, keys, shortDay, y, bpTick, 5, W, m);
-    yAxis(svg, y, bpTick, m.left, W - m.right);
-    bandAxis(svg, x, keys, shortDay, widest, H - m.bottom + 8);
-    const bw = Math.min(28, x.bandwidth()), off = (x.bandwidth() - bw) / 2;
-    const cx = (r) => x(r.key) + x.bandwidth() / 2;
-    svg.append('g').selectAll('rect').data(data).join('rect')
-      .attr('x', (r) => x(r.key) + off).attr('width', bw).attr('y', (r) => y(Math.max(0, r.premium_bp)))
-      .attr('height', (r) => Math.abs(y(r.premium_bp) - y(0))).attr('rx', 3).attr('fill', C_VS4).attr('fill-opacity', 0.85);
-    svg.append('g').selectAll('line').data(data.filter((r) => r.se_bp != null)).join('line')
-      .attr('x1', cx).attr('x2', cx).attr('y1', (r) => y(r.premium_bp - 2 * r.se_bp)).attr('y2', (r) => y(r.premium_bp + 2 * r.se_bp))
-      .attr('stroke', 'var(--color-fg)').attr('stroke-width', 1.5);
-    svg.append('g').selectAll('path').data(data.filter((r) => r.check_bp != null)).join('path')
-      .attr('d', d3.symbol(d3.symbolDiamond, 40)).attr('transform', (r) => `translate(${cx(r)},${y(r.check_bp)})`)
-      .attr('fill', 'var(--color-panel)').attr('stroke', 'var(--color-fg)');
-    bandHover(svg, box, x, data, 'key', m, H, (r) => [`Week of ${shortDay(r.key)}`, pricingTip(r)]);
-  }
-
-  function hbarsBp(box, st, items, label) {
-    if (!prep(box, st)) return;
-    if (!items.length) return;
-    const W = box.clientWidth, rowH = 26;
-    const m = { top: 6, right: 12, bottom: 26, left: 0 };
-    const H = m.top + m.bottom + items.length * rowH;
-    box.style.minHeight = `${H}px`;
-    const svg = svgFor(box, W, H, label);
-    const text = (r) => `${r.label} · ${int(r.n)}`;
-    m.left = Math.min(Math.ceil(textWidth(svg, items.map(text))) + 14, Math.max(110, Math.floor(W * 0.42)));
-    const lo = Math.min(0, d3.min(items, (r) => r.premium_bp - 2 * (r.se_bp || 0)), d3.min(items, (r) => r.check_bp ?? 0));
-    const hi = Math.max(0, d3.max(items, (r) => r.premium_bp + 2 * (r.se_bp || 0)), d3.max(items, (r) => r.check_bp ?? 0));
-    const x = d3.scaleLinear([lo, hi], [m.left, W - m.right]).nice(5);
-    const ticks = x.ticks(5);
-    svg.append('g').selectAll('line').data(ticks).join('line')
-      .attr('x1', (v) => x(v)).attr('x2', (v) => x(v)).attr('y1', m.top).attr('y2', H - m.bottom)
-      .attr('stroke', (v) => (v === 0 ? 'var(--cds-chart-axis)' : 'var(--cds-chart-grid)'));
-    svg.append('g').attr('transform', `translate(0,${H - m.bottom + 8})`)
-      .call(d3.axisBottom(x).tickValues(ticks).tickFormat(bpTick).tickSize(0)).call(styleAxis);
-    const idx = new Map(items.map((r, i) => [r, i]));
-    const yb = d3.scaleBand(d3.range(items.length), [m.top, H - m.bottom]).paddingInner(0.35);
-    const cy = (r) => yb(idx.get(r)) + yb.bandwidth() / 2;
-    const g = svg.append('g').selectAll('g').data(items).join('g');
-    g.append('text').attr('x', m.left - 10).attr('y', cy).attr('dy', '0.35em').attr('text-anchor', 'end')
-      .style('fill', 'var(--color-fg)').text(text).each(function () { clip(this, m.left - 14); });
-    g.append('rect').attr('x', (r) => x(Math.min(0, r.premium_bp))).attr('width', (r) => Math.abs(x(r.premium_bp) - x(0)))
-      .attr('y', (r) => yb(idx.get(r))).attr('height', yb.bandwidth()).attr('rx', 3).attr('fill', C_VS4).attr('fill-opacity', 0.85);
-    g.filter((r) => r.se_bp != null).append('line')
-      .attr('x1', (r) => x(r.premium_bp - 2 * r.se_bp)).attr('x2', (r) => x(r.premium_bp + 2 * r.se_bp))
-      .attr('y1', cy).attr('y2', cy).attr('stroke', 'var(--color-fg)').attr('stroke-width', 1.5);
-    g.filter((r) => r.check_bp != null).append('path').attr('d', d3.symbol(d3.symbolDiamond, 40))
-      .attr('transform', (r) => `translate(${x(r.check_bp)},${cy(r)})`).attr('fill', 'var(--color-panel)').attr('stroke', 'var(--color-fg)');
-    const tip = tooltip(box);
-    g.append('rect').attr('x', 0).attr('width', W).attr('y', (r) => yb(idx.get(r)) - 3).attr('height', yb.bandwidth() + 6)
-      .attr('fill', 'transparent')
-      .on('pointermove', (event, r) => tip.show(event, r.label, pricingTip(r)))
-      .on('pointerleave', () => tip.hide());
-  }
-
-  function drawPricingHist(st, data) {
-    const box = document.getElementById('pricing-hist-chart');
-    legend(document.getElementById('pricing-hist-legend'), [[C_VS4, 'VS4 loans', 'box'], ['var(--color-fg-muted)', 'Held-out FICO loans', 'line']]);
-    if (!prep(box, st) || !data.length) return;
-    const W = box.clientWidth, H = 220, m = { top: 10, right: 10, bottom: 26, left: 0 };
-    const svg = svgFor(box, W, H, 'Spread of VS4 and held-out FICO loans’ rates against the model');
-    const width = data.find((r) => r.bin_lo != null && r.bin_hi != null);
-    const step = width ? width.bin_hi - width.bin_lo : 1;
-    const lo = (r) => (r.bin_lo == null ? r.bin_hi - step : r.bin_lo);
-    const hi = (r) => (r.bin_hi == null ? r.bin_lo + step : r.bin_hi);
-    const y = d3.scaleLinear([0, (d3.max(data, (r) => Math.max(r.share, r.check_share)) || 0.01) * 1.1], [H - m.bottom, m.top]).nice(4);
-    const yf = d3.format('.0%');
-    m.left = Math.ceil(textWidth(svg, y.ticks(4).map(yf))) + 10;
-    const x = d3.scaleLinear([d3.min(data, lo), d3.max(data, hi)], [m.left, W - m.right]);
-    yAxis(svg, y, yf, m.left, W - m.right, 4);
-    svg.append('g').attr('transform', `translate(0,${H - m.bottom + 8})`)
-      .call(d3.axisBottom(x).ticks(6).tickFormat(bpTick).tickSize(0)).call(styleAxis);
-    svg.append('g').selectAll('rect').data(data).join('rect')
-      .attr('x', (r) => x(lo(r)) + 1).attr('width', (r) => Math.max(0, x(hi(r)) - x(lo(r)) - 2))
-      .attr('y', (r) => y(r.share)).attr('height', (r) => Math.max(0, y(0) - y(r.share))).attr('fill', C_VS4).attr('fill-opacity', 0.8);
-    const last = data[data.length - 1];
-    svg.append('path').attr('d', d3.line().curve(d3.curveStepAfter)(data.map((r) => [x(lo(r)), y(r.check_share)]).concat([[x(hi(last)), y(last.check_share)]])))
-      .attr('fill', 'none').attr('stroke', 'var(--color-fg-muted)').attr('stroke-width', 2);
-    const tip = tooltip(box);
-    svg.append('g').selectAll('rect').data(data).join('rect')
-      .attr('x', (r) => x(lo(r))).attr('width', (r) => Math.max(0, x(hi(r)) - x(lo(r)))).attr('y', m.top)
-      .attr('height', H - m.top - m.bottom).attr('fill', 'transparent')
-      .on('pointermove', (event, r) => tip.show(event,
-        r.bin_lo == null ? `Below ${bpSigned(r.bin_hi)} bp` : r.bin_hi == null ? `${bpSigned(r.bin_lo)} bp and above` : `${bpSigned(r.bin_lo)} to ${bpSigned(r.bin_hi)} bp`,
-        [[C_VS4, 'VS4 loans', `${pct1(r.share)} of ${int(r.n)}`], ['var(--color-fg-muted)', 'Held-out FICO loans', `${pct1(r.check_share)} of ${int(r.check_n)}`]]))
-      .on('pointerleave', () => tip.hide());
   }
 
   function draw() {
@@ -2448,15 +1558,12 @@
     drawSummary(p);
     if (current === 'overview') {
       drawTiles(p);
-      drawCeilingTile(p);
       drawMonthly(p);
       drawWeekly(p);
       drawEventList();
       drawBreadth(p);
       drawDrivers(p);
       drawClean(p);
-    } else if (current === 'outlook') {
-      drawOutlook(p);
     } else if (current === 'lenders') {
       drawWindow();
       drawExplorer(p);
@@ -2465,18 +1572,10 @@
       drawMarket(p);
       drawNewAdopters(p);
       drawTables(p);
-    } else if (current === 'scores') {
-      drawChoice(p);
-      drawCeiling(p);
-      drawBands();
     } else if (current === 'borrowers') {
-      root.querySelectorAll('.cover-note').forEach((el) => { el.textContent = COVER_NOTE[p.cover]; });
-      drawScoreCover();
+      drawSince();
       drawMix(p);
-      drawProfile(p);
-    } else if (current === 'pricing') {
-      root.querySelectorAll('.cover-note').forEach((el) => { el.textContent = COVER_NOTE[p.cover]; });
-      drawPricing(p);
+      drawProfile();
     }
   }
 

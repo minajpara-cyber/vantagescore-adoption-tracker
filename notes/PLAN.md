@@ -116,8 +116,8 @@ local in notes/ANALYTICS_PLAN.md)
    others are starting; three paths by month (no change, today's users go deep, and others also start at
    the recent pace); and a lender table to add up any set of lenders.
 
-Items 2-5 were published on the public site Oct 30, 2026, when the public page and dataset list were
-matched to the dashboard's.
+Items 2-5 were on the public site briefly on Oct 30, 2026 and came off the same morning; they are on the
+private dashboard only.
 
 ## 5. Open items
 - Seller is not originator: correspondent aggregators (AmeriHome, PennyMac) deliver loans other lenders

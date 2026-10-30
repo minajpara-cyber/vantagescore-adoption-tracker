@@ -3,11 +3,11 @@
 Tracks VantageScore 4.0 vs Classic FICO adoption in Fannie Mae and Freddie Mac MBS issuance, from the
 GSEs' loan-level issuance disclosure files. Plan and definitions: [notes/PLAN.md](notes/PLAN.md).
 Public site: https://minajpara-cyber.github.io/vantagescore-adoption-tracker/ (served from docs/, refreshed weekly).
-A private claude.ai dashboard shows the same page (since Oct 29, 2026); new views appear there first.
+A private claude.ai dashboard (since Oct 29, 2026) carries more views; new views appear there first.
 
 New analysis goes to the private dashboard first. The public site keeps its own page
 (site/public/index.html) and dataset list (`PUBLIC_DATASETS` in src/gsescore/site.py) until a view is
-cleared to go public: copy it there and add its datasets (last done Oct 30, 2026, when the two matched).
+cleared to go public: copy it there and add its datasets (last done Oct 29, 2026).
 
 ## Layout
 
