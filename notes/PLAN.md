@@ -134,8 +134,16 @@ private dashboard only.
    Freddie Mac Guide Exhibit 19 (Bulletin 2026-K); Fannie Mae's matrix is taken to match it, unchecked. Fee saved per loan and in dollars by
    lender; what lenders with both scores left; an estimate for loans with only a Classic FICO; the same scaled to a year's balance; the fee
    against what reaches the rate; the GSEs' own scores on these loans.
-5. Analyst tools: ticker pages, downloads, FICO exposure calculator, editable outlook, weekly change note.
-6. Deeper data: the monthly loan file's origination scores, why Freddie differs, FHA, SFTP.
+5. Done Oct 30, 2026: analyst tools. On the Lenders tab, a read for each company with a row of tickers: its score split by GSE, its rule, fees, rates, questions
+   to ask and what it has said. On the Outlook tab, your scenario by lender and FICO's exposure on GSE loans (src/gsescore/exposure.py, reference/assumptions.csv, in
+   site/dashboard/tools.js). On the Overview, this week's note with an archive (src/gsescore/notes.py, `gsescore note`). The Excel workbook (src/gsescore/export.py,
+   exports/, git-ignored) has the tables and the calculator as live formulas; Sources on the dashboard gives any dataset as CSV. Longer sections fold away, and the Borrowers
+   tab's table of which scores loans carry gave way to the front page's split.
+6. Deeper data. Done Oct 30, 2026: which lenders show fewer scores at Freddie Mac, and which factors do not explain it (the cause is still unknown), and FHA (it accepts VS4 for
+   case numbers from January 1, 2027). Waiting: the monthly loan file (L1_MONTHLY_ONGOING_LOAN_LEVEL, Freddie fuYYMMDD), whose origination score fields (L-097, L-099) and
+   back-filled Pricing Indicator may give both scores on earlier loans and replace the estimates for those months. The first file with the new fields should come about
+   Nov 5, 2026. The weekly refresh lists its name and size from then (`__gseListMonthly`); then decide how to collect it, since the browser collector holds files in memory, and
+   how much to keep (loans issued since VS4 opened, not the whole book). SFTP stays deferred until the user wants it.
 
 ## 5. Open items
 - Seller is not originator: correspondent aggregators (AmeriHome, PennyMac) deliver loans other lenders

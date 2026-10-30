@@ -16,7 +16,7 @@ Loan-level data never leaves the local warehouse; only these aggregates are publ
   events       policy dates drawn on the charts
   sellers, seller_monthly, seller_weekly, seller_splits, adoption, adopters, series, highlights
                seller-level adoption, built in lenders.py
-  score_coverage, borrowers, borrower_profile
+  borrowers, borrower_profile
                which scores loans carry, and borrower mix by score group, built in borrowers.py
   pricing      VS4 note rates against a model of FICO-priced loans' rates, built in pricing.py
   choice, ceiling, rules, score_mix
@@ -32,8 +32,10 @@ from pathlib import Path
 
 from . import paths
 from .borrowers import build_datasets as build_borrower_datasets
+from .exposure import build_datasets as build_exposure_datasets
 from .fees import build_datasets as build_fee_datasets
 from .lenders import build_datasets as build_lender_datasets
+from .notes import build_datasets as build_note_datasets
 from .outlook import build_datasets as build_outlook_datasets
 from .pricing import build_pricing
 from .scores import build_datasets as build_score_datasets
@@ -284,6 +286,8 @@ def build(out_dir: Path = paths.SITE_DATA) -> dict:
     more |= build_fee_datasets(con)
     more |= build_outlook_datasets(con, LENDER_START)  # needs the ceiling's loans (scores.py) and the seller tables
     more["pricing"] = build_pricing(con, WEEKLY_START, in_range)
+    more |= build_note_datasets(con, more["statements"], more["pricing"])
+    more |= build_exposure_datasets(con, more["score_mix"])
     for name, rows in more.items():
         (out_dir / f"{name}.json").write_text(json.dumps({"rows": rows}, separators=(",", ":")))
         written[name] = len(rows)

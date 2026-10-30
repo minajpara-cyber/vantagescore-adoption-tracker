@@ -28,6 +28,7 @@ HEADLINE_MIN = 20000
 LENDER_TOP = 40
 MIN_N = 20
 MIN_CELL = 30
+WHOLE_DOLLARS = {"upb", "annual_upb", "taken_usd", "taken_all_usd", "left_usd", "est_usd", "option_usd", "taken_annual_usd", "option_annual_usd"}
 BANDS = [("a", "Below 700", 0, 3), ("b", "700-739", 4, 5), ("c", "740-779", 6, 7), ("d", "780 and over", 8, 8)]
 
 
@@ -130,4 +131,11 @@ def build_datasets(con) -> dict[str, list[dict]]:
         if vn >= MIN_N:
             out.append({"view": "lift", "scope": "All", "key": key, "label": labels[key], "loans": vn, "diff": diff})
     keys = sorted({k for r in out for k in r})
-    return {"fees": [{k: (round(r.get(k), 4) if isinstance(r.get(k), float) else r.get(k)) for k in keys} for r in out]}
+
+    def tidy(k, v):
+        """Whole dollars, so a rebuild's floating-point noise in large sums does not change the file."""
+        if not isinstance(v, float):
+            return v
+        return round(v) if k in WHOLE_DOLLARS else round(v, 4)
+
+    return {"fees": [{k: tidy(k, r.get(k)) for k in keys} for r in out]}

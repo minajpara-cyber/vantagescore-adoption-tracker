@@ -1,7 +1,7 @@
 """Why lenders differ: where each stands on the way to pricing on VS4, and what goes with it.
 
-From every record that carries the Pricing Indicator (scw, scores.py). Freddie Mac records show fewer of the scores
-delivered, so a lender's share with both scores is read at Fannie Mae where it has MIN_N+ loans.
+From every record that carries the Pricing Indicator (scw, scores.py). Some lenders show both scores far less often at
+Freddie Mac, so a lender's share with both scores is read at Fannie Mae where it has MIN_N+ loans.
 
 Stages, for each seller:
   pricing  prices on VS4 at least half the time VS4 is higher (MIN_N+ such loans)
@@ -13,7 +13,8 @@ Its rule, from its loans with both scores (MIN_N+ loans in each band): whenever,
 time with VS4 1-19 points above FICO in the latest weeks; moving, at least RULE_HIGH at 20+ points and up RULE_MOVE or more
 below the line; line, at least RULE_HIGH at 20+ points; some, at least a tenth at 20+; rare, less.
 
-  lender_stage  view lender: the LENDER_TOP largest sellers and every seller past the first stages with MIN_LIST+ loans.
+  lender_stage  view lender: the LENDER_TOP largest sellers and every seller past the first stages with MIN_LIST+ loans, with the split of
+                its loans (FICO only, both priced on FICO, both priced on VS4, VS4 only) overall and at each GSE.
                 view stage, kind (ownership: reference/sellers.csv, else from the name), lead (the channel with half or
                 more of its loans): lenders, share of loans, share with both scores, VS4's share.
                 view channel: by channel, the two largest VS4 sellers apart from the rest.
@@ -78,12 +79,16 @@ def build_datasets(con) -> dict[str, list[dict]]:
     with SELLERS_CSV.open(newline="") as f:
         listed_by_key = {r["key"]: r.get("kind") or None for r in csv.DictReader(f)}
     listed = {sid: listed_by_key.get(key) for key, sid in con.execute("SELECT key, id FROM seller_map").fetchall() if listed_by_key.get(key)}
-    both, fn = "has_fico AND has_vs4", "agency = 'FNMA'"
+    both, fn, fh = "has_fico AND has_vs4", "agency = 'FNMA'", "agency = 'FHLMC'"
     cur = con.execute(f"""
         WITH b AS (SELECT *, week >= DATE '{late}' AS late FROM scw)
         SELECT b.seller_id AS id, e.short, e.name, e.ticker, count(*) AS n, sum(upb)::DOUBLE AS u, count(*) FILTER (WHERE is_v) AS v,
                coalesce(sum(upb) FILTER (WHERE is_v), 0)::DOUBLE AS vu, count(*) FILTER (WHERE {both}) AS both_n,
-               count(*) FILTER (WHERE has_vs4 AND NOT has_fico) AS vo,
+               count(*) FILTER (WHERE has_vs4 AND NOT has_fico) AS vo, count(*) FILTER (WHERE {both} AND is_v) AS bv, count(*) FILTER (WHERE has_fico AND NOT has_vs4) AS fo,
+               count(*) FILTER (WHERE {fn} AND has_vs4 AND NOT has_fico) AS fn_vo, count(*) FILTER (WHERE {fn} AND {both} AND is_v) AS fn_bv,
+               count(*) FILTER (WHERE {fn} AND has_fico AND NOT has_vs4) AS fn_fo, count(*) FILTER (WHERE {fh}) AS fh_n, count(*) FILTER (WHERE {fh} AND {both}) AS fh_both,
+               count(*) FILTER (WHERE {fh} AND has_vs4 AND NOT has_fico) AS fh_vo, count(*) FILTER (WHERE {fh} AND {both} AND is_v) AS fh_bv,
+               count(*) FILTER (WHERE {fh} AND has_fico AND NOT has_vs4) AS fh_fo,
                count(*) FILTER (WHERE {fn}) AS fn_n, count(*) FILTER (WHERE {fn} AND {both}) AS fn_both,
                count(*) FILTER (WHERE {fn} AND NOT late) AS fe_n, count(*) FILTER (WHERE {fn} AND NOT late AND {both}) AS fe_b,
                count(*) FILTER (WHERE {fn} AND late) AS fl_n, count(*) FILTER (WHERE {fn} AND late AND {both}) AS fl_b,
@@ -120,6 +125,13 @@ def build_datasets(con) -> dict[str, list[dict]]:
         if s["rank"] > LENDER_TOP and not (s["stage"] in ("pricing", "some", "both") and s["n"] >= MIN_LIST):
             continue
         fannie = s["fe_n"] >= MIN_N and s["fl_n"] >= MIN_N
+
+        def mix(prefix, n, fo, both_n, bv, vo):
+            """The four-part split of a lender's loans, overall or at one GSE (MIN_N+ loans)."""
+            if n < MIN_N:
+                return {f"{prefix}_{k}": None for k in ("fico_only", "both_fico", "both_vs", "vs_only")}
+            return {f"{prefix}_fico_only": fo / n, f"{prefix}_both_fico": (both_n - bv) / n, f"{prefix}_both_vs": bv / n, f"{prefix}_vs_only": vo / n}
+
         out.append({"view": "lender", "id": s["id"], "short": s["short"], "ticker": s["ticker"], "kind": s["kind"], "lead": s["lead"],
                     "stage": s["stage"], "order": stage_order[s["stage"]], "rule": s["rule"], "rank": s["rank"], "loans": s["n"],
                     "share": s["n"] / n_all, "share_upb": s["u"] / u_all if u_all else None, "vs4_share": s["v"] / s["n"],
@@ -129,7 +141,9 @@ def build_datasets(con) -> dict[str, list[dict]]:
                     "both_early": s["fe_b"] / s["fe_n"] if fannie else _share(s["e_b"], s["e_n"], MIN_N),
                     "both_late": s["fl_b"] / s["fl_n"] if fannie else _share(s["l_b"], s["l_n"], MIN_N), "both_at": "FNMA" if fannie else "All",
                     "vs4_early": _share(s["e_v"], s["e_n"], MIN_N), "retail_share": s["ch_r"] / s["n"], "broker_share": s["ch_b"] / s["n"],
-                    "corr_share": s["ch_c"] / s["n"], "purchase_share": s["purchase"] / s["n"], "avg_fico": s["avg_fico"]})
+                    "corr_share": s["ch_c"] / s["n"], "purchase_share": s["purchase"] / s["n"], "avg_fico": s["avg_fico"],
+                    "fnma_loans": s["fn_n"], "fhlmc_loans": s["fh_n"], **mix("mix", s["n"], s["fo"], s["both_n"], s["bv"], s["vo"]),
+                    **mix("fnma", s["fn_n"], s["fn_fo"], s["fn_both"], s["fn_bv"], s["fn_vo"]), **mix("fhlmc", s["fh_n"], s["fh_fo"], s["fh_both"], s["fh_bv"], s["fh_vo"])})
 
     def group(view, key, label, order, members):
         n, u = sum(s["n"] for s in members), sum(s["u"] for s in members)

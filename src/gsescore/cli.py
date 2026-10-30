@@ -1,4 +1,4 @@
-"""Command line: gsescore {have,unpack,refresh,ingest,status,build,site,preview,publish,dashboard-changes,dashboard-record,sql}."""
+"""Command line: gsescore {have,unpack,refresh,ingest,status,build,export,note,site,preview,publish,dashboard-changes,dashboard-record,sql}."""
 import argparse
 import json
 import re
@@ -21,6 +21,7 @@ def cmd_refresh(args):
     """Bundles in Downloads -> data/inbox -> unpack -> ingest -> build -> docs/."""
     from .aggregate import build
     from .bundle import unpack_bundle
+    from .export import build_workbook
     from .ingest import ingest_paths
     from .site import build_site
     from .warehouse import refresh_db
@@ -47,6 +48,7 @@ def cmd_refresh(args):
     refresh_db()
     build_site()
     report.update({k: meta[k] for k in ("loans", "last_issue_month", "last_disclosed")})
+    report["workbook"] = str(build_workbook().relative_to(paths.ROOT))
     print(json.dumps(report, indent=1))
 
 
@@ -125,6 +127,22 @@ def cmd_build(args):
     print(json.dumps({k: meta[k] for k in ("loans", "first_issue_month", "last_issue_month", "first_disclosed", "last_disclosed", "datasets")}, indent=1))
 
 
+def cmd_export(args):
+    from .export import build_workbook
+    print(build_workbook())
+
+
+def cmd_note(args):
+    rows = json.loads((paths.SITE_DATA / "week_note.json").read_text())["rows"]
+    weeks = [r for r in rows if r["view"] == "week"]
+    week = next((r for r in weeks if r["week"] == args.week), None) if args.week else next((r for r in weeks if r["latest"]), None)
+    if not week:
+        raise SystemExit(f"no note for {args.week or 'the latest week'}; weeks: {', '.join(r['week'] for r in weeks)}")
+    print(f"Week of first disclosure: {week['label']}{', so far' if week['partial'] else ''}")
+    for r in sorted((r for r in rows if r["view"] == "line" and r["week"] == week["week"]), key=lambda r: r["order"]):
+        print(f"- {r['text']}" + (f" ({r['source']}: {r['url']})" if r["url"] else ""))
+
+
 def cmd_sql(args):
     from .warehouse import connect
     print(connect().sql(args.query))
@@ -153,6 +171,10 @@ def main():
     s.set_defaults(fn=cmd_ingest)
     sub.add_parser("status", help="show warehouse coverage").set_defaults(fn=cmd_status)
     sub.add_parser("build", help="build site/data/*.json and data/gse.duckdb").set_defaults(fn=cmd_build)
+    sub.add_parser("export", help="build the analyst workbook in exports/ from site/data").set_defaults(fn=cmd_export)
+    s = sub.add_parser("note", help="print a week's note (default: the latest full week)")
+    s.add_argument("--week", help="the Monday that starts the week, YYYY-MM-DD")
+    s.set_defaults(fn=cmd_note)
     s = sub.add_parser("sql", help="run a query against the views")
     s.add_argument("query")
     s.set_defaults(fn=cmd_sql)

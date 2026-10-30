@@ -3,7 +3,7 @@ name = "gsescore"
 version = "0.1.0"
 description = "Track VantageScore 4.0 vs Classic FICO adoption in Fannie Mae / Freddie Mac MBS issuance disclosures"
 requires-python = ">=3.11"
-dependencies = ["duckdb>=1.1", "pyarrow>=15", "pandas>=2"]
+dependencies = ["duckdb>=1.1", "pyarrow>=15", "pandas>=2", "XlsxWriter>=3.2"]
 
 [project.scripts]
 gsescore = "gsescore.cli:main"

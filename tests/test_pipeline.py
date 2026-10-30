@@ -171,9 +171,6 @@ assert (o["agency"], o["month"], o["day"], o["months"], o["first_month"], o["las
 for k, want in [("vs4_share", 1 / 4), ("vs4_share_lo", 1 / 12), ("vs4_share_hi", 1 / 12), ("vs4_upb_share_hi", 1 / 12)]:
     assert abs(o[k] - want) < 1e-6, (k, o[k], want)
 # Score groups: only UWM's Oct 20 loans are disclosed from Oct 19; every one carries both scores (FICO 745, VS4 765).
-cov = {(r["agency"], r["week"], r["model"]): r for r in rows("score_coverage")}
-assert (cov[("All", "all", "vs4")]["loans"], cov[("All", "all", "vs4")]["both_share"], cov[("All", "all", "fico")]["loans"]) == (3, 1.0, 7), cov
-assert not any(k[0] == "FNMA" for k in cov), cov
 mix = {(r["dim"], r["cover"], r["grp"], r["bucket"]): r for r in rows("borrowers")}
 assert mix[("gap", "both", "vs4", "20 to 39")]["share"] == 1.0 and mix[("gap", "both", "fico", "20 to 39")]["share"] == 1.0, mix
 assert not any(k[1] == "vs4only" and k[2] == "vs4" for k in mix), "no VS4 loan lacks a Classic FICO from Oct 19"
@@ -355,15 +352,101 @@ fm = next(r for r in fee if r["view"] == "market" and r["key"] == "All")
 assert (fm["loans"], fm["vs4_loans"], fm["priced_loans"], fm["saving_share"], fm["saved_bp"], fm["saving_avg_usd"]) == (180, 60, 40, 0.5, 6.25, 125.0), fm
 assert (fm["taken_usd"], fm["taken_all_usd"], fm["left_loans"], fm["left_usd"], fm["one_loans"]) == (2500.0, 3750.0, 20, 2500.0, 80), fm
 # Estimated: the rate of saving over R's 60 unwaived loans with both scores (40 of them at 0.125%), on 80 loans.
-assert abs(fm["est_usd"] - 80 * 1000 / 12) < 0.01 and abs(fm["option_usd"] - (3750 + 2500 + 80 * 1000 / 12)) < 0.01, fm
+assert abs(fm["est_usd"] - 80 * 1000 / 12) < 1 and abs(fm["option_usd"] - (3750 + 2500 + 80 * 1000 / 12)) < 1, fm
 assert abs(fm["option_bp"] - fm["option_usd"] / 18e6 * 1e4) < 1e-3, fm
-assert fm["annual_upb"] == 12e6 and fm["taken_annual_usd"] == 2500.0 and abs(fm["option_annual_usd"] - fm["option_usd"] * 2 / 3) < 0.01, fm
+assert fm["annual_upb"] == 12e6 and fm["taken_annual_usd"] == 2500 and abs(fm["option_annual_usd"] - fm["option_usd"] * 2 / 3) < 1, fm
 fl = {r["id"]: r for r in fee if r["view"] == "lender"}
 assert [fl[x]["rank"] for x in "nrm"] == [1, 2, 3], fl
 assert (fl["r"]["taken_usd"], fl["r"]["left_usd"], fl["r"]["est_usd"], fl["n"]["priced_loans"], fl["n"]["left_usd"], fl["m"]["vs4_loans"], fl["m"]["priced_loans"]) == (2500.0, 2500.0, 0.0, 0, 0.0, 20, 0), fl
 # The GSE's own score: R's VS4-priced loans in the 700-719 bucket read 700 against 720 for FICO-priced loans there; at the same FICO, a better VS4 reads (730 + 720 + 710) / 3 against 700.
 assert {(r["scope"], r["key"], r["loans"], r["diff"]) for r in fee if r["view"] == "gse"} == {("All", "b", 20, -20.0), ("r", "b", 20, -20.0)}, fee
 assert [(r["key"], r["loans"], r["diff"]) for r in fee if r["view"] == "lift"] == [("b", 60, 20.0)], fee
+
+# The weekly note on planted loans. R goes from 10 of 100 to 30 of 100 priced on VS4, all with both scores and VS4 5 points higher. N, all at
+# Fannie Mae like R, goes from 50 with only a Classic FICO to 50 with both. The files stop on Oct 14, so the second week is partial.
+from gsescore import notes  # noqa: E402
+
+c4 = duckdb.connect()
+c4.execute("CREATE MACRO seller_key(x) AS x")
+c4.execute("CREATE TABLE seller_map AS SELECT * FROM (VALUES ('R', 'r'), ('N', 'n')) t(key, id)")
+c4.execute("CREATE TABLE entity_names AS SELECT id, upper(id) AS short, upper(id) AS name, NULL::VARCHAR AS ticker FROM seller_map")
+c4.execute("CREATE TABLE loans AS SELECT * FROM (VALUES ('R', 'V', DATE '2026-10-06', DATE '2026-10-01'), ('N', 'C', DATE '2026-10-14', DATE '2026-10-01')) t(seller, score_model, first_intraday_date, issue_month)")
+c4.execute("""CREATE TABLE scw (agency VARCHAR, week DATE, is_v BOOLEAN, seller_id VARCHAR, has_fico BOOLEAN, has_vs4 BOOLEAN, gap INT, upb DOUBLE DEFAULT 100000,
+              channel VARCHAR DEFAULT 'R', fico INT DEFAULT 700, ltv INT DEFAULT 80, purpose VARCHAR DEFAULT 'P', mi BOOLEAN DEFAULT false, program VARCHAR DEFAULT '7')""")
+for wk, v in (("2026-10-05", 10), ("2026-10-12", 30)):
+    c4.executemany("INSERT INTO scw (agency, week, is_v, seller_id, has_fico, has_vs4, gap) VALUES ('FNMA', ?, ?, 'r', true, true, 5)", [(wk, i < v) for i in range(100)])
+c4.executemany("INSERT INTO scw (agency, week, is_v, seller_id, has_fico, has_vs4, gap) VALUES ('FNMA', ?, false, 'n', true, ?, ?)", [("2026-10-05", False, None)] * 50 + [("2026-10-12", True, 0)] * 50)
+said = [{"date": "2026-10-13", "who": "Z", "statement": "Said something.", "source": "Paper", "url": "https://example.com/z"}, {"date": "2026-01-01", "who": "Y", "statement": "Too old.", "source": None, "url": None}]
+rate_rows = [{"view": "week", "cover": "all", "basis": "headline", "key": "2026-10-05", "n": 200, "net_bp": 1.0}, {"view": "week", "cover": "all", "basis": "headline", "key": "2026-10-12", "n": 300, "net_bp": -2.5}]
+wn = notes.build_datasets(c4, said, rate_rows)["week_note"]
+wk = {r["week"]: r for r in wn if r["view"] == "week"}
+assert (wk["2026-10-05"]["partial"], wk["2026-10-05"]["latest"], wk["2026-10-12"]["partial"], wk["2026-10-12"]["latest"], wk["2026-10-12"]["label"]) == (False, True, True, False, "Oct 12 to Oct 14"), wk
+lines = {r["kind"]: r for r in wn if r["view"] == "line" and r["week"] == "2026-10-12"}
+mix_text = next(r["text"] for r in wn if r["view"] == "line" and r["week"] == "2026-10-12" and r["order"] == 0)
+assert mix_text == "150 loans first disclosed Oct 12 to Oct 14, so far: priced on VS4 20.0% (6.7% the week before), both scores on 100.0% (66.7% the week before), no Classic FICO on 0.0% (0.0% the week before).", mix_text
+assert lines["movers"]["text"] == "VS4 share moved most at R 10.0% to 30.0%.", lines
+assert lines["both"]["text"] == "Both scores at Fannie Mae moved most at N 0.0% to 100.0%.", lines
+assert lines["rule"]["text"] == "Use of VS4 with its score 1 to 19 points above FICO moved at R 10.0% to 30.0%.", lines
+assert lines["rate"]["text"] == "VS4 note rates against the FICO model: -2.5 bp on 300 loans (+1.0 bp the week before).", lines
+assert (lines["said"]["text"], lines["said"]["url"]) == ("Z: Said something.", "https://example.com/z") and "start" not in lines, lines
+assert any(r["kind"] == "start" and r["text"] == "First VS4 loan: R." for r in wn if r["view"] == "line" and r["week"] == "2026-10-05"), wn
+assert not any("Too old" in (r["text"] or "") for r in wn if r["view"] == "line"), wn
+# Each lender's split of its loans, overall and at each GSE.
+from gsescore import why  # noqa: E402
+
+ls4 = {r["id"]: r for r in why.build_datasets(c4)["lender_stage"] if r["view"] == "lender"}
+assert (ls4["r"]["mix_fico_only"], ls4["r"]["mix_both_fico"], ls4["r"]["mix_both_vs"], ls4["r"]["mix_vs_only"], ls4["r"]["fnma_both_vs"], ls4["r"]["fhlmc_both_vs"]) == (0.0, 0.8, 0.2, 0.0, 0.2, None), ls4["r"]
+assert (ls4["n"]["mix_fico_only"], ls4["n"]["mix_both_fico"], ls4["n"]["fnma_fico_only"], ls4["n"]["fhlmc_loans"]) == (0.5, 0.5, 0.5, 0), ls4["n"]
+
+# The exposure inputs and the workbook, on the pipeline's own build. Every formula's stored value is what the formula gives.
+import re  # noqa: E402
+import xml.etree.ElementTree as ET  # noqa: E402
+
+from gsescore.export import build_workbook  # noqa: E402
+
+ass = {r["key"]: r for r in rows("assumptions")}
+assert (ass["price_per_score"]["kind"], ass["bureaus"]["kind"], ass["gse_loans_year"]["kind"]) == ("source", "judgment", "data"), ass
+planted_inputs = [{**r, "value": {"gse_loans_year": 1e6, "borrowers_per_loan": 1.5}.get(r["key"], r["value"])} for r in ass.values() if r["key"] != "no_fico_all"]
+planted_inputs = [r for r in planted_inputs if r["key"] != "no_fico_fnma"] + [{**ass["gse_loans_year"], "key": "no_fico_fnma", "value": 0.01}]
+(home / "site" / "data" / "assumptions.json").write_text(json.dumps({"rows": planted_inputs}))
+assert all(r["url"].startswith("https://") for r in ass.values() if r["kind"] == "source"), ass
+ns = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+values, formulas = {}, {}
+with zipfile.ZipFile(build_workbook()) as z:
+    names = [e.get("name") for e in ET.fromstring(z.read("xl/workbook.xml")).find("m:sheets", ns)]
+    assert names[:3] == ["Read me", "FICO exposure", "Your scenario"], names
+    for i, name in enumerate(names):
+        for c in ET.fromstring(z.read(f"xl/worksheets/sheet{i + 1}.xml")).iter(f"{{{ns['m']}}}c"):
+            v, f = c.find("m:v", ns), c.find("m:f", ns)
+            if v is not None and c.get("t") not in ("s", "str"):
+                values[(name, c.get("r"))] = float(v.text)
+            if f is not None:
+                formulas[(name, c.get("r"))] = (f.text, c.get("t"), v.text if v is not None else None)
+
+
+def sheet_eval(sheet, text):
+    cell = lambda sh, ref: values.get((sh, ref), 0.0)  # noqa: E731
+    span = lambda sh, col, lo, hi: [cell(sh, f"{col}{n}") for n in range(lo, hi + 1)]  # noqa: E731
+    text = re.sub(r"^IF\((.+?>0),(.+),(\"n/a\")\)$", r"(\2 if \1 else \3)", text)  # the workbook's one IF, which guards a division
+    py = re.sub(r"'([^']+)'!\$?([A-Z]+)\$?(\d+)", lambda m: f"cell({m[1]!r}, '{m[2]}{m[3]}')", text)
+    py = re.sub(r"\$?([A-Z]+)\$?(\d+):\$?([A-Z]+)\$?(\d+)", lambda m: f"span({sheet!r}, '{m[1]}', {m[2]}, {m[4]})", py)
+    py = re.sub(r"(?<![\w'])\$?([A-Z]+)\$?(\d+)(?![\w'(])", lambda m: f"cell({sheet!r}, '{m[1]}{m[2]}')", py)
+    return eval(py, {"cell": cell, "span": span, "MAX": max, "SUM": sum, "SUMPRODUCT": lambda a, b: sum(x * y for x, y in zip(a, b))})
+
+
+assert len(formulas) >= 15, formulas
+for (sheet, ref), (text, kind, stored) in formulas.items():
+    got = sheet_eval(sheet, text)
+    assert (kind == "str" and got == stored) or abs(got - float(stored)) < 1e-6, (sheet, ref, text, got, stored)
+by_label = {}
+with zipfile.ZipFile(build_workbook()) as z:
+    strings = ["".join(t.text or "" for t in si.iter(f"{{{ns['m']}}}t")) for si in ET.fromstring(z.read("xl/sharedStrings.xml"))]
+    for c in ET.fromstring(z.read("xl/worksheets/sheet2.xml")).iter(f"{{{ns['m']}}}c"):
+        if c.get("t") == "s" and c.get("r").startswith("A"):
+            by_label[strings[int(c.find("m:v", ns).text)]] = values.get(("FICO exposure", "B" + c.get("r")[1:]))
+# 3 bureaus x 1.5 borrowers x (4 pulls x $10): $180 a funded loan, on a million loans less the 1% with no Classic FICO.
+assert abs(by_label["FICO's revenue per funded loan, today ($)"] - 180) < 1e-6 and abs(by_label["FICO's revenue on GSE loans, today ($m)"] - 178.2) < 1e-6, by_label
+assert abs(by_label["A lender's saving per funded loan if it drops FICO ($)"] - 162) < 1e-6 and abs(by_label["Each point of GSE loans with no FICO ($m a year)"] - 1.8) < 1e-6, by_label
 
 # Rate engine on planted data: rates are the sum of two factors' effects plus noise, and VS4 loans carry +25 bp.
 import numpy as np  # noqa: E402

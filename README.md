@@ -18,14 +18,16 @@ data/warehouse/{loan,security}/...         one parquet per ingested file (all co
 data/warehouse/manifest.jsonl              what was ingested, with header and row counts
 data/gse.duckdb                            DuckDB with the views below, for ad-hoc SQL
 site/data/*.json                           aggregates the pages read (git-ignored; docs/data holds the public site's copies)
-site/dashboard/index.html                  the private dashboard page (claude.ai Dashboard type): Overview, Outlook, Lenders, Why lenders choose, Borrowers, Pricing, Method
+site/dashboard/index.html, tools.js        the private dashboard page (claude.ai Dashboard type): Overview, Outlook, Lenders, Why lenders choose, Borrowers, Pricing, Method
 site/public/index.html                     the public site's page, pinned until new views are cleared to go public
 site/standalone/                           template + `dash` stand-in that turn a page into a static site
 docs/                                      the public site (GitHub Pages serves main:/docs), aggregates only
 reference/sellers.csv                      hand-kept seller names, short labels, parent companies, tickers and lender types
 reference/llpa.csv                         the GSEs' upfront fee grids, by hand from Freddie Mac Guide Exhibit 19
 reference/statements.csv                   dated company and press statements with links, shown on the dashboard
+reference/assumptions.csv                  inputs to the FICO exposure calculator, with sources
 collector/collect.js                       browser-side collector run in a signed-in portal tab
+exports/                                   the analyst workbook, rebuilt by `refresh` or `export` (git-ignored: it holds findings)
 src/gsescore/                              layouts, unpack, ingest, views, aggregates, site, CLI
 ```
 

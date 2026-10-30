@@ -6,6 +6,8 @@ __pycache__/
 *.egg-info/
 .DS_Store
 /build/
+# The analyst workbook holds findings.
+/exports/
 /.claude/
 # Research notes with early findings stay on this computer.
 /notes/ANALYTICS_PLAN.md

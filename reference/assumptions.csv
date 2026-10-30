@@ -1,0 +1,8 @@
+key,label,value,unit,kind,note,source,url,date
+bureaus,Bureaus per credit pull,3,count,judgment,"A tri-merge report: one score from each bureau, for each borrower.",,,
+pulls_per_loan,Credit pulls per funded loan,4,count,judgment,"Not in these files: applications that never fund and re-pulls count. Test it against the check line below.",,,
+price_per_score,FICO price per score,10,usd,source,"FICO's 2026 price to tri-merge resellers on the per-score model.",HousingWire,https://www.housingwire.com/articles/mortgage-credit-report-costs-2026/,2025-11-21
+closing_fee,FICO fee per borrower per score on a funded loan,0,usd,source,"None on the $10 model. Its performance model is $4.95 per score plus $33 here; FICO Score 10T, $0.99 plus $65 since April 2026.",HousingWire,https://www.housingwire.com/articles/mortgage-credit-report-costs-2026/,2025-11-21
+vs_price,VantageScore price per score,1,usd,source,"Equifax about $1 and TransUnion 99 cents, both through 2028.",National Mortgage News,https://www.nationalmortgagenews.com/news/gses-rocket-give-lenders-new-reasons-to-adopt-vantagescore,2026-09-29
+fico_mortgage_q,FICO mortgage origination revenue in its latest reported quarter ($m),284.5,usd_m,source,"62% of $458.9m of Scores revenue, quarter to June 30, 2026. Up 97% on price, with volumes up low single digits.",FICO Q3 call transcript,https://www.webull.com/news/15364304514262016,2026-07-29
+fico_revenue_year,FICO fiscal 2026 revenue guidance ($m),2530,usd_m,source,"Raised from $2.45bn in July.",FICO Q3 call transcript,https://www.webull.com/news/15364304514262016,2026-07-29

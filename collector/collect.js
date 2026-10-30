@@ -7,6 +7,23 @@
 // and saves them as one zip, <issuer>_loan_files_<STAMP>.zip, with a manifest.json that
 // `gsescore unpack` verifies. It returns at once; window.__gse.progress reports the stage:
 // listing -> fetching -> zipping -> downloaded | nothing-new | failed.
+// __gseListMonthly() lists the monthly loan-level files (very large) with their dates and sizes, downloading nothing.
+window.__gseListMonthly = async function () {
+  const issuer = location.pathname.split('/')[1];
+  const meta = Object.fromEntries([...document.querySelectorAll('meta[name]')].map((m) => [m.name, m.content]));
+  const headers = meta._csrf_header && meta._csrf ? { [meta._csrf_header]: meta._csrf } : {};
+  const r = await fetch(`/api/report/${issuer}/list/1/${new Date().getUTCFullYear()}`, { credentials: 'include', headers });
+  if (!r.ok) return { error: `list: HTTP ${r.status}` };
+  const docs = (await r.json()).filter((it) => it.headingKey === 'L1_MONTHLY_ONGOING_LOAN_LEVEL' && it.document).map((it) => it.document);
+  docs.sort((a, b) => String(b.effectiveDate).localeCompare(String(a.effectiveDate)));
+  const latest = docs[0];
+  let bytes = null;
+  if (latest) {
+    const h = await fetch(`/api/report/download/${latest.id}/${latest.name}`, { method: 'HEAD', credentials: 'include' }).catch(() => null);
+    bytes = h && h.ok ? Number(h.headers.get('content-length')) || null : null;
+  }
+  return { files: docs.length, latest: latest ? { name: latest.name, effectiveDate: latest.effectiveDate, fields: Object.keys(latest), bytes } : null };
+};
 window.__gseCollect = function (have, stamp) {
   const issuer = location.pathname.split('/')[1];
   const agency = { freddie: 'FHLMC', fannie: 'FNMA' }[issuer];

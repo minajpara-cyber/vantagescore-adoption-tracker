@@ -7,8 +7,6 @@ Score groups (the dashboard's toggle), each comparing VS4-priced with Classic FI
   vs4only  VS4-priced loans disclosed that way with no Classic FICO, against every FICO-priced loan
            disclosed that way
 
-  score_coverage    loans by GSE (+ All), week of first disclosure from BOTH_START (week "all": every week)
-                    and pricing model, with how many carry both scores and how many only the one priced on
   borrowers         each group's share of loans in each bucket of each dimension in DIMS. For VS4,
                     "expected" is the share if its loans matched its own sellers' FICO-priced loans in the
                     same window (a seller with under MIN_N FICO loans counts at the market's mix), so
@@ -166,15 +164,4 @@ def build_datasets(con, in_range: str, mix_start: str, rows) -> dict[str, list[d
                CASE cover WHEN 'all' THEN DATE '{mix_start}' ELSE DATE '{BOTH_START}' END AS since
         FROM bg GROUP BY cover, grp HAVING count(*) >= {MIN_N}
         ORDER BY CASE cover WHEN 'all' THEN 0 WHEN 'both' THEN 1 ELSE 2 END, grp DESC""")
-    coverage = rows(con, f"""
-        SELECT COALESCE(agency, 'All') AS agency, coalesce(week::VARCHAR, 'all') AS week,
-               CASE score_model WHEN 'V' THEN 'vs4' ELSE 'fico' END AS model,
-               count(*) AS loans, count(*) FILTER (WHERE has_fico AND has_vs4) AS both_scores,
-               count(*) FILTER (WHERE NOT (has_fico AND has_vs4)) AS one_score,
-               count(*) FILTER (WHERE has_fico AND has_vs4) / count(*) AS both_share,
-               count(*) FILTER (WHERE NOT (has_fico AND has_vs4)) / count(*) AS one_share,
-               week + 7 <= current_date AS complete
-        FROM bw WHERE first_new
-        GROUP BY GROUPING SETS ((agency, week, score_model), (week, score_model), (agency, score_model), (score_model))
-        ORDER BY week NULLS FIRST, CASE COALESCE(agency, 'All') WHEN 'All' THEN 0 WHEN 'FNMA' THEN 1 ELSE 2 END, model DESC""")
-    return {"score_coverage": coverage, "borrowers": borrowers, "borrower_profile": profile}
+    return {"borrowers": borrowers, "borrower_profile": profile}
