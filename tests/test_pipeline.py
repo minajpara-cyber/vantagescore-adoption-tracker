@@ -200,26 +200,41 @@ jul = ceil[("month", "All", "2026-07-01", None)]
 assert (jul["loans"], jul["better"]) == (24, 1.0) and abs(jul["actual"] - 4 / 24) < 1e-6, jul
 bands = [r for r in rows("ceiling") if r["view"] == "band"]
 assert abs(sum(r["adds_better"] for r in bands if r["key"] != "all") - next(r for r in bands if r["key"] == "all")["adds_better"]) < 1e-6, bands
-# Outlook: the same 10 loans, all UWM's; with no deep lender yet (under 100 loans), "as deep" is the ceiling itself.
+# Outlook: the same 10 loans, all UWM's; VS4 is better and higher on all of them. No heavy user yet (under 100 loans).
 ol = rows("outlook")
-lad = {r["key"]: r for r in ol if r["view"] == "ladder"}
-assert (lad["today"]["value"], lad["users"]["value"], lad["all_deep"]["value"], lad["all_full"]["value"]) == (0.3, 1.0, 1.0, 1.0), lad
+lad = {(r["key"], r["rule"]): r for r in ol if r["view"] == "ladder"}
+assert (lad[("today", None)]["value"], lad[("recent", None)]["value"], lad[("users", "higher")]["value"], lad[("all", "better")]["value"]) == (0.3, 0.3, 1.0, 1.0), lad
 uwm = next(r for r in ol if r["view"] == "lender" and r["id"] == "uwm")
-assert (uwm["status"], uwm["loans"], uwm["vs4_share"], uwm["ceiling"], uwm["adds_deep"]) == ("using", 10, 0.3, 1.0, 0.7), uwm
+assert (uwm["status"], uwm["loans"], uwm["vs4_share"], uwm["higher_share"], uwm["adds_higher"], uwm["higher_vs4"]) == ("using", 10, 0.3, 1.0, 0.7, None), uwm
+# Rules and score mix: the 20-point gap on those loans sits on the line; 3 of 10 priced on VS4.
+wk = next(r for r in rows("rules") if r["view"] == "week" and r["scope"] == "uwm" and r["agency"] == "All")
+assert (wk["week"], wk["loans"], wk["both_share"], wk["vs4_share"], wk["over20_loans"], wk["over20_share"], wk["under20_loans"]) == ("2026-10-19", 10, 1.0, 0.3, 10, 0.3, 0), wk
+cur = {(r["cohort"], r["key"]): r for r in rows("rules") if r["view"] == "curve" and r["scope"] == "uwm"}
+assert set(cur) == {("latest", "20_24")} and cur[("latest", "20_24")]["vs4_share"] == 0.3, cur
+mx = {(r["view"], r["agency"]): r for r in rows("score_mix") if r["view"] in ("all", "recent")}
+m = mx[("all", "All")]
+assert (m["loans"], m["fico_only_share"], m["both_fico_share"], m["both_vs_share"], m["vs_only_share"], m["fico_share"], m["vs_share"], m["vs4_priced_share"]) == (10, 0.0, 0.7, 0.3, 0.0, 1.0, 1.0, 0.3), m
+assert any(r["view"] == "month" and r["headline"] and r["start"] == "2026-07-01" for r in rows("score_mix")), "July is the only month with such records"
+qs = {(r["start"], r["agency"]): r for r in rows("score_mix") if r["view"] == "quarter"}
+assert (qs[("2026-07-01", "All")]["months"], qs[("2026-10-01", "All")]["complete"]) == (3, False), qs
 
-# Outlook on planted tables, October 2026: A and B are deep (VS4 on 40 and 30 of 100 loans, ceilings of 50 each, so
-# together they reach 70/100 = 0.7 of their ceilings); C uses VS4 lightly; D and E not at all. Shares are of 550 loans.
+# Outlook on planted tables, October 2026: VS4 on 40, 30, 2, 0 and 0 loans of 100, 100, 100, 200 and 50 (550). VS4 saves a fee
+# on 50%, 50%, 40%, 30% and 50% of them and is higher on 70%, 60%, 60%, 60% and 80%. A's latest two weeks show 30 of 60 on VS4;
+# B's show too few to count. A and B are heavy (VS4 at half or more of the fee-saving share), C is a light user, D stopped in April.
 import duckdb  # noqa: E402
 
 from gsescore import outlook  # noqa: E402
 
 o = duckdb.connect()
 o.execute("""CREATE TABLE scp (month DATE, upb DOUBLE, is_v BOOLEAN, seller_id VARCHAR, has_fico BOOLEAN, has_vs4 BOOLEAN,
-             fb INT, vb INT, p_better DOUBLE, win_both BOOLEAN)""")
-planted = {"a": (100, 40, 0.5), "b": (100, 30, 0.5), "c": (100, 2, 0.4), "d": (200, 0, 0.3), "e": (50, 0, 0.5)}
-for sid, (n, v, c) in planted.items():  # A's first 30 loans carry both scores, VS4 a bucket better, all priced on VS4
-    o.executemany("INSERT INTO scp VALUES (DATE '2026-10-01', 100000, ?, ?, true, ?, 5, ?, ?, true)",
-                  [(i < v, sid, sid == "a" and i < 30, 6 if sid == "a" and i < 30 else None, c) for i in range(n)])
+             fb INT, vb INT, fico INT, vs INT, p_better DOUBLE, p_higher DOUBLE, p_nw DOUBLE, win_both BOOLEAN)""")
+planted = {"a": (100, 40, 0.5, 0.7), "b": (100, 30, 0.5, 0.6), "c": (100, 2, 0.4, 0.6), "d": (200, 0, 0.3, 0.6), "e": (50, 0, 0.5, 0.8)}
+for sid, (n, v, c, hi) in planted.items():  # A's first 30 loans carry both scores, VS4 a bucket better and higher, all priced on VS4
+    o.executemany("INSERT INTO scp VALUES (DATE '2026-10-01', 100000, ?, ?, true, ?, 5, ?, 700, ?, ?, ?, 0.9, true)",
+                  [(i < v, sid, sid == "a" and i < 30, 6 if sid == "a" and i < 30 else None, 720 if sid == "a" and i < 30 else None, c, hi) for i in range(n)])
+o.execute("CREATE TABLE scw (seller_id VARCHAR, week DATE, is_v BOOLEAN, upb DOUBLE)")
+o.executemany("INSERT INTO scw VALUES ('a', DATE '2026-10-26', ?, 100000)", [(i < 30,) for i in range(60)])
+o.executemany("INSERT INTO scw VALUES ('b', DATE '2026-10-26', ?, 100000)", [(i < 9,) for i in range(10)])
 o.execute("""CREATE TABLE ls AS SELECT * FROM (VALUES ('a', DATE '2026-07-01', DATE '2026-07-10', true),
              ('a', DATE '2026-10-01', DATE '2026-10-02', true), ('b', DATE '2026-09-01', DATE '2026-09-15', true),
              ('c', DATE '2026-09-01', DATE '2026-09-20', true), ('d', DATE '2026-04-01', NULL, true)) t(id, month, first_date, is_v)""")
@@ -236,25 +251,26 @@ outlook.LENDER_TOP, outlook.NEXT_N = 3, 1
 res = outlook.build_datasets(o, "2026-09-01")["outlook"]
 by = lambda view: [r for r in res if r["view"] == view]  # noqa: E731
 pr = by("params")[0]
-assert (pr["q"], pr["deep_names"], pr["users"], pr["window_to"]) == (0.7, "A and B", 3, "2026-10-01") and abs(pr["pace"] - 1 / 6) < 1e-6, pr
-lad = {r["key"]: r["value"] for r in by("ladder")}  # users: B to 0.35 and C to 0.28; next: D to 0.21; all: E to 0.35
-for key, want in [("today", 72), ("users", 103), ("next", 145), ("all_deep", 162.5), ("all_full", 225)]:
+assert (pr["heavy_names"], pr["users"], pr["window_to"], pr["recent_from"]) == ("A and B", 3, "2026-10-01", "2026-10-19") and abs(pr["pace"] - 1 / 6) < 1e-6, pr
+lad = {(r["key"], r["rule"]): r["value"] for r in by("ladder")}
+for key, want in [(("today", None), 72), (("recent", None), 82), (("not_worse", None), 495), (("heavy", "higher"), 132), (("users", "higher"), 190), (("next", "higher"), 310),
+                  (("all", "higher"), 350), (("heavy", "better"), 102), (("users", "better"), 140), (("next", "better"), 200), (("all", "better"), 225)]:
     assert abs(lad[key] - want / 550) < 1e-6, (key, lad[key], want / 550)
-# The path a deep lender follows: A's and B's VS4 loans over their ceilings in their first three months (B has no fourth).
-assert [r["r"] for r in by("ramp") if r["id"] is None] == [0.15, 0.55, 0.7], by("ramp")
-path = {(r["case"], r["month"]): r["value"] for r in by("path")}
-# Users start next month: C at 0.4 x 0.15, then 0.4 x 0.55, then 0.28; B rises to 0.35 in the third month.
-for month, want in [("2026-10-01", 72), ("2026-11-01", 76), ("2026-12-01", 92), ("2027-01-01", 103), ("2027-10-01", 103)]:
-    assert abs(path[("users", month)] - want / 550) < 1e-6 and abs(path[("hold", month)] - 72 / 550) < 1e-6, (month, path)
+# How fast the heavy users moved: VS4 loans over loans at their latest share (A 0.5, B 0.3), first three months (B has no fourth).
+assert [r["r"] for r in by("ramp") if r["id"] is None] == [0.1875, 0.6875, 0.875], by("ramp")
+path = {(r["case"], r["rule"], r["month"]): r["value"] for r in by("path")}
+for case, month, want in [("recent", "2026-10-01", 72), ("recent", "2026-11-01", 82), ("heavy", "2026-11-01", 82 + 0.1875 * 50), ("users", "2026-11-01", 82 + 0.1875 * 108),
+                          ("heavy", "2027-10-01", 132), ("users", "2027-10-01", 190)]:
+    assert abs(path[(case, "higher", month)] - want / 550) < 1e-6, (case, month, path[(case, "higher", month)], want / 550)
 # Pace: C's start in September was 100 of the 350 loans of sellers not yet using VS4, none of 250 in October: 1/6 a month.
-# In November a sixth of D's and E's loans start, at 0.15 of their ceilings: 0.025 x (0.3 x 200 + 0.5 x 50) more.
-assert abs(path[("pace", "2026-11-01")] - (76 + 2.125) / 550) < 1e-6, path
+# In November a sixth of D's and E's loans start, 0.1875 of the way to their shares on the rule: 0.03125 x (120 + 40) more.
+assert abs(path[("pace", "higher", "2026-11-01")] - (82 + 0.1875 * 108 + 5) / 550) < 1e-6, path
 lenders = {r["id"]: r for r in by("lender")}
 assert list(lenders) == ["d", "a", "b", "c", "other"], lenders  # the 3 largest, C as a user, E in the rest
-assert abs(lenders["c"]["adds_deep"] - 26 / 550) < 1e-6 and lenders["c"]["status"] == "using" and lenders["d"]["next"], lenders
-assert (lenders["a"]["status"], lenders["a"]["better_loans"], lenders["a"]["better_vs4"], lenders["a"]["both_share"]) == ("deep", 30, 1.0, 0.3), lenders
-assert abs(sum(r["adds_deep"] for r in lenders.values()) - (162.5 - 72) / 550) < 1e-6, lenders
-assert lenders["d"]["status"] == "stopped" and lenders["b"]["status"] == "deep", lenders  # D's one VS4 loan was in April
+assert abs(lenders["c"]["adds_higher"] - 58 / 550) < 1e-6 and lenders["c"]["status"] == "using" and lenders["d"]["next"], lenders
+assert (lenders["a"]["status"], lenders["a"]["recent_share"], lenders["a"]["better_loans"], lenders["a"]["better_vs4"], lenders["a"]["higher_vs4"], lenders["a"]["both_share"]) == ("heavy", 0.5, 30, 1.0, 1.0, 0.3), lenders
+assert abs(sum(r["adds_higher"] for r in lenders.values()) - (350 - 82) / 550) < 1e-6, lenders
+assert lenders["d"]["status"] == "stopped" and lenders["b"]["status"] == "heavy", lenders  # D's one VS4 loan was in April
 
 # Ceiling on planted loans, one GSE. October's records carry every score: R has 100 loans with both scores in Classic FICO
 # bucket 700-719, 50 with VS4 a bucket better (30 priced on VS4) and 50 in the same bucket (10 on VS4); N has 100 with only a
@@ -263,20 +279,21 @@ c2 = duckdb.connect()
 c2.execute("CREATE MACRO seller_key(x) AS x")
 c2.execute("CREATE TABLE seller_map AS SELECT * FROM (VALUES ('R', 'r'), ('N', 'n'), ('M', 'm')) t(key, id)")
 c2.execute("CREATE TABLE entity_names AS SELECT id, upper(id) AS short FROM seller_map")
-c2.execute("""CREATE TABLE monthly AS SELECT * FROM (VALUES (DATE '2026-09-01', 'All', true), (DATE '2026-09-01', 'FHLMC', true),
-              (DATE '2026-10-01', 'All', false), (DATE '2026-10-01', 'FHLMC', false)) t(month, agency, final)""")
+c2.execute("""CREATE TABLE monthly AS SELECT *, 100 AS scored_loans, 1000000.0 AS scored_upb, 10 AS vs4_loans, 100000.0 AS vs4_upb FROM (VALUES (DATE '2026-09-01', 'All', true),
+              (DATE '2026-09-01', 'FHLMC', true), (DATE '2026-10-01', 'All', false), (DATE '2026-10-01', 'FHLMC', false)) t(month, agency, final)""")
 c2.execute("""CREATE TABLE loans (agency VARCHAR, issue_month DATE, upb DOUBLE, score_model VARCHAR, seller VARCHAR, purpose VARCHAR,
-              channel VARCHAR, classic_fico INT, vs4 INT, pricing_indicator VARCHAR)""")
+              channel VARCHAR, classic_fico INT, vs4 INT, pricing_indicator VARCHAR, first_intraday_date DATE)""")
 planted_loans = [("2026-10-01", "R", "V", 700, 720, 30), ("2026-10-01", "R", "C", 700, 720, 20), ("2026-10-01", "R", "V", 700, 705, 10),
                  ("2026-10-01", "R", "C", 700, 705, 40), ("2026-10-01", "N", "C", 700, None, 100), ("2026-09-01", "R", "V", None, 720, 30),
                  ("2026-09-01", "R", "C", 700, None, 70), ("2026-09-01", "N", "C", 700, None, 100), ("2026-09-01", "M", "V", None, 720, 10),
                  ("2026-09-01", "M", "C", 700, None, 30)]
-c2.executemany("INSERT INTO loans VALUES ('FHLMC', ?, 100000, ?, ?, 'P', 'R', ?, ?, ?)",
+c2.executemany("INSERT INTO loans VALUES ('FHLMC', ?, 100000, ?, ?, 'P', 'R', ?, ?, ?, '2026-10-20')",
                [(day, model, seller, fico, vs, model if day == "2026-10-01" else None)
                 for day, seller, model, fico, vs, k in planted_loans for _ in range(k)])
 from gsescore.aggregate import _rows  # noqa: E402
 
-ceil2 = gsescore.scores.build_datasets(c2, "true", "2026-09-01", _rows)["ceiling"]
+built2 = gsescore.scores.build_datasets(c2, "true", "2026-09-01", _rows)
+ceil2 = built2["ceiling"]
 months = {r["start"]: r for r in ceil2 if r["view"] == "month" and r["agency"] == "All"}
 assert (months["2026-10-01"]["loans"], months["2026-10-01"]["actual"], months["2026-10-01"]["better"], months["2026-10-01"]["estimated"]) == (200, 0.2, 0.5, False), months
 # September: R takes its own October rate on every loan (50 of 100), N the rate for its bucket (50), and M, with no October
@@ -284,6 +301,11 @@ assert (months["2026-10-01"]["loans"], months["2026-10-01"]["actual"], months["2
 # Counting every VS4 loan as better would read 140 of 240.
 sep = months["2026-09-01"]
 assert sep["loans"] == 240 and sep["estimated"] is True and abs(sep["better"] - 122.5 / 240) < 1e-6 and abs(sep["actual"] - 40 / 240) < 1e-6, sep
+assert (months["2026-10-01"]["higher"], sep["higher"]) == (1.0, 1.0), months  # VS4's score is above FICO on all R's loans
+mix2 = next(r for r in built2["score_mix"] if r["view"] == "month" and r["agency"] == "All" and r["start"] == "2026-10-01")
+assert (mix2["headline"], mix2["fico_only_share"], mix2["both_fico_share"], mix2["both_vs_share"], mix2["vs_only_share"], mix2["vs_share"]) == (True, 0.5, 0.3, 0.2, 0.0, 0.5), mix2
+curve2 = {(r["key"]): r["vs4_share"] for r in built2["rules"] if r["view"] == "curve" and r["scope"] == "r"}
+assert curve2 == {"5_9": 0.2, "20_24": 0.6}, curve2  # R's rule in points: 10 of 50 at 5 points, 30 of 50 at 20
 bands2 = {r["key"]: r for r in ceil2 if r["view"] == "band"}  # October's every-score loans only, with the same total
 assert (bands2["all"]["loans"], bands2["all"]["better"], bands2["4"]["loans"], bands2["4"]["adds_better"]) == (200, 0.5, 200, 0.5), bands2
 # A seller's rule hides cells under MIN_N loans but keeps its total: R's two cells hold 50 loans each.

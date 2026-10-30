@@ -119,6 +119,20 @@ local in notes/ANALYTICS_PLAN.md)
 Items 2-5 were on the public site briefly on Oct 30, 2026 and came off the same morning; they are on the
 private dashboard only.
 
+**Phase 3: built for covering the companies** (agreed Oct 30, 2026; private dashboard only)
+1. Done Oct 30, 2026: the framing. For MBS issued before Oct 1, 2026, FICO's fee tiers applied to VS4 at 20
+   points higher; one grid since. Lender rules are now read in score points by week (src/gsescore/scores.py,
+   dataset rules), the scenarios are rules on the one grid (saves a fee, score higher, no worse), the outlook is
+   rebuilt on them, and the rate model compares in the same fee tier, adds seller x purpose, and shows how much of
+   a better tier reaches the rate.
+2. Done Oct 30, 2026: the front page. Which scores loans carry (FICO only, both priced either way, VS4 only) by
+   GSE and week (dataset score_mix), Classic FICO on the loan, the latest weeks' pace, what changed, calendar quarters.
+3. Why lenders choose: stages by lender, an early-warning list, lender types, company statements with links.
+4. Pricing and economics: the fee grids, old and new; fee saved by lender; what non-users leave on the table;
+   GSE fees forgone; the GSEs' own scores.
+5. Analyst tools: ticker pages, downloads, FICO exposure calculator, editable outlook, weekly change note.
+6. Deeper data: the monthly loan file's origination scores, why Freddie differs, FHA, SFTP.
+
 ## 5. Open items
 - Seller is not originator: correspondent aggregators (AmeriHome, PennyMac) deliver loans other lenders
   made. Nationstar (Mr. Cooper) delivered under its own name only through January 2026, so Rocket

@@ -1,15 +1,16 @@
 """Rate engine: the note rate a Classic FICO-priced loan like each VS4 loan would carry.
 
 Model: a 30-year fixed, FICO-priced loan's note rate is a sum of effects, one per level of each factor
-in FACTORS: week of first disclosure, GSE, seller x channel, seller x channel x week, LLPA credit score
-bucket x LTV bucket x purpose, occupancy, units, property type, loan size, DTI, mortgage insurance,
+in FACTORS: week of first disclosure, GSE, seller x channel, seller x channel x week, seller x purpose, LLPA
+credit score bucket x LTV bucket x purpose, occupancy, units, property type, loan size, DTI, mortgage insurance,
 state, first-time buyer and number of borrowers. It is fitted by backfitting, each level's effect
 shrunk toward zero as if it had LAMBDA more loans at zero. It trains on FICO-priced loans first
 disclosed from WEEKLY_START, except one in five (by loan id) held out to check it: their actual minus
 expected rate should average zero overall and in every cell shown.
 
 Each VS4 loan's rate is compared with what the model gives a FICO-priced loan like it:
-  headline  with the VS4 score standing in for Classic FICO (the same headline score)
+  headline  in the same fee tier: the VS4 score stands in for Classic FICO, less VS_OFFSET points for loans issued
+            before GRID_CHANGE, when FICO's fee tiers applied to VS4 at that many points higher
   own_fico  with the borrower's own Classic FICO, for VS4 loans that disclose both (from BOTH_START)
 
 Groups (the dashboard's score toggle): all (VS4 loans first disclosed from WEEKLY_START), both (VS4
@@ -23,10 +24,17 @@ Indicator). Each is checked against the held-out FICO loans of the same group of
             view fit (one row: loans trained and held out, RMSE, R2), overall, week, seller (MIN_N+
             VS4 loans), segment (dim = purpose, score, ltv, channel, size) and hist (share of loans by
             actual-minus-expected bin, VS4 vs held-out FICO). Cells under MIN_N loans are left out.
+            view value (cover both, basis own_fico; key: same = VS4-priced in the same fee bucket as its own FICO,
+            better = VS4-priced in a better one, 1 / 2 / 3 = that many better, fico_better = FICO-priced with VS4 in
+            a better one; for all lenders and each seller with MIN_N+ such loans): the rate against the model at
+            the borrower's own FICO, net of the model's miss on held-out FICO loans (net_bp); what the VS4 bucket is
+            worth on FICO loans' rates (worth_bp); and reaches, the share of that worth seen in the rate.
 """
 import numpy as np
 
 BOTH_START = "2026-10-19"  # the Pricing Indicator, and both scores, are disclosed from here
+GRID_CHANGE = "2026-10-01"  # MBS issued from here pay one fee grid whichever score priced the loan
+VS_OFFSET = 20  # before that, FICO's fee tiers applied to VS4 at this many points higher
 LAMBDA = 10.0
 MIN_N = 20
 MIN_SELLER_LOANS = 300  # sellers with fewer FICO loans to learn from share an "other" level per channel
@@ -41,8 +49,8 @@ SEGMENT_SIZE = ([150e3, 250e3, 400e3, 600e3], ["Under $150k", "$150k-250k", "$25
 PURPOSE_LABELS = {"P": "Purchase", "C": "Cash-out refinance", "R": "No cash-out refinance"}
 CHANNEL_LABELS = {"R": "Retail", "B": "Broker", "C": "Correspondent"}
 HIST_EDGES = np.arange(-150.0, 150.1, 12.5)  # basis points; the end bins take everything beyond
-FACTORS = ["week", "agency", "seller", "seller_week", "grid", "occupancy", "units", "ptype", "size", "dti", "mi",
-           "state", "fthb", "borrowers"]
+FACTORS = ["week", "agency", "seller", "seller_week", "seller_purpose", "grid", "occupancy", "units", "ptype", "size", "dti",
+           "mi", "state", "fthb", "borrowers"]
 
 
 def _load(con, weekly_start: str, in_range: str):
@@ -58,6 +66,8 @@ def _load(con, weekly_start: str, in_range: str):
                coalesce(l.fthb, '?') AS fthb, least(coalesce(l.num_borrowers, 1), 2) AS borrowers,
                l.score_model = 'V' AS is_vs4, l.pricing_score,
                CASE WHEN l.classic_fico BETWEEN 300 AND 850 THEN l.classic_fico ELSE -1 END AS fico,
+               CASE WHEN l.vs4 BETWEEN 300 AND 850 THEN l.vs4 ELSE -1 END AS vs,
+               l.issue_month < DATE '{GRID_CHANGE}' AS old_grid,
                l.ltv, l.orig_rate, hash(l.agency || l.loan_id) % 5 = 0 AS holdout
         FROM loans l JOIN seller_map m ON m.key = seller_key(l.seller)
         WHERE l.loan_term = 360 AND l.amort_type = 'FRM' AND l.score_model IN ('C', 'V') AND l.orig_rate > 0
@@ -121,7 +131,12 @@ def build_pricing(con, weekly_start: str, in_range: str) -> list[dict]:
     both_era = d["both_era"].astype(bool)
     fico = d["fico"].astype(int)
     has_fico = fico > 0
-    score_b = np.searchsorted(SCORE_CUTS, d["pricing_score"].astype(int), side="right")
+    # The fee tier a loan paid: a VS4 loan issued under the old grid is priced as if its score were VS_OFFSET lower.
+    priced = d["pricing_score"].astype(int)
+    fee_score = np.where(is_vs4 & d["old_grid"].astype(bool), priced - VS_OFFSET, priced)
+    score_b = np.searchsorted(SCORE_CUTS, fee_score, side="right")
+    vs = d["vs"].astype(int)
+    vs_b = np.where(vs > 0, np.searchsorted(SCORE_CUTS, vs, side="right"), -1)
     fico_b = np.where(has_fico, np.searchsorted(SCORE_CUTS, fico, side="right"), -1)
     ltv_b = np.searchsorted(LTV_CUTS, d["ltv"].astype(float), side="left")
     seller = d["seller_id"].astype(str)
@@ -133,6 +148,7 @@ def build_pricing(con, weekly_start: str, in_range: str) -> list[dict]:
     raw = {
         "week": week, "agency": d["agency"], "seller": seller_g,
         "seller_week": [g + "|" + w for g, w in zip(seller_g, week)],
+        "seller_purpose": [g + "|" + p for g, p in zip(seller_g, purpose)],
         "grid": [f"{s}|{l}|{p}" for s, l, p in zip(score_b, ltv_b, purpose)],
         "occupancy": d["occupancy"], "units": d["units"], "ptype": d["ptype"],
         "size": np.searchsorted(SIZE_CUTS, d["amount"].astype(float), side="right"),
@@ -197,5 +213,29 @@ def build_pricing(con, weekly_start: str, in_range: str) -> list[dict]:
                              "bin_hi": None if i == len(HIST_EDGES) else float(HIST_EDGES[i]),
                              "share": round(float(hv[i]), 6), "check_share": round(float(hc[i]), 6),
                              "n": int(len(v)), "check_n": int(len(c))})
+    # What a better fee tier is worth on FICO loans' rates, and how much of that shows in the rate at the borrower's own FICO.
+    at_vs = dict(codes, grid=np.array([vocab["grid"].get(f"{s}|{l}|{p}", -1) for s, l, p in zip(vs_b, ltv_b, purpose)]))
+    worth = ((_predict(mu, eff, own) - _predict(mu, eff, at_vs)) * 100)
+    both = both_era & has_fico & (vs > 0)
+    miss = float(res[check & both_era].mean()) if (check & both_era).sum() >= MIN_N else 0.0
+    gap = vs_b - fico_b
+    groups_v = {"same": is_vs4 & both & (gap == 0), "better": is_vs4 & both & (gap > 0), "1": is_vs4 & both & (gap == 1), "2": is_vs4 & both & (gap == 2),
+                "3": is_vs4 & both & (gap >= 3), "fico_better": ~is_vs4 & both & (gap > 0)}
+    order = {k: i for i, k in enumerate(groups_v)}
+    v_any = is_vs4 & both
+    scopes = ["All"] + sorted(set(seller[v_any]), key=lambda s: (-int((seller[v_any] == s).sum()), s))
+    for rank, scope in enumerate(scopes):
+        in_scope = np.ones(len(y), bool) if scope == "All" else seller == scope
+        for key, mask in groups_v.items():
+            m = mask & in_scope
+            n = int(m.sum())
+            if n < MIN_N:
+                continue
+            prem = res_own[m]
+            net, w = float(prem.mean()) - miss, float(worth[m].mean())
+            rows.append({"view": "value", "cover": "both", "basis": "own_fico", "dim": "value", "key": key, "order": order[key], "scope": scope,
+                         "scope_rank": rank, "label": "All lenders" if scope == "All" else names.get(scope, scope), "since": BOTH_START, "n": n,
+                         "net_bp": round(net, 2), "se_bp": round(float(prem.std(ddof=1) / np.sqrt(n)), 2), "worth_bp": round(w, 2),
+                         "reaches": round(-net / w, 4) if w >= 1 else None})
     keys = sorted({k for r in rows for k in r})
     return [{k: r.get(k) for k in keys} for r in rows]
