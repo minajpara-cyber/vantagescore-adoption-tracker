@@ -357,7 +357,7 @@ def _carrying(b: _Book):
 
 
 def _closing(b: _Book):
-    ws = b.sheet("By closing month", "Priced on VS4 and the scores that show, by estimated closing month", "Closing month: the first payment month less two. The market rows keep each lender at a fixed weight, since recent months otherwise hold mostly the fastest deliverers. Arrived estimates how much of the month's loans are in so far. Shows VS4 is a floor on loans that have it, from records that show every score, and is blank under 20 such loans.")
+    ws = b.sheet("By closing month", "Priced on VS4 and the scores that show, by estimated closing month", "Closing month: the first payment month less two. The market rows keep each lender at a fixed weight, since recent months otherwise hold mostly the fastest deliverers. Arrived estimates how much of the month's loans are in so far. Shows VS4 is a floor on loans that have it, from records that show every score, and is blank unless those hold 20 or more loans and at least half the month's.")
     gse = {"All": "Both GSEs", "FNMA": "Fannie Mae", "FHLMC": "Freddie Mac"}
     names = {r["id"]: r for r in _rows("lender_stage") if r.get("view") == "lender"}
     rows = []
@@ -368,7 +368,7 @@ def _closing(b: _Book):
             rows.append({"rank": 0, "lender": "All lenders, fixed weights", "ticker": None, "agency": r["agency"], "start": r["start"], "n": r["n"], "priced": r["priced"], "every": r["every_share"], "shows": r["both_fico"] + r["both_vs"] + r["vs_only"] if r["every_share"] >= 0.5 else None,
                          "only": r["vs_only"] if r["every_share"] >= 0.5 else None, "arrived": r["arrived"]})
         elif r["id"] in names and r["n"] >= 20:
-            enough = r["every"] >= 20
+            enough = r["every"] >= 20 and r["every"] / r["n"] >= 0.5
             rows.append({"rank": names[r["id"]]["rank"], "lender": names[r["id"]]["short"], "ticker": names[r["id"]]["ticker"], "agency": r["agency"], "start": r["start"], "n": r["n"], "priced": r["v"] / r["n"], "every": r["every"] / r["n"],
                          "shows": (r["bf"] + r["bv"] + r["vo"]) / r["every"] if enough else None, "only": r["vo"] / r["every"] if enough else None, "arrived": r["arrived"]})
     rows.sort(key=lambda r: (r["rank"], list(gse).index(r["agency"]), r["start"]))
