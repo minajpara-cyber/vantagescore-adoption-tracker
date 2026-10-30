@@ -39,8 +39,8 @@ def _build(out: Path, page: Path, datasets: list[str]) -> list[str]:
     (out / "data").mkdir(parents=True, exist_ok=True)
     (out / "index.html").write_text(template.replace("<!--PAGE-->", page.read_text()))
     shutil.copyfile(STANDALONE / "dash-shim.js", out / "dash-shim.js")
-    for script in page.parent.glob("*.js"):  # a page's other files (the claude.ai store holds them as files/<name>)
-        shutil.copyfile(script, out / script.name)
+    for extra in [*page.parent.glob("*.js"), *page.parent.glob("*.css")]:  # a page's other files (the claude.ai store holds them as files/<name>)
+        shutil.copyfile(extra, out / extra.name)
     (out / ".nojekyll").write_text("")
     for name in datasets:
         shutil.copyfile(paths.SITE_DATA / f"{name}.json", out / "data" / f"{name}.json")

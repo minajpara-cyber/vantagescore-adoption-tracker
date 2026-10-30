@@ -40,9 +40,9 @@ STAGE_BOTH = 0.05
 RULE_HIGH = 0.6
 RULE_MOVE = 0.05
 STATEMENTS_CSV = paths.REPO / "reference" / "statements.csv"
-STAGES = [("pricing", "Prices on VS4 most of the time it is higher"), ("some", "Prices on VS4 some of the time it is higher"),
-          ("both", "Delivers both scores, rarely prices on VS4"), ("trace", "Delivers one score, a few VS4 loans"),
-          ("fico", "Delivers only Classic FICO")]
+STAGES = [("pricing", "Uses VS4 most of the time its score is higher"), ("some", "Uses VS4 some of the time its score is higher"),
+          ("both", "Shows both scores, rarely uses VS4"), ("trace", "Shows one score, a few VS4 loans"),
+          ("fico", "Classic FICO only")]
 CHANNELS = {"R": "Retail", "B": "Broker", "C": "Correspondent"}
 PURPOSES = {"P": "Purchase", "C": "Cash-out refinance", "R": "No cash-out refinance"}
 KIND_ORDER = ["Bank", "Nonbank", "Builder", "Credit union", "Housing agency"]

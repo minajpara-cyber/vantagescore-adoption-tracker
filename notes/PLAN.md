@@ -142,6 +142,8 @@ private dashboard only.
    site/dashboard/tools.js). On the Overview, this week's note with an archive (src/gsescore/notes.py, `gsescore note`). The Excel workbook (src/gsescore/export.py,
    exports/, git-ignored) has the tables and the calculator as live formulas; Sources on the dashboard gives any dataset as CSV. Longer sections fold away, and the Borrowers
    tab's table of which scores loans carry gave way to the front page's split.
+   Oct 30, 2026: the page now leads with pictures and plain words: out of every 100 loans, why the weeks jump and the lender mix frozen, how far VS4 could go, where every lender stands, how lenders decide, where
+   the fee saving goes, and a page of what the words mean. Long notes open on request, and lower-priority sections fold away.
 6. Deeper data. Done Oct 30, 2026: which lenders show fewer scores at Freddie Mac, and which factors do not explain it (the cause is still unknown), and FHA (it accepts VS4 for
    case numbers from January 1, 2027). Waiting: the monthly loan file (L1_MONTHLY_ONGOING_LOAN_LEVEL, Freddie fuYYMMDD), whose origination score fields (L-097, L-099) and
    back-filled Pricing Indicator may give both scores on earlier loans and replace the estimates for those months. The first file with the new fields should come about

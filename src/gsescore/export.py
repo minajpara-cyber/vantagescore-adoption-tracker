@@ -94,7 +94,7 @@ def _read_me(b: _Book, through: str):
         ("Sheets", "bold"),
         ("FICO exposure: FICO's revenue on GSE loans under your inputs, as live formulas.", None),
         ("Your scenario: each lender's share priced on VS4 and share with no Classic FICO. Its totals feed FICO exposure.", None),
-        ("Carrying VS4: the longest timeline. VS4-priced loans by issue month and week, split into both scores and VS4 only once the files show every score, with the same at a steady mix of lenders.", None),
+        ("Carrying VS4: the longest timeline. VS4-priced loans by issue month and week, split into both scores and VS4 only once the files show every score, with the same at a frozen lender mix.", None),
         ("Score mix: FICO only, both scores (priced either way) and VS4 only, by issue month, week of first disclosure and quarter, by GSE.", None),
         ("Lenders: each large lender's stage, rule, score mix, fees and rates, with its ticker. Lender split by week: the same split over time, by GSE.", None),
         ("Cost or rate: what lenders pick when they hold both scores, by what VS4 would do to the fee, and what the pick is worth.", None),
@@ -347,7 +347,7 @@ def _carrying(b: _Book):
         rows += [split(r, "Week") for r in weeks]
     rows.sort(key=lambda r: (r["period"] != "Issue month", list(gse).index(r["agency"]), r["start"]))
     columns = [("Period", "period", "text", 12), ("From", "start", "day", 12), ("GSE", lambda r: gse[r["agency"]], "text", 12), ("Loans", "loans", "int", 10), ("Priced on VS4", "priced", "pct", 9), ("Both, on VS4", "both_vs", "pct", 9), ("VS4 only", "vs_only", "pct", 9),
-               ("Both, on FICO", "both_fico", "pct", 9), ("Carrying VS4", "carrying", "pct", 9), ("Carrying, steady lender mix", "steady_carrying", "pct", 10), ("Priced on VS4, steady lender mix", "steady_priced", "pct", 10)]
+               ("Both, on FICO", "both_fico", "pct", 9), ("Carrying VS4", "carrying", "pct", 9), ("Carrying, lender mix frozen", "steady_carrying", "pct", 10), ("Priced on VS4, lender mix frozen", "steady_priced", "pct", 10)]
     b.table(ws, 3, columns, rows)
     ws.freeze_panes(4, 0)
     ws.autofilter(3, 0, 3 + len(rows), len(columns) - 1)

@@ -144,7 +144,7 @@ def build_datasets(con, lender_start: str) -> dict[str, list[dict]]:
             "value": sum(s["w"] * max(s["e"], s["nw"]) for s in sellers), "value_upb": sum(s["wu"] * max(s["eu"], s["nw_u"]) for s in sellers),
             "lenders": len(sellers)}]
     for rule in RULES:
-        groups = [("heavy", "The heavy users", lambda s: s["is_heavy"], len(heavy)),
+        groups = [("heavy", "The biggest users", lambda s: s["is_heavy"], len(heavy)),
                   ("users", "Every lender using VS4", lambda s: s["user"], len(users)),
                   ("next", f"And the {NEXT_N} largest not using it", lambda s: s["user"] or s["id"] in nxt, len(users) + len(nxt)),
                   ("all", "Every lender", lambda s: True, len(sellers))]
