@@ -94,10 +94,12 @@ def _read_me(b: _Book, through: str):
         ("Sheets", "bold"),
         ("FICO exposure: FICO's revenue on GSE loans under your inputs, as live formulas.", None),
         ("Your scenario: each lender's share priced on VS4 and share with no Classic FICO. Its totals feed FICO exposure.", None),
+        ("Carrying VS4: the longest timeline. VS4-priced loans by issue month and week, split into both scores and VS4 only once the files show every score, with the same at a steady mix of lenders.", None),
         ("Score mix: FICO only, both scores (priced either way) and VS4 only, by issue month, week of first disclosure and quarter, by GSE.", None),
-        ("Lenders: each large lender's stage, rule, score mix, fees and rates, with its ticker.", None),
+        ("Lenders: each large lender's stage, rule, score mix, fees and rates, with its ticker. Lender split by week: the same split over time, by GSE.", None),
+        ("Cost or rate: what lenders pick when they hold both scores, by what VS4 would do to the fee, and what the pick is worth.", None),
         ("Fees: fee saved, taken, left and estimated from the GSEs' grid; the GSEs' own scores on these loans.", None),
-        ("Rates: VS4 note rates against a model of FICO-priced loans, by week and lender, and how much of a better fee tier reaches the rate.", None),
+        ("Rates: VS4 note rates against a model of FICO-priced loans, by week and lender, and how much of a lower fee reaches the rate, by lender and channel.", None),
         ("Rules: how often each lender prices on VS4 with its score under and over 20 points above FICO, by week.", None),
         ("VS4 share by month, Loans by month: the largest lenders and every lender with a ticker, both GSEs.", None),
         ("Weekly note, Statements: what changed each week; what companies and others have said, with links.", None),
@@ -107,7 +109,8 @@ def _read_me(b: _Book, through: str):
         ("Some lenders that choose between scores show both far less often at Freddie Mac than at Fannie Mae, while pricing on VS4 about as often at each; most lenders look alike at both. The cause is not known. Fannie Mae is the cleaner read of both scores and of loans with no Classic FICO.", None),
         ("A week's figures move with the mix of lenders delivering that week. The seller is not always the lender that made the loan.", None),
         ("The fee grid is Freddie Mac Guide Exhibit 19 (Bulletin 2026-K); Fannie Mae's matrix is taken to match it, unchecked. Fees are what the GSE charges, not what a borrower sees.", None),
-        ("The rate model is a comparison of like loans, not a test of cause. Points and lender credits are not disclosed.", None),
+        ("The rate model is a comparison of like loans, not a test of cause. Points and lender credits are not disclosed, so a saving can reach the borrower without showing in the note rate.", None),
+        ("Until late September the files show only the score that priced a loan, so the earlier part of Carrying VS4 is a floor. Pulls on loans that never fund cannot be seen anywhere in these files.", None),
         ("The exposure calculator is arithmetic on your inputs, not a forecast. It covers loans sold to the GSEs only; FHA accepts VS4 from January 1, 2027.", None),
         ("Not affiliated with Fannie Mae, Freddie Mac, FICO or VantageScore Solutions.", None),
     ]
@@ -296,7 +299,7 @@ def _lenders(b: _Book):
                ("VS4-priced, both scores", fee("priced_loans"), "int", 8), ("Saves a fee", fee("saving_share"), "pct", 8), ("Saved per loan ($)", fee("saving_avg_usd"), "usd", 8),
                ("Fees taken ($m)", lambda r: _m(fee("taken_usd")(r)), "usdm", 8), ("Fees left ($m)", lambda r: _m(fee("left_usd")(r)), "usdm", 8), ("Fees estimated ($m)", lambda r: _m(fee("est_usd")(r)), "usdm", 8), ("Potential (bp)", fee("option_bp"), "num", 8),
                ("Rate vs model (bp)", lambda r: (rate.get(r["id"]) or {}).get("net_bp"), "bp", 8), ("Rate: VS4 loans", lambda r: (rate.get(r["id"]) or {}).get("n"), "int", 8),
-               ("Better tier reaches the rate", lambda r: enough(value.get((r["id"], "better")), "reaches"), "pct", 8), ("No fee benefit, vs model (bp)", lambda r: enough(value.get((r["id"], "same")), "net_bp"), "bp", 8)]
+               ("Lower fee reaches the rate", lambda r: enough(value.get((r["id"], "better")), "reaches_fee"), "pct", 8), ("Same fee, vs own FICO loans (bp)", lambda r: enough(value.get((r["id"], "same")), "net_bp"), "bp", 8)]
     b.table(ws, 3, columns, rows)
     ws.freeze_panes(4, 1)
     ws.autofilter(3, 0, 3 + len(rows), len(columns) - 1)
@@ -324,6 +327,84 @@ def _fees(b: _Book):
     b.table(ws, next_row + 3, [("Fee bucket", lambda r: r["label"], "text", 26), ("Scope", lambda r: "Better VS4, same FICO" if r["view"] == "lift" else r.get("scope_label"), "text", 10), ("Points", "diff", "bp", 9), ("Loans", "loans", "int", 9)], scores)
 
 
+def _carrying(b: _Book):
+    ws = b.sheet("Carrying VS4", "Loans carrying VS4, the longest timeline", "Until late September the files show only the score that priced a loan: those rows are a floor, with the split blank. Weeks by first disclosure, and they swing with which lenders delivered.")
+    gse = {"All": "Both GSEs", "FNMA": "Fannie Mae", "FHLMC": "Freddie Mac"}
+    mix = _rows("score_mix")
+    head = next((r["start"] for r in mix if r["view"] == "month" and r["agency"] == "All" and r.get("headline")), None)
+    rows = []
+    for agency in gse:
+        months = [r for r in mix if r["view"] == "month" and r["agency"] == agency and head and r["start"] <= head]
+        first = min((r["start"] for r in months), default=None)
+        rows += [{"period": "Issue month", "start": r["month"], "agency": agency, "loans": r["scored_loans"], "priced": r["vs4_share"]} for r in _rows("monthly")
+                 if r["agency"] == agency and r["month"] >= MONTHS_FROM and (not first or r["month"] < first)]
+        weeks = [r for r in mix if r["view"] == "week" and r["agency"] == agency]
+        first_w = min((r["start"] for r in weeks), default=None)
+        split = lambda r, period: {"period": period, "start": r["start"], "agency": r["agency"], "loans": r["loans"], "priced": r["vs4_priced_share"], "both_vs": r["both_vs_share"], "vs_only": r["vs_only_share"],  # noqa: E731
+                                   "both_fico": r["both_fico_share"], "carrying": r["vs_share"], "steady_carrying": r.get("steady_carrying"), "steady_priced": r.get("steady_priced")}
+        rows += [split(r, "Issue month") for r in months]
+        rows += [{"period": "Week", "start": r["week"], "agency": agency, "loans": r["scored_loans"], "priced": r["vs4_share"]} for r in _rows("weekly") if r["agency"] == agency and (not first_w or r["week"] < first_w)]
+        rows += [split(r, "Week") for r in weeks]
+    rows.sort(key=lambda r: (r["period"] != "Issue month", list(gse).index(r["agency"]), r["start"]))
+    columns = [("Period", "period", "text", 12), ("From", "start", "day", 12), ("GSE", lambda r: gse[r["agency"]], "text", 12), ("Loans", "loans", "int", 10), ("Priced on VS4", "priced", "pct", 9), ("Both, on VS4", "both_vs", "pct", 9), ("VS4 only", "vs_only", "pct", 9),
+               ("Both, on FICO", "both_fico", "pct", 9), ("Carrying VS4", "carrying", "pct", 9), ("Carrying, steady lender mix", "steady_carrying", "pct", 10), ("Priced on VS4, steady lender mix", "steady_priced", "pct", 10)]
+    b.table(ws, 3, columns, rows)
+    ws.freeze_panes(4, 0)
+    ws.autofilter(3, 0, 3 + len(rows), len(columns) - 1)
+
+
+def _lender_split(b: _Book):
+    ws = b.sheet("Lender split by week", "Each lender's split, by week first disclosed and issue month", "Share of its loans, for the 60 largest lenders and every other lender past the first stages, with 20 or more loans in the period.")
+    gse = {"All": "Both GSEs", "FNMA": "Fannie Mae", "FHLMC": "Freddie Mac"}
+    names = {r["id"]: r for r in _rows("lender_stage") if r.get("view") == "lender"}
+    rows = [r for r in _rows("lender_mix") if r["n"] >= 20 and r["id"] in names]
+    rows.sort(key=lambda r: (names[r["id"]]["rank"], r["view"] != "week", list(gse).index(r["agency"]), r["start"]))
+    columns = [("Lender", lambda r: names[r["id"]]["short"], "text", 24), ("Ticker", lambda r: names[r["id"]]["ticker"], "text", 7), ("GSE", lambda r: gse[r["agency"]], "text", 12), ("Period", lambda r: "Week" if r["view"] == "week" else "Issue month", "text", 11), ("From", "start", "day", 12),
+               ("Loans", "n", "int", 8), ("FICO only", lambda r: r["fo"] / r["n"], "pct", 8), ("Both, on FICO", lambda r: r["bf"] / r["n"], "pct", 8), ("Both, on VS4", lambda r: r["bv"] / r["n"], "pct", 8), ("VS4 only", lambda r: r["vo"] / r["n"], "pct", 8),
+               ("Carrying VS4", lambda r: (r["bf"] + r["bv"] + r["vo"]) / r["n"], "pct", 8)]
+    b.table(ws, 3, columns, rows)
+    ws.freeze_panes(4, 1)
+    ws.autofilter(3, 0, 3 + len(rows), len(columns) - 1)
+
+
+COST_ROWS = [("lower|up20", "VS4's fee lower, its score 20+ points higher"), ("lower|up1", "VS4's fee lower, its score 1-19 points higher"), ("same|up20", "Same fee, VS4 20+ points higher"), ("same|up1", "Same fee, VS4 1-19 points higher"),
+             ("same|equal", "Same fee, same score"), ("same|down1", "Same fee, VS4 1-19 points lower"), ("same|down20", "Same fee, VS4 20+ points lower"), ("higher|all", "VS4's fee higher")]
+
+
+def _cost(b: _Book):
+    ws = b.sheet("Cost or rate", "What lenders pick when they hold both scores", "Share priced on VS4, loans with both scores issued on the one fee grid. Blank under 20 loans. Pulls on loans that never fund cannot be seen.")
+    rows = [r for r in _rows("fees") if r.get("view") == "choice"]
+    scopes = list(dict.fromkeys(r["scope"] for r in sorted(rows, key=lambda r: r["scope_rank"])))
+    labels = {r["scope"]: r["scope_label"] for r in rows}
+    cells = {(r["cohort"], r["scope"], r["key"]): r for r in rows}
+    row = 3
+    for cohort, title in (("all", "All weeks"), ("latest", "Latest two weeks")):
+        ws.write(row, 0, title, b.fmt("text", bold=True))
+        row += 1
+        columns = [("What VS4 would do", lambda k: k[1], "text", 44), ("Loans", lambda k: (cells.get((cohort, "All", k[0])) or {}).get("loans"), "int", 9)]
+        for s in scopes:
+            columns.append((labels[s], (lambda k, s=s: (cells[(cohort, s, k[0])]["vs4_share"] if (cohort, s, k[0]) in cells and cells[(cohort, s, k[0])]["loans"] >= 20 else None)), "pct", 11))
+        row = b.table(ws, row, columns, COST_ROWS) + 1
+    options = sorted((r for r in _rows("fees") if r.get("view") == "option"), key=lambda r: r["scope_rank"])
+    ws.write(row, 0, "What the pick is worth: the upfront fee as bp of balance", b.fmt("text", bold=True))
+    row += 1
+    heads = ["Lender", "Loans", "All on FICO", "All on VS4", "Lower of the two", "As priced", "Average loan ($)", "Taken", "Picking saves, per loan ($)", "Dropping FICO gives up, per loan ($)"]
+    for c, h in enumerate(heads):
+        ws.write(row, c, h, b.head() if c == 0 else b.head(align="right"))
+    for i, r in enumerate(options):
+        at = row + 1 + i
+        n = at + 1
+        ws.write_string(at, 0, r["scope_label"], b.fmt("text"))
+        ws.write_number(at, 1, r["loans"], b.fmt("int"))
+        for c, f in ((2, "fee_fico_bp"), (3, "fee_vs_bp"), (4, "fee_best_bp"), (5, "fee_actual_bp")):
+            ws.write_number(at, c, r[f], b.fmt("num"))
+        ws.write_number(at, 6, r["avg_upb"], b.fmt("usd"))
+        room = r["fee_fico_bp"] - r["fee_best_bp"]
+        ws.write_formula(at, 7, f'=IF((C{n}-E{n})>0,(C{n}-F{n})/(C{n}-E{n}),"n/a")', b.fmt("pct"), (r["fee_fico_bp"] - r["fee_actual_bp"]) / room if room > 0 else "n/a")
+        ws.write_formula(at, 8, f"=(C{n}-E{n})*G{n}/10000", b.fmt("usd"), room * r["avg_upb"] / 1e4)
+        ws.write_formula(at, 9, f"=(D{n}-E{n})*G{n}/10000", b.fmt("usd"), (r["fee_vs_bp"] - r["fee_best_bp"]) * r["avg_upb"] / 1e4)
+
+
 def _rates(b: _Book):
     ws = b.sheet("Rates", "VS4 note rates against the FICO model", "30-year fixed. Positive means VS4 borrowers pay more than the model gives like FICO loans, net of the model's miss on held-out FICO loans. Points and lender credits are not disclosed.")
     rows = _rows("pricing")
@@ -333,10 +414,11 @@ def _rates(b: _Book):
     ws.write(n + 1, 0, "By lender", b.fmt("text", bold=True))
     seller = sorted((r for r in rows if r["view"] == "seller" and r["cover"] == "all" and r["basis"] == "headline"), key=lambda r: -r["n"])
     n = b.table(ws, n + 2, [("Lender", "label", "text", 26), ("VS4 loans", "n", "int", 10), ("Rate vs model (bp)", "net_bp", "bp", 10), ("Before netting (bp)", "premium_bp", "bp", 10), ("Standard error (bp)", "se_bp", "num", 10), ("Held-out FICO loans (bp)", "check_bp", "bp", 10)], seller)
-    ws.write(n + 1, 0, "How much of a better fee tier reaches the rate", b.fmt("text", bold=True))
+    ws.write(n + 1, 0, "How much of a lower fee reaches the rate", b.fmt("text", bold=True))
+    ws.write(n + 2, 0, "Against the lender and channel's own FICO-priced loans with both scores, loans on the one grid. better: VS4's fee lower. to25 to over100: by fee saved. same: same fee. fico_better: priced on FICO though VS4's fee was lower.", b.fmt("text", font_color="#555555"))
     value = sorted((r for r in rows if r["view"] == "value"), key=lambda r: (r.get("scope_rank") or 0, r.get("order") or 0))
-    b.table(ws, n + 2, [("Lender", "label", "text", 26), ("VS4 loans", "n", "int", 10), ("Group", "key", "text", 10), ("Fee saved (bp)", "fee_bp", "num", 10), ("At 5 to 1 (bp)", "fee_rate_bp", "num", 10),
-                        ("Worth (bp)", "worth_bp", "num", 10), ("Rate vs model (bp)", "net_bp", "bp", 10), ("Reaches the rate", "reaches", "pct", 10)], value)
+    b.table(ws, n + 3, [("Lender", "label", "text", 26), ("Loans", "n", "int", 10), ("Group", "key", "text", 10), ("Fee saved (bp)", "fee_bp", "num", 10), ("At 5 to 1 (bp)", "fee_rate_bp", "num", 10),
+                        ("Rate vs own FICO loans (bp)", "net_bp", "bp", 10), ("Standard error (bp)", "se_bp", "num", 10), ("Reaches the rate", "reaches_fee", "pct", 10)], value)
 
 
 def _rules(b: _Book):
@@ -393,8 +475,11 @@ def build_workbook() -> Path:
     nf0 = sum(r["share"] * r["nf0"] for r in rows)
     _exposure(b, _rows("assumptions"), nf_market, SCENARIO_NO_FICO, nf0)  # first in the book; reads the scenario's totals, whose place is fixed
     _scenario(b, rows)
+    _carrying(b)
     _score_mix(b)
     _lenders(b)
+    _lender_split(b)
+    _cost(b)
     _fees(b)
     _rates(b)
     _rules(b)

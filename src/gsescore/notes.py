@@ -40,7 +40,7 @@ def _r(v):
     return round(v, 6) if isinstance(v, float) else v
 
 
-def build_datasets(con, statements: list[dict], pricing: list[dict]) -> dict[str, list[dict]]:
+def build_datasets(con, statements: list[dict], pricing: list[dict], score_mix: list[dict] = ()) -> dict[str, list[dict]]:
     """Needs scw (scores.py) and seller_map and entity_names (lenders.py)."""
     through = con.execute("SELECT max(first_intraday_date) FROM loans").fetchone()[0]
     weeks: dict[date, dict] = {}
@@ -63,6 +63,7 @@ def build_datasets(con, statements: list[dict], pricing: list[dict]) -> dict[str
         SELECT m.id, min(coalesce(l.first_intraday_date, l.issue_month)) FROM loans l JOIN seller_map m ON m.key = seller_key(l.seller)
         WHERE l.score_model = 'V' GROUP BY 1""").fetchall()
     rates = {r["key"]: r for r in pricing if r.get("view") == "week" and r.get("cover") == "all" and r.get("basis") == "headline"}
+    steady = {r["start"]: r for r in score_mix if r.get("view") == "week" and r.get("agency") == "All" and r.get("steady_carrying") is not None}
 
     def moved(cur, prev, top, bottom, least, far):
         """Lenders whose share top / bottom moved at least far, largest contribution first."""
@@ -96,6 +97,10 @@ def build_datasets(con, statements: list[dict], pricing: list[dict]) -> dict[str
                              f"{ago(a['b'], pa and pa['b'])}, no Classic FICO on {ago(a['vo'], pa and pa['vo'])}."))
         if f:
             lines.append(("mix", f"At Fannie Mae, whose files show both scores more fully: priced on VS4 {ago(f['v'], pf and pf['v'])}, both scores on {ago(f['b'], pf and pf['b'])}."))
+        now_s, was_s = steady.get(week.isoformat()), steady.get(ordered[i - 1].isoformat()) if i else None
+        if now_s:
+            lines.append(("mix", f"With every lender at its usual share of loans, VS4 is on {ago(now_s['steady_carrying'], was_s and was_s['steady_carrying'])} and priced on {ago(now_s['steady_priced'], was_s and was_s['steady_priced'])}. "
+                                 "The figures above swing with which lenders delivered that week."))
         if i:
             sc, sp = by_seller.get(week, {}), by_seller.get(ordered[i - 1], {})
             if m := moved(sc, sp, "v", "n", MIN_MOVER, MOVE):

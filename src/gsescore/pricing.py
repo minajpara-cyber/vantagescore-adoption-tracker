@@ -24,19 +24,21 @@ Indicator). Each is checked against the held-out FICO loans of the same group of
             view fit (one row: loans trained and held out, RMSE, R2), overall, week, seller (MIN_N+
             VS4 loans), segment (dim = purpose, score, ltv, channel, size) and hist (share of loans by
             actual-minus-expected bin, VS4 vs held-out FICO). Cells under MIN_N loans are left out.
-            view value (cover both, basis own_fico; key: same = VS4-priced in the same fee bucket as its own FICO,
-            better = VS4-priced in a better one, 1 / 2 / 3 = that many better, fico_better = FICO-priced with VS4 in
-            a better one; for all lenders and each seller with MIN_N+ such loans): the rate against the model at
-            the borrower's own FICO, net of the model's miss on held-out FICO loans (net_bp); what the VS4 bucket is
-            worth on FICO loans' rates (worth_bp); reaches, the share of that worth seen in the rate; fee_bp, the
-            fee on the grid at its own FICO less the fee at its VS4 score (reference/llpa.csv, 0 in programs with no fee),
-            as bp of balance, and fee_rate_bp, that at RATE_MULT to 1 in rate.
+            view value (cover both, basis own_fico; loans issued on the one fee grid; key: same = VS4-priced with the same fee on the grid at either score, better = VS4-priced
+            with a lower fee, to25 / to50 / to100 / over100 = by fee saved in bp of balance, fico_better = FICO-priced though VS4's fee was lower; for all lenders, each seller
+            with MIN_N+ such loans, the two largest VS4 sellers by channel, and the rest): the rate against the model at the borrower's own FICO, less the same for that seller
+            and channel's FICO-priced loans with both scores (net_bp); what the VS4 bucket is worth on FICO loans' rates (worth_bp, reaches); fee_bp, the fee on the grid at its
+            own FICO less the fee at its VS4 score (reference/llpa.csv, 0 in programs with no fee), as bp of balance; fee_rate_bp, that at RATE_MULT to 1 in rate; reaches_fee, the
+            fall in rate over fee_rate_bp. Points and lender credits are not disclosed, so a saving can reach the borrower without showing here.
 """
 import numpy as np
 
 from .fee_grid import FEE_WAIVED, load_grid
 
 BOTH_START = "2026-10-19"  # the Pricing Indicator, and both scores, are disclosed from here
+BASE_MIN = 20  # FICO-priced loans with both scores for a seller and channel to be its own baseline
+CHANNELS = {"R": "retail", "B": "broker", "C": "correspondent"}
+FEE_BANDS = [("to25", 0, 25), ("to50", 25, 50), ("to100", 50, 100), ("over100", 100, 1e9)]  # fee saved, bp of balance
 GRID_CHANGE = "2026-10-01"  # MBS issued from here pay one fee grid whichever score priced the loan
 VS_OFFSET = 20  # before that, FICO's fee tiers applied to VS4 at this many points higher
 RATE_MULT = 5  # a common rule of thumb: 5 bp of upfront price is about 1 bp of note rate
@@ -227,25 +229,46 @@ def build_pricing(con, weekly_start: str, in_range: str) -> list[dict]:
     def fee_at(sb):
         return np.array([grid.get((g, int(s), int(min(l, 4) if g == "cash_out" else l)), 0.0) for g, s, l in zip(grid_name, sb, ltv_b)])
     fee_saved = np.where(np.isin(d["program"].astype(str), FEE_WAIVED), 0.0, (fee_at(np.clip(fico_b, 0, 8)) - fee_at(np.clip(vs_b, 0, 8))) * 100)
-    miss = float(res[check & both_era].mean()) if (check & both_era).sum() >= MIN_N else 0.0
-    gap = vs_b - fico_b
-    groups_v = {"same": is_vs4 & both & (gap == 0), "better": is_vs4 & both & (gap > 0), "1": is_vs4 & both & (gap == 1), "2": is_vs4 & both & (gap == 2),
-                "3": is_vs4 & both & (gap >= 3), "fico_better": ~is_vs4 & both & (gap > 0)}
+    # A lender's own FICO-priced loans with both scores are the baseline: what its rates do against the model with VS4 out of the pricing.
+    channel = d["channel"].astype(str)
+    one_grid = both & ~d["old_grid"].astype(bool)
+    fico_both = one_grid & ~is_vs4
+    vs4_both = one_grid & is_vs4
+    base = np.zeros(len(y))
+    for s_ in np.unique(seller[one_grid]):
+        in_seller = seller == s_
+        whole = fico_both & in_seller
+        for ch in np.unique(channel[one_grid & in_seller]):
+            here = in_seller & (channel == ch)
+            m_b = fico_both & here
+            base[here] = res_own[m_b].mean() if m_b.sum() >= BASE_MIN else res_own[whole].mean() if whole.sum() >= BASE_MIN else 0.0
+    res_adj = res_own - base
+    groups_v = {"same": vs4_both & (fee_saved == 0), "better": vs4_both & (fee_saved > 0)}
+    for band, lo, hi in FEE_BANDS:
+        groups_v[band] = vs4_both & (fee_saved > lo) & (fee_saved <= hi)
+    groups_v["fico_better"] = fico_both & (fee_saved > 0)
     order = {k: i for i, k in enumerate(groups_v)}
-    v_any = is_vs4 & both
-    scopes = ["All"] + sorted(set(seller[v_any]), key=lambda s: (-int((seller[v_any] == s).sum()), s))
-    for rank, scope in enumerate(scopes):
-        in_scope = np.ones(len(y), bool) if scope == "All" else seller == scope
+    users = sorted(set(seller[vs4_both]), key=lambda s_: (-int((seller[vs4_both] == s_).sum()), s_))
+    picks = [("All", None)]
+    for s_ in users:
+        picks.append((s_, None))
+        if s_ in users[:2]:
+            picks += [(s_, c) for c in CHANNELS]
+    picks.append(("rest", None))
+    for rank, (scope, ch) in enumerate(picks):
+        in_scope = np.ones(len(y), bool) if scope == "All" else ~np.isin(seller, users[:2]) if scope == "rest" else seller == scope
+        if ch:
+            in_scope = in_scope & (channel == ch)
+        name = {"All": "All lenders", "rest": "Lenders other than the two largest"}.get(scope, names.get(scope, scope))
         for key, mask in groups_v.items():
             m = mask & in_scope
             n = int(m.sum())
             if n < MIN_N:
                 continue
-            prem = res_own[m]
-            net, w = float(prem.mean()) - miss, float(worth[m].mean())
-            fee = float(fee_saved[m].mean())
-            rows.append({"view": "value", "cover": "both", "basis": "own_fico", "dim": "value", "key": key, "order": order[key], "scope": scope,
-                         "scope_rank": rank, "label": "All lenders" if scope == "All" else names.get(scope, scope), "since": BOTH_START, "n": n,
+            prem = res_adj[m]
+            net, w, fee = float(prem.mean()), float(worth[m].mean()), float(fee_saved[m].mean())
+            rows.append({"view": "value", "cover": "both", "basis": "own_fico", "dim": "value", "key": key, "order": order[key], "scope": f"{scope}|{ch}" if ch else scope, "channel": ch,
+                         "scope_rank": rank, "label": f"{name}, {CHANNELS[ch]}" if ch else name, "since": BOTH_START, "n": n,
                          "net_bp": round(net, 2), "se_bp": round(float(prem.std(ddof=1) / np.sqrt(n)), 2), "worth_bp": round(w, 2),
                          "reaches": round(-net / w, 4) if w >= 1 else None, "fee_bp": round(fee, 2), "fee_rate_bp": round(fee / RATE_MULT, 2),
                          "reaches_fee": round(-net / (fee / RATE_MULT), 4) if fee / RATE_MULT >= 1 else None})

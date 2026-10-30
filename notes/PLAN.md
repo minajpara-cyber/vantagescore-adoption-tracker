@@ -125,12 +125,15 @@ private dashboard only.
    rebuilt on them, and the rate model compares in the same fee tier, adds seller x purpose, and shows how much of
    a better tier reaches the rate.
 2. Done Oct 30, 2026: the front page. Which scores loans carry (FICO only, both priced either way, VS4 only) by
-   GSE and week (dataset score_mix), Classic FICO on the loan, the latest weeks' pace, what changed, calendar quarters.
-3. Done Oct 30, 2026: why lenders choose (src/gsescore/why.py, datasets lender_stage and statements). Each lender's stage (pricing on VS4,
+   GSE and week (dataset score_mix), Classic FICO on the loan, the latest weeks' pace, what changed, calendar quarters. Loans carrying VS4 runs back to April by issue month and to July by week as
+   VS4-priced loans, a floor until the files show every score, with the same weeks at a steady mix of lenders.
+3. Done Oct 30, 2026: why lenders choose (src/gsescore/why.py, datasets lender_stage, lender_mix and statements). A cost-or-rate test: what lenders with both scores pick by what VS4 does
+   to the fee (src/gsescore/fees.py, views choice and option). Each lender's score split by week and issue month. Each lender's stage (pricing on VS4,
    some, both scores shown, a trace, FICO only), its rule, an early-warning list of lenders whose both-score share is rising, lender types by
    hand in reference/sellers.csv, use inside a lender by loan trait, and dated company statements with links (reference/statements.csv), each
    checked against the loan files where it can be.
-4. Done Oct 30, 2026: pricing and economics (src/gsescore/fees.py, src/gsescore/fee_grid.py, dataset fees). The grid in reference/llpa.csv is
+4. Done Oct 30, 2026: pricing and economics (src/gsescore/fees.py, src/gsescore/fee_grid.py, dataset fees). How much of a lower fee reaches the rate is measured against each lender and channel's
+   own FICO-priced loans with both scores (src/gsescore/pricing.py, view value). The grid in reference/llpa.csv is
    Freddie Mac Guide Exhibit 19 (Bulletin 2026-K); Fannie Mae's matrix is taken to match it, unchecked. Fee saved per loan and in dollars by
    lender; what lenders with both scores left; an estimate for loans with only a Classic FICO; the same scaled to a year's balance; the fee
    against what reaches the rate; the GSEs' own scores on these loans.

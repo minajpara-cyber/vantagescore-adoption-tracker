@@ -21,6 +21,8 @@ below the line; line, at least RULE_HIGH at 20+ points; some, at least a tenth a
                 view trait: the share priced on VS4 among loans with VS4 above FICO, by loan trait, for all lenders, the
                 two largest VS4 sellers and the rest: how much a trait matters inside a lender.
   statements    reference/statements.csv: what companies and analysts have said, with links
+  lender_mix    the same lenders by GSE (+ All) and by week first disclosed (from WEEK_FROM) or issue month: loans, with Classic FICO only (fo), both priced on FICO (bf),
+                both priced on VS4 (bv), VS4 only (vo)
 """
 import csv
 import re
@@ -28,6 +30,7 @@ from datetime import timedelta
 
 from . import paths
 from .lenders import SELLERS_CSV
+from .scores import WEEK_FROM
 
 RECENT_WEEKS = 2
 MIN_N = 20
@@ -74,7 +77,7 @@ def build_datasets(con) -> dict[str, list[dict]]:
         for i, r in enumerate(csv.DictReader(f)):
             statements.append({"order": i, **{k: v or None for k, v in r.items()}})
     if last is None:
-        return {"lender_stage": [], "statements": statements}
+        return {"lender_stage": [], "statements": statements, "lender_mix": []}
     late = (last - timedelta(days=7 * (RECENT_WEEKS - 1))).isoformat()
     with SELLERS_CSV.open(newline="") as f:
         listed_by_key = {r["key"]: r.get("kind") or None for r in csv.DictReader(f)}
@@ -187,4 +190,11 @@ def build_datasets(con) -> dict[str, list[dict]]:
                 if n >= MIN_N:
                     out.append({"view": "trait", "dim": dim, "key": key, "scope": scope, "label": label, "loans": n, "vs4_share": v / n})
     keys = sorted({k for r in out for k in r})
-    return {"lender_stage": [{k: _r(r.get(k)) for k in keys} for r in out], "statements": statements}
+    listed_ids = [r["id"] for r in out if r["view"] == "lender"]
+    mix_rows = [{"view": view, "id": sid, "agency": agency, "start": start.isoformat(), "n": n, "fo": fo, "bf": bf, "bv": bv, "vo": vo}
+                for view, col, when in (("week", "week", f"week >= DATE '{WEEK_FROM}'"), ("month", "month", "true"))
+                for sid, agency, start, n, fo, bf, bv, vo in con.execute(f"""
+                    SELECT seller_id, coalesce(agency, 'All'), {col}, count(*), count(*) FILTER (WHERE has_fico AND NOT has_vs4), count(*) FILTER (WHERE has_fico AND has_vs4 AND NOT is_v),
+                           count(*) FILTER (WHERE has_fico AND has_vs4 AND is_v), count(*) FILTER (WHERE has_vs4 AND NOT has_fico)
+                    FROM scw WHERE {when} AND list_contains(?::VARCHAR[], seller_id) GROUP BY seller_id, {col}, ROLLUP(agency) ORDER BY 1, 3, 2""", [listed_ids]).fetchall()]
+    return {"lender_stage": [{k: _r(r.get(k)) for k in keys} for r in out], "statements": statements, "lender_mix": mix_rows}

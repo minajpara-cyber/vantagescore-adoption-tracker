@@ -14,7 +14,7 @@ points higher, so a lender's rule shows up in score points (VS4 minus Classic FI
              above Classic FICO and 20 or more above it (MIN_N+ loans).
   score_mix  which scores loans carry, among records with every score delivered: Classic FICO only, both priced
              on FICO, both priced on VS4, VS4 only, with the share carrying each score and the share priced on VS4,
-             count and balance. view month (headline marks the latest with HEADLINE_MIN+ loans), week, recent (the
+             count and balance. view month (headline marks the latest with HEADLINE_MIN+ loans), week (with steady_carrying and steady_priced: the same at a steady mix of lenders), recent (the
              latest RECENT_WEEKS weeks) and all, each by GSE (+ All). view quarter: VS4's share priced by calendar
              quarter from the monthly view. view vs_only: the sellers with the most VS4-only loans, by GSE.
 
@@ -54,6 +54,7 @@ MIN_CELL = 30
 RECENT_WEEKS = 2
 WEEK_FROM = "2026-09-28"  # earlier weeks hold too few records with the Pricing Indicator to read
 HEADLINE_MIN = 20000
+STEADY_MIN = 20
 POINT_BINS = [("lt0", "Below FICO", None, -1), ("0_4", "0-4", 0, 4), ("5_9", "5-9", 5, 9), ("10_14", "10-14", 10, 14),
               ("15_19", "15-19", 15, 19), ("20_24", "20-24", 20, 24), ("25_29", "25-29", 25, 29), ("30_39", "30-39", 30, 39),
               ("40up", "40+", 40, None)]
@@ -209,6 +210,22 @@ def build_datasets(con, in_range: str, mix_start: str, rows) -> dict[str, list[d
     return {"choice": choice, "ceiling": ceiling, **_every_score(con, names, rows)}
 
 
+def _steady(con) -> dict:
+    """Each week's share carrying VS4 and priced on VS4 with every lender at its share of all weeks from WEEK_FROM. A lender's week with under
+    STEADY_MIN loans takes its rate over all weeks. Weeks swing with which lenders delivered; this shows what moved inside the lenders."""
+    out = {}
+    for agency, cond in (("All", "true"), ("FNMA", "agency = 'FNMA'"), ("FHLMC", "agency = 'FHLMC'")):
+        for week, c, v in con.execute(f"""
+                WITH a AS (SELECT * FROM scw WHERE week >= DATE '{WEEK_FROM}' AND {cond}),
+                l AS (SELECT seller_id, count(*)::DOUBLE / sum(count(*)) OVER () AS wgt, avg(has_vs4::INT) AS c_all, avg(is_v::INT) AS v_all FROM a GROUP BY 1),
+                lw AS (SELECT week, seller_id, count(*) AS n, avg(has_vs4::INT) AS c, avg(is_v::INT) AS v FROM a GROUP BY 1, 2),
+                wks AS (SELECT DISTINCT week FROM a)
+                SELECT wks.week, sum(l.wgt * CASE WHEN lw.n >= {STEADY_MIN} THEN lw.c ELSE l.c_all END), sum(l.wgt * CASE WHEN lw.n >= {STEADY_MIN} THEN lw.v ELSE l.v_all END)
+                FROM wks CROSS JOIN l LEFT JOIN lw ON lw.week = wks.week AND lw.seller_id = l.seller_id GROUP BY 1""").fetchall():
+            out[(agency, week.isoformat())] = (round(c, 6), round(v, 6))
+    return out
+
+
 def _every_score(con, names: dict, rows) -> dict[str, list[dict]]:
     """rules and score_mix, from every record that carries the Pricing Indicator, whatever its issue month."""
     con.execute("""
@@ -270,9 +287,11 @@ def _every_score(con, names: dict, rows) -> dict[str, list[dict]]:
     months = [r for r in mix if r["view"] == "month" and r["agency"] == "All" and r["start"] <= current.isoformat()]
     enough = [r["start"] for r in months if r["loans"] >= HEADLINE_MIN] or [r["start"] for r in months]
     headline = max(enough) if enough else None
+    steady = _steady(con)
     for r in mix:
         r["headline"] = r["view"] == "month" and r["start"] == headline
         r["through"] = last.isoformat()
+        r["steady_carrying"], r["steady_priced"] = steady.get((r["agency"], r["start"]), (None, None)) if r["view"] == "week" else (None, None)
     quarter = rows(con, """
         SELECT 'quarter' AS view, date_trunc('quarter', month)::DATE AS start, agency, sum(scored_loans) AS loans, sum(scored_upb) AS upb,
                sum(vs4_loans) / sum(scored_loans) AS vs4_priced_share, sum(vs4_upb) / sum(scored_upb) AS vs4_priced_upb_share,

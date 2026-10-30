@@ -341,11 +341,11 @@ c3.execute("CREATE TABLE entity_names AS SELECT id, upper(id) AS short, NULL::VA
 c3.execute("""CREATE TABLE monthly AS SELECT * FROM (VALUES ('All', true, 1000000.0), ('All', true, 1000000.0), ('All', false, 5.0),
               ('FHLMC', true, 1000000.0), ('FHLMC', true, 1000000.0)) t(agency, final, scored_upb)""")
 c3.execute("""CREATE TABLE loans (agency VARCHAR, issue_month DATE, upb DOUBLE, score_model VARCHAR, seller VARCHAR, purpose VARCHAR, classic_fico INT,
-              vs4 INT, pricing_indicator VARCHAR, ltv INT, loan_term INT, special_program VARCHAR, fannie_score INT, freddie_score INT)""")
+              vs4 INT, pricing_indicator VARCHAR, ltv INT, loan_term INT, special_program VARCHAR, fannie_score INT, freddie_score INT, first_intraday_date DATE)""")
 planted_fees = [("R", "V", 700, 720, 360, "7", 730, 20), ("R", "V", 700, 705, 360, "7", 700, 20), ("R", "C", 700, 720, 360, "7", 720, 20),
                 ("N", "C", 700, None, 360, "7", None, 80), ("N", "C", 700, 720, 360, "H", 710, 20), ("M", "V", None, 720, 360, "7", None, 20),
                 ("N", "C", 700, 720, 180, "7", None, 1)]
-c3.executemany("INSERT INTO loans VALUES ('FHLMC', '2026-10-01', 100000, ?, ?, 'P', ?, ?, ?, 80, ?, ?, NULL, ?)",
+c3.executemany("INSERT INTO loans VALUES ('FHLMC', '2026-10-01', 100000, ?, ?, 'P', ?, ?, ?, 80, ?, ?, NULL, ?, '2026-10-20')",
                [(model, seller, fico, vs, model, term, program, gse) for seller, model, fico, vs, term, program, gse, k in planted_fees for _ in range(k)])
 fee = fees.build_datasets(c3)["fees"]
 fm = next(r for r in fee if r["view"] == "market" and r["key"] == "All")
@@ -362,6 +362,42 @@ assert (fl["r"]["taken_usd"], fl["r"]["left_usd"], fl["r"]["est_usd"], fl["n"]["
 assert {(r["scope"], r["key"], r["loans"], r["diff"]) for r in fee if r["view"] == "gse"} == {("All", "b", 20, -20.0), ("r", "b", 20, -20.0)}, fee
 assert [(r["key"], r["loans"], r["diff"]) for r in fee if r["view"] == "lift"] == [("b", 60, 20.0)], fee
 
+# What lenders pick, on the same loans with both scores: 40 where VS4's fee is lower, half priced on it; 20 at the same fee with VS4 5 points higher, all priced on it;
+# 20 waived, so the same fee, with VS4 20 points higher, all on FICO. The fee on all 80: 103.125 bp on FICO, 96.875 on VS4 or the lower of the two, 100 as priced.
+pick = {(r["scope"], r["key"]): r for r in fee if r["view"] == "choice" and r["cohort"] == "all"}
+assert (pick[("All", "lower|up20")]["loans"], pick[("All", "lower|up20")]["vs4_share"], pick[("All", "same|up1")]["vs4_share"], pick[("All", "same|up20")]["vs4_share"], pick[("All", "same|all")]["vs4_share"], pick[("r", "lower|all")]["vs4_share"]) == (40, 0.5, 1.0, 0.0, 0.5, 0.5), pick
+opt = next(r for r in fee if r["view"] == "option" and r["scope"] == "All")
+assert (opt["loans"], opt["fee_fico_bp"], opt["fee_vs_bp"], opt["fee_best_bp"], opt["fee_actual_bp"], opt["lower_share"], opt["same_share"], opt["higher_share"]) == (80, 103.125, 96.875, 96.875, 100.0, 0.5, 0.5, 0.0), opt
+
+# A lower fee's reach, on planted 30-year loans at one lender in one week, FICO 700 at 80 LTV: 2,000 show only a Classic FICO at 6.50%, 500 show both, priced on FICO, at 6.53%, and 500 are priced on
+# VS4 745 at 6.43%. Against its own FICO loans with both scores the VS4 loans are 10 bp lower, whatever the model's level; a fifth of the FICO loans are held out.
+from gsescore.fee_grid import load_grid as _grid  # noqa: E402
+from gsescore.pricing import build_pricing  # noqa: E402
+
+c5 = duckdb.connect()
+c5.execute("CREATE MACRO seller_key(x) AS x")
+c5.execute("CREATE TABLE seller_map AS SELECT 'R' AS key, 'r' AS id")
+c5.execute("CREATE TABLE entity_names AS SELECT 'r' AS id, 'R' AS short, 'R' AS name, NULL::VARCHAR AS ticker")
+c5.execute("""CREATE TABLE loans AS SELECT 'FNMA' AS agency, 'L' || i AS loan_id, DATE '2026-10-20' AS first_intraday_date, 'C' AS pricing_indicator, 'R' AS seller, 'R' AS channel, 'P' AS purpose, 'P' AS occupancy, 1 AS units, 'SF' AS property_type,
+              300000 AS orig_loan_amt, 38 AS dti, 0.0 AS mi_pct, 'TX' AS state, 'N' AS fthb, 1 AS num_borrowers, 'C' AS score_model, 700 AS pricing_score, 700 AS classic_fico, CAST(NULL AS INT) AS vs4, DATE '2026-10-01' AS issue_month,
+              '7' AS special_program, 80 AS ltv, 6.50 AS orig_rate, 360 AS loan_term, 'FRM' AS amort_type FROM range(2000) t(i)""")
+c5.execute("INSERT INTO loans SELECT * REPLACE ('M' || loan_id AS loan_id, 705 AS vs4, 6.53 AS orig_rate) FROM loans WHERE regexp_extract(loan_id, '[0-9]+')::INT < 500")
+c5.execute("INSERT INTO loans SELECT * REPLACE ('V' || loan_id AS loan_id, 'V' AS score_model, 'V' AS pricing_indicator, 745 AS vs4, 745 AS pricing_score, 6.43 AS orig_rate) FROM loans WHERE loan_id LIKE 'L%' AND regexp_extract(loan_id, '[0-9]+')::INT < 500")
+reach = next(r for r in build_pricing(c5, "2026-07-20", "true") if r["view"] == "value" and r["scope"] == "All" and r["key"] == "better")
+planted_fee = (_grid()[("purchase", 4, 4)] - _grid()[("purchase", 6, 4)]) * 100
+assert reach["n"] == 500 and abs(reach["net_bp"] + 10) < 0.05 and abs(reach["fee_bp"] - planted_fee) < 0.01 and abs(reach["reaches_fee"] - 10 / (planted_fee / 5)) < 0.01, reach
+assert any(r["view"] == "value" and r["scope"] == "r|R" and r["label"] == "R, retail" for r in build_pricing(c5, "2026-07-20", "true")), "the largest VS4 sellers by channel"
+
+# A steady mix on planted weeks: S has 100 loans a week, 50 then 100 carrying VS4. T has 5 then 195, with 39 carrying in the second week, so in the first it takes its rate over all weeks, 39 of 200.
+from gsescore import scores as scores_mod  # noqa: E402
+
+c6 = duckdb.connect()
+c6.execute("CREATE TABLE scw (agency VARCHAR, week DATE, is_v BOOLEAN, seller_id VARCHAR, has_fico BOOLEAN, has_vs4 BOOLEAN)")
+c6.executemany("INSERT INTO scw VALUES ('FNMA', ?, ?, ?, true, ?)", [("2026-10-05", i < 10, "s", i < 50) for i in range(100)] + [("2026-10-12", i < 20, "s", True) for i in range(100)]
+               + [("2026-10-05", False, "t", False) for _ in range(5)] + [("2026-10-12", False, "t", i < 39) for i in range(195)])
+stead = scores_mod._steady(c6)
+assert stead[("All", "2026-10-05")] == (round(0.5 * 0.5 + 0.5 * 0.195, 6), round(0.5 * 0.1, 6)) and stead[("FNMA", "2026-10-12")] == (round(0.5 * 1 + 0.5 * 0.2, 6), round(0.5 * 0.2, 6)), stead
+
 # The weekly note on planted loans. R goes from 10 of 100 to 30 of 100 priced on VS4, all with both scores and VS4 5 points higher. N, all at
 # Fannie Mae like R, goes from 50 with only a Classic FICO to 50 with both. The files stop on Oct 14, so the second week is partial.
 from gsescore import notes  # noqa: E402
@@ -372,7 +408,7 @@ c4.execute("CREATE TABLE seller_map AS SELECT * FROM (VALUES ('R', 'r'), ('N', '
 c4.execute("CREATE TABLE entity_names AS SELECT id, upper(id) AS short, upper(id) AS name, NULL::VARCHAR AS ticker FROM seller_map")
 c4.execute("CREATE TABLE loans AS SELECT * FROM (VALUES ('R', 'V', DATE '2026-10-06', DATE '2026-10-01'), ('N', 'C', DATE '2026-10-14', DATE '2026-10-01')) t(seller, score_model, first_intraday_date, issue_month)")
 c4.execute("""CREATE TABLE scw (agency VARCHAR, week DATE, is_v BOOLEAN, seller_id VARCHAR, has_fico BOOLEAN, has_vs4 BOOLEAN, gap INT, upb DOUBLE DEFAULT 100000,
-              channel VARCHAR DEFAULT 'R', fico INT DEFAULT 700, ltv INT DEFAULT 80, purpose VARCHAR DEFAULT 'P', mi BOOLEAN DEFAULT false, program VARCHAR DEFAULT '7')""")
+              channel VARCHAR DEFAULT 'R', fico INT DEFAULT 700, ltv INT DEFAULT 80, purpose VARCHAR DEFAULT 'P', mi BOOLEAN DEFAULT false, program VARCHAR DEFAULT '7', month DATE DEFAULT DATE '2026-10-01')""")
 for wk, v in (("2026-10-05", 10), ("2026-10-12", 30)):
     c4.executemany("INSERT INTO scw (agency, week, is_v, seller_id, has_fico, has_vs4, gap) VALUES ('FNMA', ?, ?, 'r', true, true, 5)", [(wk, i < v) for i in range(100)])
 c4.executemany("INSERT INTO scw (agency, week, is_v, seller_id, has_fico, has_vs4, gap) VALUES ('FNMA', ?, false, 'n', true, ?, ?)", [("2026-10-05", False, None)] * 50 + [("2026-10-12", True, 0)] * 50)
@@ -397,6 +433,8 @@ from gsescore import why  # noqa: E402
 ls4 = {r["id"]: r for r in why.build_datasets(c4)["lender_stage"] if r["view"] == "lender"}
 assert (ls4["r"]["mix_fico_only"], ls4["r"]["mix_both_fico"], ls4["r"]["mix_both_vs"], ls4["r"]["mix_vs_only"], ls4["r"]["fnma_both_vs"], ls4["r"]["fhlmc_both_vs"]) == (0.0, 0.8, 0.2, 0.0, 0.2, None), ls4["r"]
 assert (ls4["n"]["mix_fico_only"], ls4["n"]["mix_both_fico"], ls4["n"]["fnma_fico_only"], ls4["n"]["fhlmc_loans"]) == (0.5, 0.5, 0.5, 0), ls4["n"]
+split4 = {(r["id"], r["agency"], r["start"]): r for r in why.build_datasets(c4)["lender_mix"] if r["view"] == "week"}
+assert (split4[("r", "All", "2026-10-12")]["n"], split4[("r", "All", "2026-10-12")]["bv"], split4[("r", "FNMA", "2026-10-12")]["bf"], split4[("n", "All", "2026-10-05")]["fo"], split4[("n", "All", "2026-10-12")]["bf"]) == (100, 30, 70, 50, 50), split4
 
 # The exposure inputs and the workbook, on the pipeline's own build. Every formula's stored value is what the formula gives.
 import re  # noqa: E402

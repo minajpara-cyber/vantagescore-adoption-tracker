@@ -286,7 +286,7 @@ def build(out_dir: Path = paths.SITE_DATA) -> dict:
     more |= build_fee_datasets(con)
     more |= build_outlook_datasets(con, LENDER_START)  # needs the ceiling's loans (scores.py) and the seller tables
     more["pricing"] = build_pricing(con, WEEKLY_START, in_range)
-    more |= build_note_datasets(con, more["statements"], more["pricing"])
+    more |= build_note_datasets(con, more["statements"], more["pricing"], more["score_mix"])
     more |= build_exposure_datasets(con, more["score_mix"])
     for name, rows in more.items():
         (out_dir / f"{name}.json").write_text(json.dumps({"rows": rows}, separators=(",", ":")))

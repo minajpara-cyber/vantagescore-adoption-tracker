@@ -19,15 +19,24 @@ coarser, MIN_CELL+ loans).
         view gse: the GSE's own score (Fannie Score, Freddie Score), VS4-priced minus FICO-priced, within the same seller, GSE and fee
         bucket, by bucket band, all lenders and each of the two largest VS4 sellers.
         view lift: the GSE's own score, VS4 in a better bucket minus VS4 in the same bucket, within the same GSE and FICO bucket.
+        view choice: what lenders with both scores pick, loans issued on the one grid. key = outcome|band: VS4's fee against FICO's (lower, same,
+        higher) and VS4's score against FICO's (up20, up1, equal, down1, down20, or all), the share priced on VS4; for all lenders, the largest VS4
+        users and holders of both scores, and the rest; over all weeks and the latest CHOICE_WEEKS.
+        view option: on those loans, the fee as bp of balance if every loan priced on FICO, on VS4, on the lower of the two, and as they did.
 Each lender's numbers rest on one month's loans. Grid fees are what the GSE charges, not what a borrower sees.
 """
+from datetime import timedelta
+
 from .fee_grid import FEE_WAIVED, load_grid
-from .pricing import LTV_CUTS, SCORE_CUTS
+from .pricing import GRID_CHANGE, LTV_CUTS, SCORE_CUTS
 
 HEADLINE_MIN = 20000
 LENDER_TOP = 40
 MIN_N = 20
 MIN_CELL = 30
+CHOICE_WEEKS = 2
+CHOICE_USERS = 4
+CHOICE_HOLDERS = 3
 WHOLE_DOLLARS = {"upb", "annual_upb", "taken_usd", "taken_all_usd", "left_usd", "est_usd", "option_usd", "taken_annual_usd", "option_annual_usd"}
 BANDS = [("a", "Below 700", 0, 3), ("b", "700-739", 4, 5), ("c", "740-779", 6, 7), ("d", "780 and over", 8, 8)]
 
@@ -37,21 +46,60 @@ def _bucket(col: str, cuts, closed_right=False) -> str:
     return "CASE " + " ".join(f"WHEN {col} {op} {c} THEN {i}" for i, c in enumerate(cuts)) + f" ELSE {len(cuts)} END"
 
 
+def _choice(con, names) -> list[dict]:
+    """What lenders pick when they hold both scores, by what VS4 does to the fee on the one grid, and what the pick is worth."""
+    con.execute(f"""
+        CREATE OR REPLACE TEMP TABLE fc AS
+        WITH a AS (SELECT * FROM fa WHERE month >= DATE '{GRID_CHANGE}' AND has_fico AND has_vs4),
+        f AS (SELECT a.*, CASE WHEN a.waived THEN 0 ELSE lf.fee END AS fee_f, CASE WHEN a.waived THEN 0 ELSE lv.fee END AS fee_v
+              FROM a LEFT JOIN llpa lf ON lf.grid = a.grid AND lf.sb = a.fb AND lf.lb = least(a.lb, CASE a.grid WHEN 'cash_out' THEN 4 ELSE 8 END)
+                     LEFT JOIN llpa lv ON lv.grid = a.grid AND lv.sb = a.vb AND lv.lb = least(a.lb, CASE a.grid WHEN 'cash_out' THEN 4 ELSE 8 END))
+        SELECT *, CASE WHEN fee_v < fee_f THEN 'lower' WHEN fee_v > fee_f THEN 'higher' ELSE 'same' END AS outcome,
+               CASE WHEN gap >= 20 THEN 'up20' WHEN gap >= 1 THEN 'up1' WHEN gap = 0 THEN 'equal' WHEN gap >= -19 THEN 'down1' ELSE 'down20' END AS band
+        FROM f""")
+    if not con.execute("SELECT count(*) FROM fc").fetchone()[0]:
+        return []
+    last = con.execute("SELECT max(week) FROM fc").fetchone()[0]
+    late = last - timedelta(days=7 * (CHOICE_WEEKS - 1))
+    picked = [r[0] for r in con.execute(f"SELECT seller_id FROM fc WHERE is_v GROUP BY 1 HAVING count(*) >= {MIN_N} ORDER BY count(*) DESC, 1 LIMIT {CHOICE_USERS}").fetchall()]
+    picked += [r[0] for r in con.execute(f"SELECT seller_id FROM fc GROUP BY 1 ORDER BY count(*) DESC, 1 LIMIT {CHOICE_HOLDERS}").fetchall() if r[0] not in picked]
+    scopes = [("All", "true", "All lenders")] + [(s, f"seller_id = '{s}'", names[s][0]) for s in picked]
+    if picked:
+        scopes.append(("rest", "seller_id NOT IN (" + ", ".join(f"'{s}'" for s in picked) + ")", "Other lenders"))
+    out = []
+    for order, (scope, cond, label) in enumerate(scopes):
+        for cohort, when in (("all", "true"), ("latest", f"week >= DATE '{late}'")):
+            for outcome, band, n, v in con.execute(f"""
+                    SELECT outcome, band, count(*), count(*) FILTER (WHERE is_v) FROM fc WHERE ({cond}) AND ({when}) AND week IS NOT NULL
+                    GROUP BY GROUPING SETS ((outcome), (outcome, band)) ORDER BY 1, 2""").fetchall():
+                out.append({"view": "choice", "scope": scope, "scope_label": label, "scope_rank": order, "cohort": cohort, "key": f"{outcome}|{band or 'all'}", "loans": n, "vs4_share": v / n})
+        r = con.execute(f"""
+            SELECT count(*), avg(upb), sum(upb), sum(upb * fee_f), sum(upb * fee_v), sum(upb * least(fee_f, fee_v)), sum(upb * CASE WHEN is_v THEN fee_v ELSE fee_f END),
+                   count(*) FILTER (WHERE outcome = 'lower'), count(*) FILTER (WHERE outcome = 'same'), count(*) FILTER (WHERE outcome = 'higher')
+            FROM fc WHERE {cond}""").fetchone()
+        n, avg_upb, u, ff, fv, fb, fa_, lo, sa, hi = r
+        if n and u:
+            out.append({"view": "option", "scope": scope, "scope_label": label, "scope_rank": order, "key": scope, "loans": n, "avg_upb": avg_upb, "fee_fico_bp": ff / u * 100, "fee_vs_bp": fv / u * 100,
+                        "fee_best_bp": fb / u * 100, "fee_actual_bp": fa_ / u * 100, "lower_share": lo / n, "same_share": sa / n, "higher_share": hi / n})
+    return out
+
+
 def build_datasets(con) -> dict[str, list[dict]]:
     """Needs seller_map and entity_names (lenders.py)."""
     con.execute("CREATE OR REPLACE TEMP TABLE llpa (grid VARCHAR, sb INT, lb INT, fee DOUBLE)")
     con.executemany("INSERT INTO llpa VALUES (?, ?, ?, ?)", [(g, s, l, v) for (g, s, l), v in load_grid().items()])
     waived = ", ".join(f"'{c}'" for c in FEE_WAIVED)
     con.execute(f"""
-        CREATE OR REPLACE TEMP TABLE fw AS
+        CREATE OR REPLACE TEMP TABLE fa AS
         SELECT l.agency, l.issue_month AS month, coalesce(l.upb, 0)::DOUBLE AS upb, l.score_model = 'V' AS is_v, m.id AS seller_id,
+               date_trunc('week', l.first_intraday_date)::DATE AS week, l.vs4 - l.classic_fico AS gap,
                l.classic_fico IS NOT NULL AS has_fico, l.vs4 IS NOT NULL AS has_vs4, coalesce(l.special_program, '7') IN ({waived}) AS waived,
                CASE WHEN l.purpose = 'P' THEN 'purchase' WHEN l.purpose = 'C' THEN 'cash_out' ELSE 'rate_term' END AS grid,
                {_bucket('l.classic_fico', SCORE_CUTS)} AS fb, {_bucket('l.vs4', SCORE_CUTS)} AS vb,
                {_bucket('l.ltv', LTV_CUTS, True)} AS lb, coalesce(l.fannie_score, l.freddie_score) AS gse
         FROM loans l JOIN seller_map m ON m.key = seller_key(l.seller)
-        WHERE l.score_model IN ('V', 'C') AND l.pricing_indicator IS NOT NULL AND l.ltv IS NOT NULL AND coalesce(l.loan_term, 360) > 180
-          AND l.issue_month <= date_trunc('month', current_date)""")
+        WHERE l.score_model IN ('V', 'C') AND l.pricing_indicator IS NOT NULL AND l.ltv IS NOT NULL AND coalesce(l.loan_term, 360) > 180""")
+    con.execute("CREATE OR REPLACE TEMP TABLE fw AS SELECT * FROM fa WHERE month <= date_trunc('month', current_date)")
     months = con.execute("SELECT month, count(*) FROM fw GROUP BY 1 ORDER BY 1").fetchall()
     if not months:
         return {"fees": []}
@@ -130,6 +178,7 @@ def build_datasets(con) -> dict[str, list[dict]]:
             SELECT {band} AS k, sum(bn), sum((bg - sg) * bn) / sum(bn) FROM c WHERE bn >= 5 AND sn >= 5 GROUP BY 1 ORDER BY 1""").fetchall():
         if vn >= MIN_N:
             out.append({"view": "lift", "scope": "All", "key": key, "label": labels[key], "loans": vn, "diff": diff})
+    out += _choice(con, names)
     keys = sorted({k for r in out for k in r})
 
     def tidy(k, v):
