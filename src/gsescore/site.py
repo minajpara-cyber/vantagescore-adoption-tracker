@@ -6,7 +6,7 @@ source runs as a plain static site too. Only aggregate datasets are copied.
 
 The public site is pinned to its own page (site/public/index.html) and dataset list: new analysis
 goes to the private claude.ai dashboard first and reaches the public site only once the dashboard
-page is copied there and its datasets added below (last done Oct 29, 2026). `build_preview()` builds
+page is copied there and its datasets added below (last done Oct 30, 2026). `build_preview()` builds
 the full dashboard page as a static site under build/preview/ (git-ignored) for checking it locally.
 """
 import hashlib
@@ -18,8 +18,9 @@ from pathlib import Path
 from . import paths
 
 # What the public page reads; keep it to datasets cleared for the public site.
-PUBLIC_DATASETS = ["monthly", "weekly", "composition", "profile", "summary", "events", "sellers", "seller_monthly",
-                   "seller_weekly", "seller_splits", "adoption", "adopters", "series", "highlights", "asof"]
+PUBLIC_DATASETS = ["monthly", "weekly", "summary", "events", "sellers", "seller_monthly", "seller_weekly",
+                   "seller_splits", "adoption", "adopters", "series", "highlights", "asof", "score_coverage",
+                   "borrowers", "borrower_profile", "pricing", "choice", "ceiling", "outlook"]
 # What the claude.ai dashboard page reads; data/dashboard_uploads.json records the version of each it has.
 DASHBOARD_DATASETS = ["monthly", "weekly", "summary", "events", "sellers", "seller_monthly", "seller_weekly",
                       "seller_splits", "adoption", "adopters", "series", "highlights", "asof", "score_coverage",

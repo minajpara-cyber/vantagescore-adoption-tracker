@@ -7,7 +7,7 @@ A private claude.ai dashboard shows the same page (since Oct 29, 2026); new view
 
 New analysis goes to the private dashboard first. The public site keeps its own page
 (site/public/index.html) and dataset list (`PUBLIC_DATASETS` in src/gsescore/site.py) until a view is
-cleared to go public: copy it there and add its datasets.
+cleared to go public: copy it there and add its datasets (last done Oct 30, 2026, when the two matched).
 
 ## Layout
 
@@ -17,8 +17,8 @@ data/collections/*.json                    what each collection pulled (portal d
 data/warehouse/{loan,security}/...         one parquet per ingested file (all columns, as text)
 data/warehouse/manifest.jsonl              what was ingested, with header and row counts
 data/gse.duckdb                            DuckDB with the views below, for ad-hoc SQL
-site/data/*.json                           aggregates the pages read (git-ignored; seller-level ones stay private)
-site/dashboard/index.html                  the private dashboard page (claude.ai Dashboard type): Overview, Lenders, Borrowers, Method
+site/data/*.json                           aggregates the pages read (git-ignored; docs/data holds the public site's copies)
+site/dashboard/index.html                  the private dashboard page (claude.ai Dashboard type): Overview, Outlook, Lenders, Score choice, Borrowers, Pricing, Method
 site/public/index.html                     the public site's page, pinned until new views are cleared to go public
 site/standalone/                           template + `dash` stand-in that turn a page into a static site
 docs/                                      the public site (GitHub Pages serves main:/docs), aggregates only

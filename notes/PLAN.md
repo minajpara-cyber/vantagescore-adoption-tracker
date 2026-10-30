@@ -94,7 +94,10 @@ local in notes/ANALYTICS_PLAN.md)
    FICO, for all lenders and each large one; and the ceiling, VS4's share if every lender priced on the
    better score (or wherever VS4 is no worse), with loans that carry only a Classic FICO given the rate
    measured on loans with both scores like them. Both-score groups use every record that carries the
-   Pricing Indicator, including loans first disclosed before Oct 19 and republished.
+   Pricing Indicator, including loans first disclosed before Oct 19 and republished. Months made up of
+   records that show only one score are estimates (Oct 30, 2026): a lender that delivered a VS4 loan that
+   month takes its own ceiling from records with every score, since counting its VS4 loans as better and
+   its FICO loans at the market rate overstates a lender already choosing between scores.
 3. Pricing. Done Oct 29, 2026 on the private dashboard (src/gsescore/pricing.py): a model of FICO-priced
    30-year fixed loans' note rates (additive effects for lender and channel by week, LLPA cell, loan and
    borrower traits; fitted on four in five, checked on the fifth) gives each VS4 loan the rate a FICO
@@ -112,6 +115,9 @@ local in notes/ANALYTICS_PLAN.md)
    as groups of lenders go that deep, up to the ceiling; how fast the deep lenders ramped and how fast
    others are starting; three paths by month (no change, today's users go deep, and others also start at
    the recent pace); and a lender table to add up any set of lenders.
+
+Items 2-5 were published on the public site Oct 30, 2026, when the public page and dataset list were
+matched to the dashboard's.
 
 ## 5. Open items
 - Seller is not originator: correspondent aggregators (AmeriHome, PennyMac) deliver loans other lenders
