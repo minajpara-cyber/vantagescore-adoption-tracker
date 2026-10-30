@@ -456,7 +456,7 @@
           <h2 id="choice-h">When lenders price on VS4</h2>
           <select class="vx-select" id="choice-scope" aria-label="Lender" data-source="choice"></select>
         </div>
-        <p>Loans that carry both scores, by how many of the GSEs' upfront-fee score buckets (639 or less, then 20-point steps to 780 and over) the VS4 score sits above or below the Classic FICO, and the share priced on VS4. A lender that orders both can price on either. All lenders follow the GSE picked above; a single lender covers both GSEs.</p>
+        <p>Loans that carry both scores, by how many of the GSEs' upfront-fee score buckets (639 or less, then 20-point steps to 780 and over) the VS4 score sits above or below the Classic FICO, and the share priced on VS4. A lender that orders both can price on either. All lenders follow the GSE picked above; a single lender covers both GSEs, and its bars need 20 or more loans.</p>
       </header>
       <div class="vx-card" id="choice-card">
         <div class="vx-legend" id="choice-legend" data-source="choice"></div>
@@ -466,18 +466,18 @@
     <section class="vx-sec" id="ceiling-sec" aria-labelledby="ceiling-h">
       <header class="vx-sec-h">
         <h2 id="ceiling-h">How high VS4's share could go</h2>
-        <p>The ceiling is VS4's share if every lender ordered both scores and priced on VS4 whenever it lands in a better bucket; the upper line counts every loan where VS4 is no worse. Loans with both scores count as they are and VS4-only loans as VS4; a loan with only a Classic FICO takes the rate measured on loans with both scores in its Classic FICO bucket, purpose, channel and GSE. The lenders that order both scores today are not a random sample, and matching on those traits does not correct for that.</p>
+        <p>The ceiling is VS4's share if every lender ordered both scores and priced on VS4 whenever it lands in a better bucket; the upper line counts every loan where VS4 is no worse. Loans with both scores count as they are and VS4-only loans as VS4; a loan with only a Classic FICO takes the rate measured on loans with both scores in its Classic FICO bucket, purpose, channel and GSE. Months before every score was disclosed are estimates, because their loans show only one score. The lenders that order both scores today are not a random sample, and matching on those traits does not correct for that.</p>
       </header>
       <div class="vx-sec">
         <div class="vx-card" id="ceiling-card">
           <h2>Actual share against the ceiling</h2>
-          <p class="vx-note">By issue month, for the GSE picked above; the latest month is partial.</p>
+          <p class="vx-note">By issue month, for the GSE picked above; the latest month is partial. Hollow points on a dashed line are estimates.</p>
           <div class="vx-legend" id="ceiling-legend" data-source="ceiling"></div>
           <div class="vx-chart dash-skeleton" id="ceiling-chart" data-source="ceiling"></div>
         </div>
         <div class="vx-card" id="band-card">
           <h2>Where the headroom is</h2>
-          <p class="vx-note">Loans issued since July 2026, both GSEs, by Classic FICO bucket: each bucket's share of loans, how often VS4 lands in a better bucket, and what that adds to the ceiling. The last column adds up to the All loans row.</p>
+          <p class="vx-note">Loans disclosed with every score delivered (records from Oct 19, 2026), both GSEs, by Classic FICO bucket: each bucket's share of loans, how often VS4 lands in a better bucket, and what that adds to the ceiling. The last column adds up to the All loans row.</p>
           <div class="vx-tablebox">
             <table class="vx-table" id="band-table" data-source="ceiling" data-row-key="view,key">
               <thead><tr>
@@ -664,6 +664,7 @@
       <ul>
         <li>The GSEs' upfront fees step at nine credit score buckets: 639 or less, 20-point steps from 640 to 779, and 780 and over. For a loan that carries both scores, the bucket gap is its VS4 bucket minus its Classic FICO bucket.</li>
         <li>The ceiling counts loans with both scores as they are, VS4-priced loans with no Classic FICO as VS4, and gives each loan with only a Classic FICO the rate at which VS4 lands in a better bucket among loans with both scores in its Classic FICO bucket, purpose, channel and GSE (its bucket and GSE, or its bucket alone, where fewer than 30 such loans). It assumes VS4 relates to Classic FICO the same way in every month and at every lender.</li>
+        <li>Records from before Oct 19, 2026 show only the score that priced the loan, so those rules would overstate lenders already choosing between scores: every VS4 loan would count as better, and their Classic FICO loans would take a rate that ignores that they passed on VS4. Months made up of such records are therefore estimates. A lender that delivered a VS4 loan that month takes its own ceiling on loans disclosed with every score (in that GSE, else both GSEs, with at least 30 such loans; failing that, its VS4 loans take the rate over all such VS4 loans). Other lenders' loans follow the rules above. This assumes a lender's borrowers change little from month to month.</li>
       </ul>
       <h2>Rate model</h2>
       <ul>
@@ -675,7 +676,7 @@
       <ul>
         <li>The outlook starts from loans disclosed with every score delivered (records that carry the Pricing Indicator) and issued in the latest two issue months, both GSEs together. For each lender it takes its share of those loans, its VS4 share and its ceiling: the share of its loans that would be priced on VS4 if it did so whenever VS4 lands in a better fee bucket, counted as for the ceiling under Score choice.</li>
         <li>A lender's depth is its VS4 share over its ceiling. Deep lenders have 100 or more such loans and price on VS4 for at least half of what their ceiling allows. A lender "as deep" prices on VS4 for the share of its own ceiling the deep lenders reach together, or keeps its own VS4 share where that is higher. Each lender's share of loans stays as it is in the window.</li>
-        <li>Lenders using VS4 are those with a VS4 loan first disclosed since September 2026, when VS4 opened to every lender. The recent pace pools the issue months since then: loans from lenders delivering their first VS4 loan over loans from lenders that had never delivered one.</li>
+        <li>Lenders using VS4 are those with a VS4 loan first disclosed since September 2026, when VS4 opened to every lender; a lender with VS4 loans before then and none since shows as stopped. The recent pace pools the issue months since then: loans from lenders delivering their first VS4 loan over loans from lenders that had never delivered one.</li>
         <li>In the paths, a lender that goes deep follows the deep lenders' depth month by month from their first VS4 loan, taken together while at least two of them reach that month and never falling, then levels off at their depth today. Lenders using VS4 start along it the month after the latest; in the pace case, each month the recent pace of the remaining lenders' loans starts along it too, from the same month.</li>
         <li>These are scenarios, not a forecast. They rest on the ceiling, which assumes VS4 relates to Classic FICO the same way at every lender, and on how a few lenders have behaved so far. A lender that orders both scores but prices on Classic FICO may never go deep. For a lender already using VS4, a loan delivered with only a Classic FICO takes the rate at which VS4 is better on comparable loans; if that lender ordered VS4 and left it off because it was not better, its ceiling is lower than shown.</li>
       </ul>
@@ -1795,7 +1796,7 @@
     const st = dash.data('choice').status;
     const rule = rowsOf('choice').filter((r) => r.view === 'rule');
     const sel = document.getElementById('choice-scope');
-    const totals = d3.rollup(rule.filter((r) => r.agency === 'All'), (v) => d3.sum(v, (r) => r.loans), (r) => r.scope);
+    const totals = new Map(rule.filter((r) => r.agency === 'All').map((r) => [r.scope, r.scope_loans]));
     const scopes = [...new Map(rule.filter((r) => r.agency === 'All').map((r) => [r.scope, r.scope_label])).entries()]
       .sort((a, b) => (a[0] === 'All' ? -1 : b[0] === 'All' ? 1 : totals.get(b[0]) - totals.get(a[0])));
     const sig = scopes.map(([v]) => v).join(',');
@@ -1815,7 +1816,7 @@
     if (!prep(box, st) || !data.length) return;
     const W = box.clientWidth, H = 270, m = { top: 22, right: 10, bottom: 46, left: 0 };
     const svg = svgFor(box, W, H, 'Share of loans with both scores priced on VS4, by bucket gap');
-    const keys = data.map((r) => r.key);
+    const keys = [...new Set(rule.filter((r) => r.scope === 'All').sort((a, b) => a.order - b.order).map((r) => r.key))];
     const lab = (k) => GAP_TICK[k] ?? k;
     const y = d3.scaleLinear([0, 1], [H - m.bottom, m.top]);
     const yf = d3.format('.0%');
@@ -1858,9 +1859,24 @@
     yAxis(svg, y, yf, m.left, W - m.right);
     bandAxis(svg, x, keys, lab, widest, H - m.bottom + 8);
     const xc = (r) => x(r.start) + x.bandwidth() / 2;
-    for (const [f, , c] of lines) partialLine(svg, data, xc, (r) => r[f], y, c, 'final');
+    lines.slice(1).forEach(([f, , c]) => estimateLine(svg, data, xc, (r) => r[f], y, c));
+    partialLine(svg, data, xc, (r) => r[lines[0][0]], y, lines[0][2], 'final');
     bandHover(svg, box, x, data, 'start', m, H, (r) => [`${monthYear(r.start)}${r.final ? '' : ' (partial)'}`,
-      lines.map(([f, l, c]) => [c, l, pct1(r[f])]).concat([[null, 'Loans', int(r.loans)]])]);
+      lines.map(([f, l, c], i) => [c, i && r.estimated ? `${l} (estimate)` : l, pct1(r[f])]).concat([[null, 'Loans', int(r.loans)]])]);
+  }
+
+  // A line whose early periods are estimates: dashed with hollow points up to the first measured period.
+  function estimateLine(svg, rows, xf, vf, y, color) {
+    const ok = rows.filter((r) => vf(r) != null);
+    const firm = ok.filter((r) => !r.estimated), est = ok.filter((r) => r.estimated);
+    const line = d3.line().x(xf).y((r) => y(vf(r)));
+    const style = (path) => path.attr('fill', 'none').attr('stroke', color).attr('stroke-width', 2)
+      .attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round');
+    if (firm.length > 1) style(svg.append('path').attr('d', line(firm)));
+    if (est.length) style(svg.append('path').attr('d', line(est.concat(firm.slice(0, 1))))).attr('stroke-dasharray', '4 4');
+    svg.append('g').selectAll('circle').data(ok).join('circle')
+      .attr('cx', xf).attr('cy', (r) => y(vf(r))).attr('r', 2.5)
+      .attr('fill', (r) => (r.estimated ? 'var(--color-panel)' : color)).attr('stroke', color).attr('stroke-width', 1.5);
   }
 
   function drawBands() {
@@ -1892,7 +1908,7 @@
   }
 
   // ---- Outlook ----
-  const OL_STATUS = { deep: 'Deep', using: 'Started', none: 'Not yet' };
+  const OL_STATUS = { deep: 'Deep', using: 'Started', stopped: 'Stopped', none: 'Not yet' };
   const C_HOLD = 'var(--color-fg-muted)', C_USERS = col(2), C_PACE = col(4), C_ALLDEEP = col(3), C_CEIL = col(1);
   const OL_CASES = [['hold', 'No lender changes', C_HOLD], ['users', 'Lenders using VS4 go as deep', C_USERS],
     ['pace', 'Others also start at the recent pace', C_PACE]];

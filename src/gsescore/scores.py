@@ -5,7 +5,8 @@ The GSEs' upfront fees step at fixed credit score buckets (SCORE_CUTS in pricing
 
   choice   view rule: loans that carry both scores (only records from BOTH_START on can), by bucket gap (3+
            lower ... 3+ higher, the same bucket split into below 780 and both 780+): loans and the share
-           priced on VS4. Scope All (agency All, FNMA, FHLMC) and each seller with MIN_CHOICE+ such loans.
+           priced on VS4. Scope All (agency All, FNMA, FHLMC) and each seller with MIN_CHOICE+ such loans (cells
+           of MIN_N+ loans; scope_loans is the scope's total).
            view pull: each seller with MIN_N+ loans disclosed with every score delivered (records that
            carry the Pricing Indicator), and the share of them that carry both scores.
   ceiling  VS4's share if every lender priced on VS4 whenever it lands in a better bucket ("better") or
@@ -14,10 +15,16 @@ The GSEs' upfront fees step at fixed credit score buckets (SCORE_CUTS in pricing
            FICO takes the rate measured on loans with both scores in its cell (Classic FICO bucket x purpose
            x channel x GSE, else bucket x GSE, else bucket, whichever first has MIN_CELL loans, else the rate
            over every loan with both scores).
+           Records without the Pricing Indicator show only the score that priced the loan, so those rules would
+           overstate a lender already choosing between scores: every VS4 loan would count as better, and its FICO
+           loans would take a rate that ignores it had passed on VS4. A loan in such a record, at a seller with a
+           VS4-priced loan that month, takes instead that seller's rate over records with every score delivered,
+           in its GSE, else both GSEs (MIN_CELL+ loans), else the rate over VS4-priced such records if priced on
+           VS4, else the rules above. A month made up mostly of such records is marked estimated.
            view month: by issue month from MIX_START and GSE (+ All). view both: loans disclosed with every
-           score delivered, by GSE (+ All). view band: by Classic FICO bucket, both GSEs, issue months from
-           MIX_START, with each bucket's contribution to the ceiling, and key all: every loan (the
-           contributions add up to its value).
+           score delivered, by GSE (+ All). view band: those same loans by Classic FICO bucket, both GSEs, with
+           each bucket's contribution to the ceiling, and key all: every such loan (the contributions add up to
+           its value).
 The loans with both scores are the ones whose lenders chose to order both, not a random sample: matching
 on the cell corrects for loan mix, not for which lenders those are.
 """
@@ -66,17 +73,22 @@ def build_datasets(con, in_range: str, mix_start: str, rows) -> dict[str, list[d
         UNION ALL
         SELECT seller_id, 'All', gkey, count(*), count(*) FILTER (WHERE is_v)
         FROM b WHERE seller_id IN (SELECT seller_id FROM big) GROUP BY seller_id, gkey""").fetchall()
+    totals: dict[tuple, int] = {}
+    for scope, agency, _, loans, _ in rule:
+        totals[scope, agency] = totals.get((scope, agency), 0) + loans
     for scope, agency, gkey, loans, vs4 in rule:
+        if scope != "All" and loans < MIN_N:  # too few to read a seller's rate from
+            continue
         label, order = labels[gkey]
         choice.append({"view": "rule", "scope": scope, "scope_label": "All lenders" if scope == "All" else names.get(scope, scope),
                        "agency": agency, "key": gkey, "label": label, "order": order, "loans": loans,
-                       "vs4_loans": vs4, "vs4_share": round(vs4 / loans, 6), "both_share": None})
+                       "scope_loans": totals[scope, agency], "vs4_loans": vs4, "vs4_share": round(vs4 / loans, 6), "both_share": None})
     for seller_id, loans, both in con.execute(f"""
             SELECT seller_id, count(*), count(*) FILTER (WHERE has_fico AND has_vs4) FROM sc WHERE win_both
             GROUP BY 1 HAVING count(*) >= {MIN_N} ORDER BY 2 DESC, 1""").fetchall():
         choice.append({"view": "pull", "scope": seller_id, "scope_label": names.get(seller_id, seller_id), "agency": "All",
-                       "key": None, "label": None, "order": None, "loans": loans, "vs4_loans": None, "vs4_share": None,
-                       "both_share": round(both / loans, 6)})
+                       "key": None, "label": None, "order": None, "loans": loans, "scope_loans": None, "vs4_loans": None,
+                       "vs4_share": None, "both_share": round(both / loans, 6)})
     choice.sort(key=lambda r: (r["view"] != "rule", r["scope"] != "All", r["scope"], r["agency"], r["order"] or 0))
 
     # Each loan's chance VS4 is in a better (or no worse) bucket: observed where both scores are disclosed.
@@ -87,7 +99,8 @@ def build_datasets(con, in_range: str, mix_start: str, rows) -> dict[str, list[d
         c1 AS (SELECT agency, fb, purpose, channel, count(*) AS n, avg(better) AS pb, avg(nw) AS pn FROM b GROUP BY ALL),
         c2 AS (SELECT agency, fb, count(*) AS n, avg(better) AS pb, avg(nw) AS pn FROM b GROUP BY ALL),
         c3 AS (SELECT fb, count(*) AS n, avg(better) AS pb, avg(nw) AS pn FROM b GROUP BY ALL),
-        c4 AS (SELECT avg(better) AS pb, avg(nw) AS pn FROM b)
+        c4 AS (SELECT avg(better) AS pb, avg(nw) AS pn FROM b),
+        p AS (
         SELECT sc.*,
           CASE WHEN has_fico AND has_vs4 THEN (sc.vb > sc.fb)::DOUBLE
                WHEN is_v THEN 1.0
@@ -101,10 +114,28 @@ def build_datasets(con, in_range: str, mix_start: str, rows) -> dict[str, list[d
         LEFT JOIN c1 ON c1.agency = sc.agency AND c1.fb = sc.fb AND c1.purpose = sc.purpose AND c1.channel = sc.channel
         LEFT JOIN c2 ON c2.agency = sc.agency AND c2.fb = sc.fb
         LEFT JOIN c3 ON c3.fb = sc.fb
-        CROSS JOIN c4""")
+        CROSS JOIN c4),
+        e AS (SELECT * FROM p WHERE win_both AND p_better IS NOT NULL),
+        sa AS (SELECT seller_id, agency, count(*) AS n, avg(p_better) AS pb, avg(p_nw) AS pn FROM e GROUP BY ALL),
+        sr AS (SELECT seller_id, count(*) AS n, avg(p_better) AS pb, avg(p_nw) AS pn FROM e GROUP BY ALL),
+        vr AS (SELECT avg(p_better) AS pb, avg(p_nw) AS pn FROM e WHERE is_v),
+        um AS (SELECT DISTINCT seller_id, month FROM p WHERE is_v)
+        SELECT p.* REPLACE (
+          CASE WHEN win_both OR um.seller_id IS NULL OR p.p_better IS NULL THEN p.p_better
+               ELSE coalesce(CASE WHEN sa.n >= {MIN_CELL} THEN sa.pb END, CASE WHEN sr.n >= {MIN_CELL} THEN sr.pb END,
+                             CASE WHEN is_v THEN vr.pb END, p.p_better) END AS p_better,
+          CASE WHEN win_both OR um.seller_id IS NULL OR p.p_better IS NULL THEN p.p_nw
+               ELSE coalesce(CASE WHEN sa.n >= {MIN_CELL} THEN sa.pn END, CASE WHEN sr.n >= {MIN_CELL} THEN sr.pn END,
+                             CASE WHEN is_v THEN vr.pn END, p.p_nw) END AS p_nw)
+        FROM p
+        LEFT JOIN um ON um.seller_id = p.seller_id AND um.month = p.month
+        LEFT JOIN sa ON sa.seller_id = p.seller_id AND sa.agency = p.agency
+        LEFT JOIN sr ON sr.seller_id = p.seller_id
+        CROSS JOIN vr""")
     measures = """count(*) AS loans, avg(is_v::INT) AS actual, avg(p_better) AS better, avg(p_nw) AS not_worse,
                sum(upb * is_v::INT) / sum(upb) AS actual_upb, sum(upb * p_better) / sum(upb) AS better_upb,
-               sum(upb * p_nw) / sum(upb) AS not_worse_upb, avg((has_fico AND has_vs4)::INT) AS observed_share"""
+               sum(upb * p_nw) / sum(upb) AS not_worse_upb, avg((has_fico AND has_vs4)::INT) AS observed_share,
+               avg(win_both::INT) < 0.5 AS estimated"""
     band_labels = ", ".join(f"({i}, '{label}')" for i, label in enumerate(SCORE_LABELS))
     ceiling = rows(con, f"""
         WITH m AS (
@@ -115,20 +146,20 @@ def build_datasets(con, in_range: str, mix_start: str, rows) -> dict[str, list[d
           FROM scp WHERE win_both AND p_better IS NOT NULL GROUP BY GROUPING SETS ((agency), ())),
         labels(fb, label) AS (VALUES {band_labels}),
         bands AS (
-          SELECT 'band' AS view, DATE '{mix_start}' AS start, 'All' AS agency,
+          SELECT 'band' AS view, DATE '{BOTH_START}' AS start, 'All' AS agency,
                  coalesce(scp.fb::VARCHAR, 'vs4only') AS key, coalesce(labels.label, 'No Classic FICO (VS4 only)') AS label,
                  coalesce(scp.fb, -1) AS "order", count(*) AS loans,
                  count(*) / sum(count(*)) OVER () AS loan_share, avg(p_better) AS better, avg(p_nw) AS not_worse,
                  sum(p_better) / sum(count(*)) OVER () AS adds_better, sum(p_nw) / sum(count(*)) OVER () AS adds_not_worse,
                  count(*) FILTER (WHERE has_fico AND has_vs4) AS measured
           FROM scp LEFT JOIN labels ON labels.fb = scp.fb
-          WHERE win_all AND p_better IS NOT NULL GROUP BY scp.fb, labels.label),
+          WHERE win_both AND p_better IS NOT NULL GROUP BY scp.fb, labels.label),
         total AS (
-          SELECT 'band' AS view, DATE '{mix_start}' AS start, 'All' AS agency, 'all' AS key, 'All loans' AS label,
+          SELECT 'band' AS view, DATE '{BOTH_START}' AS start, 'All' AS agency, 'all' AS key, 'All loans' AS label,
                  99 AS "order", count(*) AS loans, 1.0 AS loan_share, avg(p_better) AS better, avg(p_nw) AS not_worse,
                  avg(p_better) AS adds_better, avg(p_nw) AS adds_not_worse,
                  count(*) FILTER (WHERE has_fico AND has_vs4) AS measured
-          FROM scp WHERE win_all AND p_better IS NOT NULL)
+          FROM scp WHERE win_both AND p_better IS NOT NULL)
         SELECT m.*, NULL AS key, NULL AS label, NULL AS "order", NULL AS loan_share, NULL AS adds_better,
                NULL AS adds_not_worse, NULL AS measured, t.final
         FROM m LEFT JOIN monthly t ON t.month = m.start AND t.agency = m.agency

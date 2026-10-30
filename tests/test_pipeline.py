@@ -222,7 +222,7 @@ for sid, (n, v, c) in planted.items():  # A's first 30 loans carry both scores, 
                   [(i < v, sid, sid == "a" and i < 30, 6 if sid == "a" and i < 30 else None, c) for i in range(n)])
 o.execute("""CREATE TABLE ls AS SELECT * FROM (VALUES ('a', DATE '2026-07-01', DATE '2026-07-10', true),
              ('a', DATE '2026-10-01', DATE '2026-10-02', true), ('b', DATE '2026-09-01', DATE '2026-09-15', true),
-             ('c', DATE '2026-09-01', DATE '2026-09-20', true)) t(id, month, first_date, is_v)""")
+             ('c', DATE '2026-09-01', DATE '2026-09-20', true), ('d', DATE '2026-04-01', NULL, true)) t(id, month, first_date, is_v)""")
 o.execute("CREATE TABLE adopt_sm (id VARCHAR, month DATE, agency VARCHAR, n BIGINT, v BIGINT, u DOUBLE, vu DOUBLE)")
 monthly_v = {"a": [(7, 10), (8, 30), (9, 40), (10, 40)], "b": [(8, 5), (9, 25), (10, 30)], "c": [(9, 1), (10, 2)],
              "d": [(9, 0), (10, 0)], "e": [(9, 0), (10, 0)]}
@@ -254,6 +254,45 @@ assert list(lenders) == ["d", "a", "b", "c", "other"], lenders  # the 3 largest,
 assert abs(lenders["c"]["adds_deep"] - 26 / 550) < 1e-6 and lenders["c"]["status"] == "using" and lenders["d"]["next"], lenders
 assert (lenders["a"]["status"], lenders["a"]["better_loans"], lenders["a"]["better_vs4"], lenders["a"]["both_share"]) == ("deep", 30, 1.0, 0.3), lenders
 assert abs(sum(r["adds_deep"] for r in lenders.values()) - (162.5 - 72) / 550) < 1e-6, lenders
+assert lenders["d"]["status"] == "stopped" and lenders["b"]["status"] == "deep", lenders  # D's one VS4 loan was in April
+
+# Ceiling on planted loans, one GSE. October's records carry every score: R has 100 loans with both scores in Classic FICO
+# bucket 700-719, 50 with VS4 a bucket better (30 priced on VS4) and 50 in the same bucket (10 on VS4); N has 100 with only a
+# Classic FICO, taking R's 50/100 rate. September's show one score: R 100 (30 on VS4), N 100 (none), M 40 (10), M absent in October.
+c2 = duckdb.connect()
+c2.execute("CREATE MACRO seller_key(x) AS x")
+c2.execute("CREATE TABLE seller_map AS SELECT * FROM (VALUES ('R', 'r'), ('N', 'n'), ('M', 'm')) t(key, id)")
+c2.execute("CREATE TABLE entity_names AS SELECT id, upper(id) AS short FROM seller_map")
+c2.execute("""CREATE TABLE monthly AS SELECT * FROM (VALUES (DATE '2026-09-01', 'All', true), (DATE '2026-09-01', 'FHLMC', true),
+              (DATE '2026-10-01', 'All', false), (DATE '2026-10-01', 'FHLMC', false)) t(month, agency, final)""")
+c2.execute("""CREATE TABLE loans (agency VARCHAR, issue_month DATE, upb DOUBLE, score_model VARCHAR, seller VARCHAR, purpose VARCHAR,
+              channel VARCHAR, classic_fico INT, vs4 INT, pricing_indicator VARCHAR)""")
+planted_loans = [("2026-10-01", "R", "V", 700, 720, 30), ("2026-10-01", "R", "C", 700, 720, 20), ("2026-10-01", "R", "V", 700, 705, 10),
+                 ("2026-10-01", "R", "C", 700, 705, 40), ("2026-10-01", "N", "C", 700, None, 100), ("2026-09-01", "R", "V", None, 720, 30),
+                 ("2026-09-01", "R", "C", 700, None, 70), ("2026-09-01", "N", "C", 700, None, 100), ("2026-09-01", "M", "V", None, 720, 10),
+                 ("2026-09-01", "M", "C", 700, None, 30)]
+c2.executemany("INSERT INTO loans VALUES ('FHLMC', ?, 100000, ?, ?, 'P', 'R', ?, ?, ?)",
+               [(day, model, seller, fico, vs, model if day == "2026-10-01" else None)
+                for day, seller, model, fico, vs, k in planted_loans for _ in range(k)])
+from gsescore.aggregate import _rows  # noqa: E402
+
+ceil2 = gsescore.scores.build_datasets(c2, "true", "2026-09-01", _rows)["ceiling"]
+months = {r["start"]: r for r in ceil2 if r["view"] == "month" and r["agency"] == "All"}
+assert (months["2026-10-01"]["loans"], months["2026-10-01"]["actual"], months["2026-10-01"]["better"], months["2026-10-01"]["estimated"]) == (200, 0.2, 0.5, False), months
+# September: R takes its own October rate on every loan (50 of 100), N the rate for its bucket (50), and M, with no October
+# records, the rate over October's VS4-priced loans on its VS4 loans (30 of 40) and the bucket's on the rest: 7.5 + 15.
+# Counting every VS4 loan as better would read 140 of 240.
+sep = months["2026-09-01"]
+assert sep["loans"] == 240 and sep["estimated"] is True and abs(sep["better"] - 122.5 / 240) < 1e-6 and abs(sep["actual"] - 40 / 240) < 1e-6, sep
+bands2 = {r["key"]: r for r in ceil2 if r["view"] == "band"}  # October's every-score loans only, with the same total
+assert (bands2["all"]["loans"], bands2["all"]["better"], bands2["4"]["loans"], bands2["4"]["adds_better"]) == (200, 0.5, 200, 0.5), bands2
+# A seller's rule hides cells under MIN_N loans but keeps its total: R's two cells hold 50 loans each.
+gsescore.scores.MIN_N = 60
+rule2 = [r for r in gsescore.scores.build_datasets(c2, "true", "2026-09-01", _rows)["choice"] if r["view"] == "rule" and r["agency"] == "All"]
+assert {r["scope"] for r in rule2} == {"All"} and {r["scope_loans"] for r in rule2} == {100}, rule2
+gsescore.scores.MIN_N = 1
+assert {(r["key"], r["scope_loans"]) for r in gsescore.scores.build_datasets(c2, "true", "2026-09-01", _rows)["choice"]
+        if r["view"] == "rule" and r["scope"] == "r"} == {("0", 100), ("1", 100)}
 
 # Rate engine on planted data: rates are the sum of two factors' effects plus noise, and VS4 loans carry +25 bp.
 import numpy as np  # noqa: E402

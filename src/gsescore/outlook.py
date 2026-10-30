@@ -11,8 +11,9 @@ is at max(d, q x c). Users are sellers with a VS4 loan disclosed since lender_st
 
   outlook  view lender  the LENDER_TOP largest sellers and every other user with MIN_N+ loans, then one row for the
                         rest: w, d, c, the share at the deep lenders' depth and what that would add to the market
-                        share, what its ceiling would add, its loans with both scores, and how often it prices on
-                        VS4 when VS4 is better (MIN_N+ such loans)
+                        share, what its ceiling would add, its loans with both scores, how often it prices on VS4
+                        when VS4 is better (MIN_N+ such loans), and its status: deep, using, stopped (VS4 loans
+                        earlier but none since lender_start) or none
            view ladder  VS4's share today; with every user as deep as the deep lenders; also the NEXT_N largest
                         sellers not using VS4; every seller; every seller at its ceiling
            view ramp    each deep lender's depth by months since its first VS4 month, and together over the months
@@ -141,7 +142,7 @@ def build_datasets(con, lender_start: str) -> dict[str, list[dict]]:
     for i, s in enumerate(sellers):
         if i < LENDER_TOP or (s["user"] and s["n"] >= MIN_N):
             out.append(group_row([s], id=s["id"], short=s["short"], ticker=s["ticker"], rank=i + 1,
-                                 status="deep" if s["is_deep"] else "using" if s["user"] else "none",
+                                 status="deep" if s["is_deep"] else "using" if s["user"] else "stopped" if s["first_vs4"] else "none",
                                  next=s["id"] in nxt, first_vs4=s["first_vs4"], sellers=1))
         else:
             rest.append(s)
