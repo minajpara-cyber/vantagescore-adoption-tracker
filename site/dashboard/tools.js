@@ -330,6 +330,11 @@
     }
     const scnPulls = expo.mine.has('scn_pulls') ? expo.mine.get('scn_pulls') : pulls;
     const scnPrice = expo.mine.has('scn_price') ? expo.mine.get('scn_price') : price;
+    // Until you set them, your scenario's pulls and price follow today's.
+    for (const [key, value] of [['scn_pulls', pulls], ['scn_price', price]]) {
+      const box = root.querySelector(`input[data-expo="${key}"]`);
+      if (box && !expo.mine.has(key)) box.value = num(value);
+    }
     const scores = bureaus * borrowers;
     const perLoan = (n, at) => scores * (n * at + fee);
     const revToday = loans * (1 - nf0) * perLoan(pulls, price);
