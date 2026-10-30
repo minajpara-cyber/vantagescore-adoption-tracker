@@ -216,7 +216,9 @@ def _every_score(con, names: dict, rows) -> dict[str, list[dict]]:
         SELECT l.agency, l.issue_month AS month, date_trunc('week', l.first_intraday_date)::DATE AS week, coalesce(l.upb, 0) AS upb,
                l.score_model = 'V' AS is_v, m.id AS seller_id,
                coalesce(l.classic_fico BETWEEN 300 AND 850, false) AS has_fico, coalesce(l.vs4 BETWEEN 300 AND 850, false) AS has_vs4,
-               l.vs4 - l.classic_fico AS gap
+               l.vs4 - l.classic_fico AS gap, coalesce(l.channel, '?') AS channel, l.classic_fico AS fico, l.ltv,
+               CASE WHEN l.purpose = 'P' THEN 'P' WHEN l.purpose = 'C' THEN 'C' ELSE 'R' END AS purpose, coalesce(l.mi_pct, 0) > 0 AS mi,
+               coalesce(l.special_program, '7') AS program
         FROM loans l JOIN seller_map m ON m.key = seller_key(l.seller)
         WHERE l.score_model IN ('V', 'C') AND l.pricing_indicator IS NOT NULL AND l.first_intraday_date IS NOT NULL""")
     last = con.execute("SELECT max(week) FROM scw").fetchone()[0]

@@ -102,9 +102,8 @@ local in notes/ANALYTICS_PLAN.md)
    30-year fixed loans' note rates (additive effects for lender and channel by week, LLPA cell, loan and
    borrower traits; fitted on four in five, checked on the fifth) gives each VS4 loan the rate a FICO
    loan like it would carry, at the same headline score and, with both scores, at the borrower's own
-   Classic FICO; by week, seller and loan type. Next (on hold since Oct 29, 2026): upfront LLPA saved per
-   VS4 loan from the published grids and how much reaches the rate; note rate minus pass-through rate
-   (retained servicing). Points and lender credits are not disclosed.
+   Classic FICO; by week, seller and loan type. Upfront fees: see Phase 3, item 4. Next: note rate minus
+   pass-through rate (retained servicing). Points and lender credits are not disclosed.
 4. Borrowers. Done Oct 29, 2026 on the private dashboard (src/gsescore/borrowers.py): 19 breakdowns by
    score group, each VS4 share next to the share expected from its lenders' own FICO loans, and averages
    by score group. Next: where the VS4 lift over FICO is largest, and the valuation and special-program
@@ -127,9 +126,14 @@ private dashboard only.
    a better tier reaches the rate.
 2. Done Oct 30, 2026: the front page. Which scores loans carry (FICO only, both priced either way, VS4 only) by
    GSE and week (dataset score_mix), Classic FICO on the loan, the latest weeks' pace, what changed, calendar quarters.
-3. Why lenders choose: stages by lender, an early-warning list, lender types, company statements with links.
-4. Pricing and economics: the fee grids, old and new; fee saved by lender; what non-users leave on the table;
-   GSE fees forgone; the GSEs' own scores.
+3. Done Oct 30, 2026: why lenders choose (src/gsescore/why.py, datasets lender_stage and statements). Each lender's stage (pricing on VS4,
+   some, both scores shown, a trace, FICO only), its rule, an early-warning list of lenders whose both-score share is rising, lender types by
+   hand in reference/sellers.csv, use inside a lender by loan trait, and dated company statements with links (reference/statements.csv), each
+   checked against the loan files where it can be.
+4. Done Oct 30, 2026: pricing and economics (src/gsescore/fees.py, src/gsescore/fee_grid.py, dataset fees). The grid in reference/llpa.csv is
+   Freddie Mac Guide Exhibit 19 (Bulletin 2026-K); Fannie Mae's matrix is taken to match it, unchecked. Fee saved per loan and in dollars by
+   lender; what lenders with both scores left; an estimate for loans with only a Classic FICO; the same scaled to a year's balance; the fee
+   against what reaches the rate; the GSEs' own scores on these loans.
 5. Analyst tools: ticker pages, downloads, FICO exposure calculator, editable outlook, weekly change note.
 6. Deeper data: the monthly loan file's origination scores, why Freddie differs, FHA, SFTP.
 

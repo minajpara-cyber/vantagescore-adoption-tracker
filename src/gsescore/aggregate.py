@@ -22,6 +22,9 @@ Loan-level data never leaves the local warehouse; only these aggregates are publ
   choice, ceiling, rules, score_mix
                when lenders price on VS4, how high its share could go, and which scores loans carry, built in scores.py
   outlook      where VS4's share could go, lender by lender, built in outlook.py
+  fees         what the GSEs' fee grid is worth to a lender that can pick a score, built in fees.py
+  lender_stage, statements
+               where each lender stands and what goes with it, and what companies have said, built in why.py
 """
 import json
 from datetime import datetime, timezone
@@ -29,11 +32,13 @@ from pathlib import Path
 
 from . import paths
 from .borrowers import build_datasets as build_borrower_datasets
+from .fees import build_datasets as build_fee_datasets
 from .lenders import build_datasets as build_lender_datasets
 from .outlook import build_datasets as build_outlook_datasets
 from .pricing import build_pricing
 from .scores import build_datasets as build_score_datasets
 from .warehouse import INTRADAY_ISSUE_MONTH_SQL, SCORE_MODEL_SQL, connect
+from .why import build_datasets as build_why_datasets
 
 # VS4 fields went live Nov 17, 2025; the first month-end file on the portal is December 2025.
 SERIES_START = "2025-11-01"
@@ -275,6 +280,8 @@ def build(out_dir: Path = paths.SITE_DATA) -> dict:
     more = build_lender_datasets(con, in_range, WEEKLY_START, _rows)
     more |= build_borrower_datasets(con, in_range, MIX_START, _rows)  # needs the seller map lenders.py made
     more |= build_score_datasets(con, in_range, MIX_START, _rows)
+    more |= build_why_datasets(con)
+    more |= build_fee_datasets(con)
     more |= build_outlook_datasets(con, LENDER_START)  # needs the ceiling's loans (scores.py) and the seller tables
     more["pricing"] = build_pricing(con, WEEKLY_START, in_range)
     for name, rows in more.items():

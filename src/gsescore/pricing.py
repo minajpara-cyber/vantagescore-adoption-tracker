@@ -28,13 +28,18 @@ Indicator). Each is checked against the held-out FICO loans of the same group of
             better = VS4-priced in a better one, 1 / 2 / 3 = that many better, fico_better = FICO-priced with VS4 in
             a better one; for all lenders and each seller with MIN_N+ such loans): the rate against the model at
             the borrower's own FICO, net of the model's miss on held-out FICO loans (net_bp); what the VS4 bucket is
-            worth on FICO loans' rates (worth_bp); and reaches, the share of that worth seen in the rate.
+            worth on FICO loans' rates (worth_bp); reaches, the share of that worth seen in the rate; fee_bp, the
+            fee on the grid at its own FICO less the fee at its VS4 score (reference/llpa.csv, 0 in programs with no fee),
+            as bp of balance, and fee_rate_bp, that at RATE_MULT to 1 in rate.
 """
 import numpy as np
+
+from .fee_grid import FEE_WAIVED, load_grid
 
 BOTH_START = "2026-10-19"  # the Pricing Indicator, and both scores, are disclosed from here
 GRID_CHANGE = "2026-10-01"  # MBS issued from here pay one fee grid whichever score priced the loan
 VS_OFFSET = 20  # before that, FICO's fee tiers applied to VS4 at this many points higher
+RATE_MULT = 5  # a common rule of thumb: 5 bp of upfront price is about 1 bp of note rate
 LAMBDA = 10.0
 MIN_N = 20
 MIN_SELLER_LOANS = 300  # sellers with fewer FICO loans to learn from share an "other" level per channel
@@ -67,7 +72,7 @@ def _load(con, weekly_start: str, in_range: str):
                l.score_model = 'V' AS is_vs4, l.pricing_score,
                CASE WHEN l.classic_fico BETWEEN 300 AND 850 THEN l.classic_fico ELSE -1 END AS fico,
                CASE WHEN l.vs4 BETWEEN 300 AND 850 THEN l.vs4 ELSE -1 END AS vs,
-               l.issue_month < DATE '{GRID_CHANGE}' AS old_grid,
+               l.issue_month < DATE '{GRID_CHANGE}' AS old_grid, coalesce(l.special_program, '7') AS program,
                l.ltv, l.orig_rate, hash(l.agency || l.loan_id) % 5 = 0 AS holdout
         FROM loans l JOIN seller_map m ON m.key = seller_key(l.seller)
         WHERE l.loan_term = 360 AND l.amort_type = 'FRM' AND l.score_model IN ('C', 'V') AND l.orig_rate > 0
@@ -217,6 +222,11 @@ def build_pricing(con, weekly_start: str, in_range: str) -> list[dict]:
     at_vs = dict(codes, grid=np.array([vocab["grid"].get(f"{s}|{l}|{p}", -1) for s, l, p in zip(vs_b, ltv_b, purpose)]))
     worth = ((_predict(mu, eff, own) - _predict(mu, eff, at_vs)) * 100)
     both = both_era & has_fico & (vs > 0)
+    grid = load_grid()
+    grid_name = np.where(purpose == "P", "purchase", np.where(purpose == "C", "cash_out", "rate_term"))
+    def fee_at(sb):
+        return np.array([grid.get((g, int(s), int(min(l, 4) if g == "cash_out" else l)), 0.0) for g, s, l in zip(grid_name, sb, ltv_b)])
+    fee_saved = np.where(np.isin(d["program"].astype(str), FEE_WAIVED), 0.0, (fee_at(np.clip(fico_b, 0, 8)) - fee_at(np.clip(vs_b, 0, 8))) * 100)
     miss = float(res[check & both_era].mean()) if (check & both_era).sum() >= MIN_N else 0.0
     gap = vs_b - fico_b
     groups_v = {"same": is_vs4 & both & (gap == 0), "better": is_vs4 & both & (gap > 0), "1": is_vs4 & both & (gap == 1), "2": is_vs4 & both & (gap == 2),
@@ -233,9 +243,11 @@ def build_pricing(con, weekly_start: str, in_range: str) -> list[dict]:
                 continue
             prem = res_own[m]
             net, w = float(prem.mean()) - miss, float(worth[m].mean())
+            fee = float(fee_saved[m].mean())
             rows.append({"view": "value", "cover": "both", "basis": "own_fico", "dim": "value", "key": key, "order": order[key], "scope": scope,
                          "scope_rank": rank, "label": "All lenders" if scope == "All" else names.get(scope, scope), "since": BOTH_START, "n": n,
                          "net_bp": round(net, 2), "se_bp": round(float(prem.std(ddof=1) / np.sqrt(n)), 2), "worth_bp": round(w, 2),
-                         "reaches": round(-net / w, 4) if w >= 1 else None})
+                         "reaches": round(-net / w, 4) if w >= 1 else None, "fee_bp": round(fee, 2), "fee_rate_bp": round(fee / RATE_MULT, 2),
+                         "reaches_fee": round(-net / (fee / RATE_MULT), 4) if fee / RATE_MULT >= 1 else None})
     keys = sorted({k for r in rows for k in r})
     return [{k: r.get(k) for k in keys} for r in rows]

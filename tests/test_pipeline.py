@@ -218,6 +218,22 @@ assert any(r["view"] == "month" and r["headline"] and r["start"] == "2026-07-01"
 qs = {(r["start"], r["agency"]): r for r in rows("score_mix") if r["view"] == "quarter"}
 assert (qs[("2026-07-01", "All")]["months"], qs[("2026-10-01", "All")]["complete"]) == (3, False), qs
 
+# Lender stages: UWM's 10 loans all carry both scores, with VS4 20 points higher; 3 are priced on VS4. Too few to read a rule.
+ls2 = rows("lender_stage")
+st = next(r for r in ls2 if r["view"] == "lender" and r["id"] == "uwm")
+assert (st["stage"], st["both_share"], st["uses_higher"], st["rule"], st["kind"], st["lead"]) == ("both", 1.0, None, None, "Nonbank", "Retail"), st
+stg = {r["key"]: r for r in ls2 if r["view"] == "stage"}
+assert set(stg) == {"both"} and (stg["both"]["lenders"], stg["both"]["share"], stg["both"]["vs4_share"]) == (1, 1.0, 0.3), stg
+assert rows("statements") and all(r["url"].startswith("https://") and r["statement"] and r["date"] for r in rows("statements")), "every statement has a date and a link"
+
+# Fees on the same loans carry through the build (planted answers below).
+mk = next(r for r in rows("fees") if r["view"] == "market" and r["key"] == "All")
+assert mk["priced_loans"] == 3, mk
+from gsescore.fee_grid import load_grid  # noqa: E402
+
+g = load_grid()
+assert (g[("purchase", 8, 4)], g[("purchase", 4, 5)], g[("cash_out", 0, 4)], g[("rate_term", 2, 5)], len(g)) == (0.375, 1.5, 5.125, 3.0, 9 * 9 + 9 * 9 + 9 * 5), g
+
 # Outlook on planted tables, October 2026: VS4 on 40, 30, 2, 0 and 0 loans of 100, 100, 100, 200 and 50 (550). VS4 saves a fee
 # on 50%, 50%, 40%, 30% and 50% of them and is higher on 70%, 60%, 60%, 60% and 80%. A's latest two weeks show 30 of 60 on VS4;
 # B's show too few to count. A and B are heavy (VS4 at half or more of the fee-saving share), C is a light user, D stopped in April.
@@ -282,12 +298,12 @@ c2.execute("CREATE TABLE entity_names AS SELECT id, upper(id) AS short FROM sell
 c2.execute("""CREATE TABLE monthly AS SELECT *, 100 AS scored_loans, 1000000.0 AS scored_upb, 10 AS vs4_loans, 100000.0 AS vs4_upb FROM (VALUES (DATE '2026-09-01', 'All', true),
               (DATE '2026-09-01', 'FHLMC', true), (DATE '2026-10-01', 'All', false), (DATE '2026-10-01', 'FHLMC', false)) t(month, agency, final)""")
 c2.execute("""CREATE TABLE loans (agency VARCHAR, issue_month DATE, upb DOUBLE, score_model VARCHAR, seller VARCHAR, purpose VARCHAR,
-              channel VARCHAR, classic_fico INT, vs4 INT, pricing_indicator VARCHAR, first_intraday_date DATE)""")
+              channel VARCHAR, classic_fico INT, vs4 INT, pricing_indicator VARCHAR, first_intraday_date DATE, ltv INT, mi_pct DOUBLE, special_program VARCHAR)""")
 planted_loans = [("2026-10-01", "R", "V", 700, 720, 30), ("2026-10-01", "R", "C", 700, 720, 20), ("2026-10-01", "R", "V", 700, 705, 10),
                  ("2026-10-01", "R", "C", 700, 705, 40), ("2026-10-01", "N", "C", 700, None, 100), ("2026-09-01", "R", "V", None, 720, 30),
                  ("2026-09-01", "R", "C", 700, None, 70), ("2026-09-01", "N", "C", 700, None, 100), ("2026-09-01", "M", "V", None, 720, 10),
                  ("2026-09-01", "M", "C", 700, None, 30)]
-c2.executemany("INSERT INTO loans VALUES ('FHLMC', ?, 100000, ?, ?, 'P', 'R', ?, ?, ?, '2026-10-20')",
+c2.executemany("INSERT INTO loans VALUES ('FHLMC', ?, 100000, ?, ?, 'P', 'R', ?, ?, ?, '2026-10-20', 80, 0, '7')",
                [(day, model, seller, fico, vs, model if day == "2026-10-01" else None)
                 for day, seller, model, fico, vs, k in planted_loans for _ in range(k)])
 from gsescore.aggregate import _rows  # noqa: E402
@@ -315,6 +331,39 @@ assert {r["scope"] for r in rule2} == {"All"} and {r["scope_loans"] for r in rul
 gsescore.scores.MIN_N = 1
 assert {(r["key"], r["scope_loans"]) for r in gsescore.scores.build_datasets(c2, "true", "2026-09-01", _rows)["choice"]
         if r["view"] == "rule" and r["scope"] == "r"} == {("0", 100), ("1", 100)}
+
+# Fees on planted loans: $100,000 purchases at 80 LTV, FICO 700 (fee 1.375%), VS4 720 (1.25%) or 705 (same bucket). R has 20 priced
+# on VS4 a bucket better, which save $125 each, 20 priced on VS4 in the same bucket, and 20 priced on FICO though VS4 was better. N has
+# 80 with only a Classic FICO and 20 in a waived program, M has 20 with only VS4, and one FICO-priced 15-year loan is left out.
+from gsescore import fees  # noqa: E402
+
+c3 = duckdb.connect()
+c3.execute("CREATE MACRO seller_key(x) AS x")
+c3.execute("CREATE TABLE seller_map AS SELECT * FROM (VALUES ('R', 'r'), ('N', 'n'), ('M', 'm')) t(key, id)")
+c3.execute("CREATE TABLE entity_names AS SELECT id, upper(id) AS short, NULL::VARCHAR AS ticker FROM seller_map")
+c3.execute("""CREATE TABLE monthly AS SELECT * FROM (VALUES ('All', true, 1000000.0), ('All', true, 1000000.0), ('All', false, 5.0),
+              ('FHLMC', true, 1000000.0), ('FHLMC', true, 1000000.0)) t(agency, final, scored_upb)""")
+c3.execute("""CREATE TABLE loans (agency VARCHAR, issue_month DATE, upb DOUBLE, score_model VARCHAR, seller VARCHAR, purpose VARCHAR, classic_fico INT,
+              vs4 INT, pricing_indicator VARCHAR, ltv INT, loan_term INT, special_program VARCHAR, fannie_score INT, freddie_score INT)""")
+planted_fees = [("R", "V", 700, 720, 360, "7", 730, 20), ("R", "V", 700, 705, 360, "7", 700, 20), ("R", "C", 700, 720, 360, "7", 720, 20),
+                ("N", "C", 700, None, 360, "7", None, 80), ("N", "C", 700, 720, 360, "H", 710, 20), ("M", "V", None, 720, 360, "7", None, 20),
+                ("N", "C", 700, 720, 180, "7", None, 1)]
+c3.executemany("INSERT INTO loans VALUES ('FHLMC', '2026-10-01', 100000, ?, ?, 'P', ?, ?, ?, 80, ?, ?, NULL, ?)",
+               [(model, seller, fico, vs, model, term, program, gse) for seller, model, fico, vs, term, program, gse, k in planted_fees for _ in range(k)])
+fee = fees.build_datasets(c3)["fees"]
+fm = next(r for r in fee if r["view"] == "market" and r["key"] == "All")
+assert (fm["loans"], fm["vs4_loans"], fm["priced_loans"], fm["saving_share"], fm["saved_bp"], fm["saving_avg_usd"]) == (180, 60, 40, 0.5, 6.25, 125.0), fm
+assert (fm["taken_usd"], fm["taken_all_usd"], fm["left_loans"], fm["left_usd"], fm["one_loans"]) == (2500.0, 3750.0, 20, 2500.0, 80), fm
+# Estimated: the rate of saving over R's 60 unwaived loans with both scores (40 of them at 0.125%), on 80 loans.
+assert abs(fm["est_usd"] - 80 * 1000 / 12) < 0.01 and abs(fm["option_usd"] - (3750 + 2500 + 80 * 1000 / 12)) < 0.01, fm
+assert abs(fm["option_bp"] - fm["option_usd"] / 18e6 * 1e4) < 1e-3, fm
+assert fm["annual_upb"] == 12e6 and fm["taken_annual_usd"] == 2500.0 and abs(fm["option_annual_usd"] - fm["option_usd"] * 2 / 3) < 0.01, fm
+fl = {r["id"]: r for r in fee if r["view"] == "lender"}
+assert [fl[x]["rank"] for x in "nrm"] == [1, 2, 3], fl
+assert (fl["r"]["taken_usd"], fl["r"]["left_usd"], fl["r"]["est_usd"], fl["n"]["priced_loans"], fl["n"]["left_usd"], fl["m"]["vs4_loans"], fl["m"]["priced_loans"]) == (2500.0, 2500.0, 0.0, 0, 0.0, 20, 0), fl
+# The GSE's own score: R's VS4-priced loans in the 700-719 bucket read 700 against 720 for FICO-priced loans there; at the same FICO, a better VS4 reads (730 + 720 + 710) / 3 against 700.
+assert {(r["scope"], r["key"], r["loans"], r["diff"]) for r in fee if r["view"] == "gse"} == {("All", "b", 20, -20.0), ("r", "b", 20, -20.0)}, fee
+assert [(r["key"], r["loans"], r["diff"]) for r in fee if r["view"] == "lift"] == [("b", 60, 20.0)], fee
 
 # Rate engine on planted data: rates are the sum of two factors' effects plus noise, and VS4 loans carry +25 bp.
 import numpy as np  # noqa: E402

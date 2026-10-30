@@ -2,7 +2,7 @@
 
 Sellers are matched across the two GSEs by a normalized name (upper case, punctuation and corporate
 suffixes dropped). reference/sellers.csv, kept by hand, gives the larger sellers a display name, a
-short label, the parent company and its ticker; any other seller shows its own name. A parent with
+short label, the parent company and its ticker, and who owns them (why.py); any other seller shows its own name. A parent with
 several sellers (Rocket Companies: Rocket Mortgage and Nationstar) also gets rows of its own.
 
   sellers         one row per seller (the SELLER_TOP largest over the recent window, plus every seller

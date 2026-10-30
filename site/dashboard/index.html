@@ -84,6 +84,7 @@
   .mx-swatch { display: inline-block; width: .7rem; height: .7rem; margin-right: var(--cds-gap-xs); border-radius: 2px; vertical-align: -1px; }
   .vx-list { margin: var(--cds-gap-sm) 0 0; padding-left: 1.1rem; display: grid; gap: var(--cds-gap-xs); font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
   .vx-list li[hidden] { display: none; }
+  .vx-table td.vx-wrap { white-space: normal; min-width: 14rem; }
   .ol-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .vx-table input.ol-check { margin: 0; accent-color: var(--color-fg); vertical-align: middle; cursor: pointer; }
   .vx-table .ol-tick { width: 1rem; padding-right: 0; }
@@ -117,7 +118,7 @@
         <button type="button" role="tab" id="tab-overview" aria-controls="overview" data-tab="overview" aria-selected="true">Overview</button>
         <button type="button" role="tab" id="tab-outlook" aria-controls="outlook" data-tab="outlook" aria-selected="false">Outlook</button>
         <button type="button" role="tab" id="tab-lenders" aria-controls="lenders" data-tab="lenders" aria-selected="false">Lenders</button>
-        <button type="button" role="tab" id="tab-scores" aria-controls="scores" data-tab="scores" aria-selected="false">Score choice</button>
+        <button type="button" role="tab" id="tab-scores" aria-controls="scores" data-tab="scores" aria-selected="false">Why lenders choose</button>
         <button type="button" role="tab" id="tab-borrowers" aria-controls="borrowers" data-tab="borrowers" aria-selected="false">Borrowers</button>
         <button type="button" role="tab" id="tab-pricing" aria-controls="pricing" data-tab="pricing" aria-selected="false">Pricing</button>
         <button type="button" role="tab" id="tab-method" aria-controls="method" data-tab="method" aria-selected="false">Method</button>
@@ -504,6 +505,93 @@
   </template>
 
   <template id="tpl-scores">
+    <section class="vx-sec" id="why-sec" aria-labelledby="why-h">
+      <header class="vx-sec-h">
+        <h2 id="why-h">Where lenders stand</h2>
+        <p>Every lender by how far it has gone toward pricing on VS4, from records that show every score delivered. Freddie Mac records show fewer of the scores delivered, so a lender's share with both scores is read at Fannie Mae where it has 20 or more loans there.</p>
+      </header>
+      <div class="vx-card" id="stage-card">
+        <div class="vx-chart" id="stage-chart" style="min-height:44px" data-source="lender_stage"></div>
+        <div class="vx-tablebox">
+          <table class="vx-table" id="stage-table" data-source="lender_stage" data-row-key="view,key">
+            <thead><tr>
+              <th scope="col" class="vx-l" data-field="label">Stage</th>
+              <th scope="col" data-field="lenders">Lenders</th>
+              <th scope="col" data-field="share">Share of loans</th>
+              <th scope="col" data-field="both_share">Both scores</th>
+              <th scope="col" data-field="vs4_share">VS4 share</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="vx-card" id="why-lender-card">
+        <div class="vx-row">
+          <h2>Lender by lender</h2>
+          <select class="vx-select" id="why-stage" aria-label="Stage" data-source="lender_stage"></select>
+        </div>
+        <p class="vx-note">The 60 largest lenders and every other lender past the first stages with 100 or more loans. Both scores: the share of its loans with both. Uses VS4 when higher: among its loans with both scores where VS4 is higher (20 or more), the share priced on VS4. Latest weeks: VS4's share of its loans first disclosed in the latest two weeks.</p>
+        <div class="vx-tablebox">
+          <table class="vx-table" id="why-table" data-source="lender_stage" data-row-key="view,id" data-sort>
+            <thead><tr>
+              <th scope="col" class="vx-l vx-name" data-col="name" data-field="short" data-type="text"><button type="button">Lender</button></th>
+              <th scope="col" class="vx-l vx-opt" data-col="kind" data-field="kind" data-type="text"><button type="button">Owner</button></th>
+              <th scope="col" class="vx-l vx-opt" data-col="lead" data-field="lead" data-type="text"><button type="button">Mostly</button></th>
+              <th scope="col" class="vx-l" data-col="stage" data-field="order"><button type="button">Stage</button></th>
+              <th scope="col" data-col="share" data-field="share"><button type="button">Share of loans</button></th>
+              <th scope="col" data-col="both" data-field="both_share"><button type="button">Both scores</button></th>
+              <th scope="col" data-col="uses" data-field="uses_higher"><button type="button">Uses VS4 when higher</button></th>
+              <th scope="col" class="vx-l vx-opt" data-col="rule" data-field="rule" data-type="text"><button type="button">Rule</button></th>
+              <th scope="col" class="vx-opt" data-col="vs4" data-field="vs4_share"><button type="button">VS4 share</button></th>
+              <th scope="col" class="vx-opt" data-col="recent" data-field="recent_share"><button type="button">Latest weeks</button></th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="vx-grid">
+        <div class="vx-card" id="warning-card">
+          <h2>Who is starting to deliver both scores</h2>
+          <p class="vx-note">Delivering both scores comes before pricing on VS4, so a rising share is an early sign. Lenders not yet pricing on VS4 most of the time, largest rise first, between loans first disclosed in the latest two weeks and those before them; at Fannie Mae where it has enough loans. Delivery timing moves these, so read small changes with care.</p>
+          <div class="vx-tablebox">
+            <table class="vx-table" id="warning-table" data-source="lender_stage" data-row-key="view,id">
+              <thead><tr>
+                <th scope="col" class="vx-l" data-field="short">Lender</th>
+                <th scope="col" data-field="share">Share of loans</th>
+                <th scope="col" data-field="both_early">Earlier</th>
+                <th scope="col" data-field="both_late">Latest</th>
+                <th scope="col" class="vx-opt" data-field="vs4_share">VS4 share</th>
+              </tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="vx-card" id="goes-card">
+          <h2>What goes with it</h2>
+          <p class="vx-note">Lenders grouped by owner and by the channel that makes up half or more of their loans; last, each channel's loans with the two largest VS4 sellers apart. Using: lenders pricing on VS4 at least a tenth of the time it is higher.</p>
+          <div class="vx-tablebox">
+            <table class="vx-table" id="goes-table" data-source="lender_stage" data-row-key="view,key">
+              <thead><tr>
+                <th scope="col" class="vx-l" data-field="label">Group</th>
+                <th scope="col" data-field="lenders">Lenders</th>
+                <th scope="col" data-field="using">Using</th>
+                <th scope="col" data-field="share">Share of loans</th>
+                <th scope="col" data-field="both_share">Both scores</th>
+                <th scope="col" data-field="vs4_share">VS4 share</th>
+              </tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="vx-card vx-wide" id="trait-card">
+          <h2>Inside a lender</h2>
+          <p class="vx-note">Among loans with both scores where VS4 is higher, the share priced on VS4. Read across for how lenders differ on the same kind of loan, and down for how much a loan trait matters inside one lender. Cells need 20 or more loans.</p>
+          <div class="vx-tablebox">
+            <table class="vx-table" id="trait-table" data-source="lender_stage"><thead><tr></tr></thead><tbody></tbody></table>
+          </div>
+        </div>
+      </div>
+    </section>
     <section class="vx-sec" id="choice-sec" aria-labelledby="choice-h">
       <header class="vx-sec-h">
         <div class="vx-row">
@@ -563,6 +651,22 @@
             </table>
           </div>
         </div>
+      </div>
+    </section>
+    <section class="vx-card" id="said-card">
+      <h2>What companies and analysts have said</h2>
+      <p class="vx-note">Public statements, newest first, next to what the loan data here shows now. Summaries are ours; follow the link for the source, and check call summaries against the transcript before relying on them.</p>
+      <div class="vx-tablebox" style="max-height:34rem">
+        <table class="vx-table" id="said-table" data-source="statements" data-row-key="date,who,source">
+          <thead><tr>
+            <th scope="col" class="vx-l" data-field="date">Date</th>
+            <th scope="col" class="vx-l" data-field="who">Who</th>
+            <th scope="col" class="vx-l" data-field="statement">What they said</th>
+            <th scope="col" class="vx-l vx-opt">What the loan data shows</th>
+            <th scope="col" class="vx-l" data-field="source">Source</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
       </div>
     </section>
   </template>
@@ -638,6 +742,60 @@
   </template>
 
   <template id="tpl-pricing">
+    <section class="vx-sec" id="fee-sec" aria-labelledby="fee-h">
+      <header class="vx-sec-h">
+        <h2 id="fee-h">What the fee grid is worth</h2>
+        <p>The GSEs' upfront fee depends on a loan's credit score bucket, LTV and purpose. A lender that has both scores can price on the one with the lower fee. Loans issued in <span class="fe-month" data-source="fees" data-field="month" data-where="view=market&amp;key=All">—</span>, records with every score, terms over 15 years; fees from <a class="vx-link" href="https://guide.freddiemac.com/app/guide/exhibit/19" target="_blank" rel="noopener noreferrer">Freddie Mac Exhibit 19</a>, taken to match Fannie Mae's matrix. These are fees the GSE charges, not what a borrower sees.</p>
+      </header>
+      <div class="vx-tiles">
+        <div class="vx-card">
+          <div class="vx-lbl">Saved on a VS4 loan that saves a fee</div>
+          <div class="vx-val fe-avg dash-skeleton" data-source="fees" data-field="saving_avg_usd" data-where="view=market&amp;key=All">—</div>
+          <div class="vx-sub"><span class="fe-share" data-source="fees" data-field="saving_share" data-where="view=market&amp;key=All">—</span> of VS4-priced loans with both scores save a fee; the rest save nothing</div>
+        </div>
+        <div class="vx-card">
+          <div class="vx-lbl">Fees lenders are not paying, a year at today's use</div>
+          <div class="vx-val fe-taken dash-skeleton" data-source="fees" data-field="taken_annual_usd" data-where="view=market&amp;key=All">—</div>
+          <div class="vx-sub"><span class="fe-taken-m" data-source="fees" data-field="taken_all_usd" data-where="view=market&amp;key=All">—</span> on <span class="fe-month-s" data-source="fees" data-field="month" data-where="view=market&amp;key=All">—</span> loans so far</div>
+        </div>
+        <div class="vx-card">
+          <div class="vx-lbl">If every lender took the lower fee, a year</div>
+          <div class="vx-val fe-option dash-skeleton" data-source="fees" data-field="option_annual_usd" data-where="view=market&amp;key=All">—</div>
+          <div class="vx-sub"><span class="fe-option-bp" data-source="fees" data-field="option_bp" data-where="view=market&amp;key=All">—</span> bp of balance, the upper end of what the GSEs could forgo on this measure</div>
+        </div>
+        <div class="vx-card">
+          <div class="vx-lbl">Left on the table by lenders holding both scores</div>
+          <div class="vx-val fe-left dash-skeleton" data-source="fees" data-field="left_usd" data-where="view=market&amp;key=All">—</div>
+          <div class="vx-sub"><span class="fe-left-n" data-source="fees" data-field="left_loans" data-where="view=market&amp;key=All">—</span> loans priced on FICO though VS4 had the lower fee; <span class="fe-left-top" data-source="fees" data-field="short">—</span> is the most</div>
+        </div>
+      </div>
+      <div class="vx-card" id="fee-lender-card">
+        <h2>Lender by lender</h2>
+        <p class="vx-note">Largest potential first. Saves a fee: the share of its VS4-priced loans with both scores that do. Saved per loan: the average on those loans. Taken: fees not paid on VS4-priced loans with both scores. Left: on its loans with both scores priced on FICO though VS4 had the lower fee. Estimated: on loans with only a Classic FICO, at the rate seen on similar loans with both scores. Potential: all three, as bp of its balance.</p>
+        <div class="vx-tablebox">
+          <table class="vx-table" id="fee-table" data-source="fees" data-row-key="view,id">
+            <thead><tr>
+              <th scope="col" class="vx-l" data-field="short">Lender</th>
+              <th scope="col" class="vx-opt" data-field="priced_loans">VS4-priced, both scores</th>
+              <th scope="col" data-field="saving_share">Saves a fee</th>
+              <th scope="col" data-field="saving_avg_usd">Saved per loan</th>
+              <th scope="col" data-field="taken_usd">Taken</th>
+              <th scope="col" data-field="left_usd">Left</th>
+              <th scope="col" class="vx-opt" data-field="est_usd">Estimated</th>
+              <th scope="col" data-field="option_bp">Potential (bp)</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="vx-card" id="gse-score-card">
+        <h2>How the GSEs' own scores see these loans</h2>
+        <p class="vx-note">The GSEs disclose a score of their own on each loan, not used for pricing (Fannie Score, Freddie Score). First rows: VS4-priced loans minus FICO-priced loans in the same fee bucket, at the same lender and GSE, in points of that score; a negative figure means the VS4 loans rank lower than the fee they pay would suggest. Last column: at the same Classic FICO, loans with VS4 a bucket or more better minus loans with VS4 in the same bucket; a positive figure means a better VS4 score carries real information. Neither is a measure of how the loans will perform.</p>
+        <div class="vx-tablebox">
+          <table class="vx-table" id="gse-score-table" data-source="fees"><thead><tr></tr></thead><tbody></tbody></table>
+        </div>
+      </div>
+    </section>
     <section class="vx-sec" id="pricing-head" aria-labelledby="pricing-h">
       <header class="vx-sec-h">
         <div class="vx-row">
@@ -677,14 +835,16 @@
     </section>
     <section class="vx-card" id="value-card">
       <h2>How much of a better fee tier reaches the rate</h2>
-      <p class="vx-note">30-year fixed loans priced on VS4 that also show a Classic FICO. Worth: how much lower FICO-priced loans' rates run at the VS4 score's fee tier than at the borrower's own, at the same LTV and purpose. Rate against the model: the VS4 loan's rate against the model at the borrower's own FICO, net of the model's miss. Reaches the rate: the fall in rate over what it is worth. The rest stays with the lender or reaches the borrower as points or credits, which are not disclosed. No fee benefit: VS4-priced loans in the same tier as their own FICO.</p>
+      <p class="vx-note">30-year fixed loans priced on VS4 that also show a Classic FICO. Worth: how much lower FICO-priced loans' rates run at the VS4 score's fee tier than at the borrower's own, at the same LTV and purpose. Rate against the model: the VS4 loan's rate against the model at the borrower's own FICO, net of the model's miss. Reaches the rate: the fall in rate over what it is worth. Fee saved: the grid's fee at the borrower's own FICO less its fee at the VS4 score, as a check on the worth, using the rule of thumb that 5 bp of price is about 1 bp of rate. The rest stays with the lender or reaches the borrower as points or credits, which are not disclosed. No fee benefit: VS4-priced loans in the same tier as their own FICO.</p>
       <div class="vx-tablebox">
         <table class="vx-table" id="value-table" data-source="pricing" data-row-key="view,scope,key">
           <thead><tr>
             <th scope="col" class="vx-l" data-field="label">Loans priced on VS4</th>
             <th scope="col" data-field="n">Loans</th>
+            <th scope="col" class="vx-opt" data-field="fee_bp">Fee saved (bp)</th>
+            <th scope="col" class="vx-opt" data-field="fee_rate_bp">At 5 to 1 (bp)</th>
             <th scope="col" data-field="worth_bp">Worth (bp)</th>
-            <th scope="col" data-field="net_bp">Rate against the model (bp)</th>
+            <th scope="col" data-field="net_bp">Rate vs model (bp)</th>
             <th scope="col" data-field="reaches">Reaches the rate</th>
             <th scope="col" class="vx-opt" data-field="n">No fee benefit: loans</th>
             <th scope="col" class="vx-opt" data-field="net_bp">Their rate against the model (bp)</th>
@@ -749,6 +909,12 @@
         <li>Both GSEs let a lender choose Classic FICO or VS4 for each loan run through Desktop Underwriter or Loan Product Advisor, with one model for every borrower on the loan; manually underwritten loans still need Classic FICO. The same lenders deliver VS4 loans to Freddie Mac without a Classic FICO far more often than to Fannie Mae, so that gap reflects what each GSE collects or discloses. A loan delivered without a Classic FICO may still have had one ordered.</li>
         <li>In the borrower mix, the share expected for VS4 loans is what it would be if each lender's VS4 loans looked like that lender's own Classic FICO loans in the same window; lenders with fewer than 20 FICO loans count at the market's mix.</li>
       </ul>
+      <h2>Why lenders choose</h2>
+      <ul>
+        <li>Stages, for each seller, from every record that carries the Pricing Indicator: prices on VS4 at least half the time VS4 is higher (20 or more such loans); at least a tenth of the time; delivers both scores on 5% or more of its loans but rarely prices on VS4; delivers one score with a few VS4 loans; delivers only Classic FICO. Its share with both scores is read at Fannie Mae where it has 20 or more loans there.</li>
+        <li>A lender's rule compares how often it prices on VS4 at 1–19 and at 20 or more points above Classic FICO: whenever VS4 is higher, 60% or more below the 20-point line in the latest two weeks; a 20-point rule, 60% or more above it; moving, the same with a rise of 5 points or more below it; some, a tenth or more above it; rarely, less.</li>
+        <li>Owners come from the hand-kept seller list, and otherwise from the seller's name; a bank-owned lender counts as a bank. A lender's main channel is the one with half or more of its loans. The seller is not always the lender that made the loan: at a correspondent aggregator, the choice of score may sit with the originating lender.</li>
+      </ul>
       <h2>Score choice</h2>
       <ul>
         <li>The GSEs' upfront fees step at nine credit score buckets: 639 or less, 20-point steps from 640 to 779, and 780 and over. For MBS issued before October 1, 2026 those tiers applied to VS4 at 20 points higher (the top tier was 780 and over for Classic FICO, 800 and over for VS4). Since then one grid has covered both. For a loan that carries both scores, the bucket gap is its VS4 bucket minus its Classic FICO bucket on today's grid; the point gap is its VS4 score minus its Classic FICO.</li>
@@ -760,6 +926,7 @@
       <ul>
         <li>A model of the note rates of Classic FICO-priced 30-year fixed loans first disclosed from July 20, 2026. It adds an effect for each of: week of first disclosure, GSE, seller and channel, seller and channel in that week, seller and purpose, LLPA credit score bucket by LTV bucket by purpose, occupancy, units, property type, loan size, DTI, mortgage insurance, state, first-time buyer and number of borrowers. Each effect is shrunk toward zero where it rests on few loans. It is fitted on four in five of those loans, chosen by loan id, and checked on the fifth.</li>
         <li>Each VS4 loan's rate is compared with the rate the model gives the same loan priced on Classic FICO: in the same fee tier (its VS4 score in the FICO slot, less 20 points for loans issued before October 1, 2026) or, for loans that carry one, with the borrower's own Classic FICO. The headline figure subtracts what the model misses on held-out FICO loans from the same weeks.</li>
+        <li>Fees: base grids from Freddie Mac Guide Exhibit 19 (Bulletin 2026-K), which apply to either score for settlement from October 1, 2026; Fannie Mae's matrix is taken to match, unchecked. Loans in HFA, HomeReady, Home Possible, RefiNow and Refi Possible programs count as paying no base fee; first-time buyers' income caps cannot be seen here, so some savings are overstated. Other add-ons (second homes, condos and so on) do not depend on the score. Yearly figures scale the month's to the GSEs' balance at the pace of their final months.</li>
         <li>How much of a better fee tier reaches the rate: the model's rate at the borrower's own FICO less its rate at the VS4 score's tier says what the tier is worth on FICO-priced loans' rates. The VS4 loan's actual rate below the model at its own FICO, net of the model's miss, over that worth is the share seen in the rate. Loans priced before the grid changed but delivered after it may understate this.</li>
         <li>Discount points and lender credits are not disclosed, so a lower LLPA can reach the borrower as a credit rather than a lower rate. Lock dates are not disclosed either; the week of first disclosure stands in for them.</li>
       </ul>
@@ -871,7 +1038,7 @@
   }
 
   const sorts = { 'adopters-table': { col: 'loans', dir: 'descending' }, 'runway-table': { col: 'rank', dir: 'ascending' },
-    'ol-table': { col: 'adds', dir: 'descending' } };
+    'ol-table': { col: 'adds', dir: 'descending' }, 'why-table': { col: 'share', dir: 'descending' } };
   root.addEventListener('click', (event) => {
     const tab = event.target.closest('.vx-tabs [data-tab]');
     if (tab) return show(tab.dataset.tab);
@@ -886,7 +1053,8 @@
       const k = th.dataset.col;
       s.dir = k === s.col ? (s.dir === 'descending' ? 'ascending' : 'descending') : (th.dataset.type === 'text' ? 'ascending' : 'descending');
       s.col = k;
-      return th.closest('table').id === 'ol-table' ? drawOutlookTable(params()) : drawTables(params());
+      const tid = th.closest('table').id;
+      return tid === 'ol-table' ? drawOutlookTable(params()) : tid === 'why-table' ? drawWhyTable(params()) : drawTables(params());
     }
     const pick = event.target.closest('#ol-pick button[data-pick]');
     if (pick) return pickLenders(pick.dataset.pick);
@@ -905,6 +1073,7 @@
       else olPicked.delete(event.target.value);
       return drawOutlookPick(params());
     }
+    if (event.target.id === 'why-stage') return drawWhyTable(params());
     if (event.target.id === 'seller-pick') openSeller(event.target.value);
     else if (event.target.id === 'mix-dim') dash.setParams({ dim: event.target.value });
     else if (event.target.id === 'pricing-dim') dash.setParams({ pdim: event.target.value });
@@ -2325,6 +2494,244 @@
     }
   }
 
+  // ---- Why lenders choose ----
+  const STAGE_COLOR = { pricing: C_VS4, some: col(2), both: col(1), trace: col(3), fico: 'var(--cds-chart-muted)' };
+  const STAGE_SHORT = { pricing: 'Prices on VS4', some: 'Sometimes', both: 'Delivers both', trace: 'A few VS4', fico: 'FICO only' };
+  const RULE_TEXT = { whenever: 'Whenever VS4 is higher', moving: '20-point rule, moving', line: '20-point rule', some: 'Some loans', rare: 'Rarely' };
+  const whyRows = (v) => rowsOf('lender_stage').filter((r) => r.view === v);
+
+  function drawWhy(p) {
+    const st = dash.data('lender_stage').status;
+    const k = p.measure === 'upb' ? '_upb' : '';
+    const stages = whyRows('stage').sort((a, b) => a.order - b.order);
+    const f = `share${k}`;
+    const box = document.getElementById('stage-chart');
+    if (prep(box, st) && stages.length) {
+      const W = box.clientWidth, H = 36;
+      const svg = svgFor(box, W, H, 'Share of loans by stage');
+      const x = d3.scaleLinear([0, 1], [0, W]);
+      let at = 0;
+      const tip = tooltip(box);
+      for (const r of stages) {
+        const v = r[f] || 0;
+        svg.append('rect').attr('x', x(at)).attr('y', 4).attr('width', Math.max(0, x(v) - 1)).attr('height', 26).attr('fill', STAGE_COLOR[r.key])
+          .on('pointermove', (event) => tip.show(event, r.label, [[STAGE_COLOR[r.key], 'Share of loans', pct1(v)], [null, 'Lenders', int(r.lenders)]]))
+          .on('pointerleave', () => tip.hide());
+        if (x(v) > 54) svg.append('text').attr('x', x(at) + 6).attr('y', 17).attr('dy', '0.35em').style('fill', r.key === 'fico' ? 'var(--color-fg)' : 'var(--color-panel)').style('pointer-events', 'none').text(pct1(v));
+        at += v;
+      }
+    }
+    const table = document.getElementById('stage-table');
+    table.closest('.vx-tablebox').classList.toggle('dash-skeleton', st === 'loading');
+    table.tHead.rows[0].cells[2].setAttribute('data-field', f);
+    table.tHead.rows[0].cells[4].setAttribute('data-field', `vs4${k}_share`);
+    const body = table.tBodies[0];
+    body.replaceChildren();
+    for (const r of stages) {
+      const tr = body.insertRow();
+      tr.dataset.key = ['stage', r.key].map(keyPart).join(',');
+      const name = tr.insertCell();
+      name.className = 'vx-l';
+      const sw = document.createElement('span');
+      sw.className = 'mx-swatch';
+      sw.style.background = STAGE_COLOR[r.key];
+      name.append(sw, r.label);
+      [int(r.lenders), pct1(r[f]), pct1(r.both_share), pct1(r[`vs4${k}_share`])].forEach((text) => { tr.insertCell().textContent = text; });
+    }
+    const sel = document.getElementById('why-stage');
+    if (sel.options.length !== stages.length + 1) {
+      const keep = sel.value;
+      sel.replaceChildren(new Option('All stages', 'all'), ...stages.map((r) => new Option(r.label, r.key)));
+      sel.value = keep || 'all';
+    }
+    drawWhyTable(p);
+    drawWarnings(p, st);
+    drawGoes(p, st);
+    drawTraits(st);
+    drawSaid();
+  }
+
+  function drawWhyTable(p) {
+    const table = document.getElementById('why-table');
+    if (!table) return;
+    const st = dash.data('lender_stage').status;
+    const k = p.measure === 'upb' ? '_upb' : '';
+    const stage = document.getElementById('why-stage').value || 'all';
+    const rows = whyRows('lender').filter((r) => stage === 'all' || r.stage === stage);
+    const cols = [['name', 'short', (v, r) => olName(r)], ['kind', 'kind', String], ['lead', 'lead', String], ['stage', 'order', (v, r) => STAGE_SHORT[r.stage]],
+      ['share', `share${k}`, pct1], ['both', 'both_share', pct1], ['uses', 'uses_higher', pct1], ['rule', 'rule', (v) => RULE_TEXT[v] || v],
+      ['vs4', `vs4${k}_share`, pct1], ['recent', 'recent_share', pct1]];
+    const s = sorts['why-table'];
+    table.querySelectorAll('th[data-col]').forEach((th) => {
+      const c = cols.find((x) => x[0] === th.dataset.col);
+      if (c) th.setAttribute('data-field', c[1]);
+      if (th.dataset.col === s.col) th.setAttribute('aria-sort', s.dir);
+      else th.removeAttribute('aria-sort');
+    });
+    const sc = cols.find((x) => x[0] === s.col) || cols[4];
+    const sorted = rows.slice().sort((a, b) => {
+      const va = a[sc[1]], vb = b[sc[1]];
+      if (va == null || vb == null) return (va == null) - (vb == null) || a.rank - b.rank;
+      const c = typeof va === 'string' ? va.localeCompare(vb) : va - vb;
+      return (s.dir === 'ascending' ? c : -c) || a.rank - b.rank;
+    });
+    table.closest('.vx-tablebox').classList.toggle('dash-skeleton', st === 'loading');
+    const heads = table.tHead.rows[0].cells;
+    const body = table.tBodies[0];
+    body.replaceChildren();
+    for (const r of sorted) {
+      const tr = body.insertRow();
+      tr.dataset.key = ['lender', r.id].map(keyPart).join(',');
+      cols.forEach(([, f, fmt], i) => {
+        const td = tr.insertCell();
+        td.textContent = r[f] == null ? '—' : fmt(r[f], r);
+        td.className = heads[i].className;
+      });
+    }
+  }
+
+  function drawWarnings(p, st) {
+    const table = document.getElementById('warning-table');
+    const k = p.measure === 'upb' ? '_upb' : '';
+    const rows = whyRows('lender').filter((r) => r.stage !== 'pricing' && r.both_early != null && r.both_late != null && r.both_late - r.both_early >= 0.02)
+      .sort((a, b) => (b.both_late - b.both_early) - (a.both_late - a.both_early)).slice(0, 12);
+    table.closest('.vx-tablebox').classList.toggle('dash-skeleton', st === 'loading');
+    const heads = table.tHead.rows[0].cells;
+    heads[1].setAttribute('data-field', `share${k}`);
+    heads[4].setAttribute('data-field', `vs4${k}_share`);
+    const body = table.tBodies[0];
+    body.replaceChildren();
+    for (const r of rows) {
+      const tr = body.insertRow();
+      tr.dataset.key = ['lender', r.id].map(keyPart).join(',');
+      [olName(r), pct1(r[`share${k}`]), pct1(r.both_early), pct1(r.both_late), pct1(r[`vs4${k}_share`])].forEach((text, i) => {
+        const td = tr.insertCell();
+        td.textContent = text;
+        td.className = heads[i].className;
+      });
+    }
+  }
+
+  function drawGoes(p, st) {
+    const table = document.getElementById('goes-table');
+    const k = p.measure === 'upb' ? '_upb' : '';
+    table.closest('.vx-tablebox').classList.toggle('dash-skeleton', st === 'loading');
+    const body = table.tBodies[0];
+    body.replaceChildren();
+    const add = (r, label) => {
+      const tr = body.insertRow();
+      tr.dataset.key = [r.view, r.key].map(keyPart).join(',');
+      const shares = r.view === 'channel' ? pct1(r.share) : pct1(r[`share${k}`]);
+      const vs = r.view === 'channel' ? pct1(r.vs4_share) : pct1(r[`vs4${k}_share`]);
+      [[label, 'vx-l'], [r.lenders == null ? '—' : int(r.lenders)], [r.using == null ? '—' : int(r.using)], [shares], [pct1(r.both_share)], [vs]].forEach(([text, cls]) => {
+        const td = tr.insertCell();
+        td.textContent = text;
+        if (cls) td.className = cls;
+      });
+    };
+    for (const r of whyRows('kind').sort((a, b) => a.order - b.order)) add(r, r.label);
+    for (const r of whyRows('lead').sort((a, b) => a.order - b.order)) add(r, r.label);
+    const top = (rowsOf('summary').find((r) => r.agency === 'All') || {}).top2_sellers ? 'two largest' : 'largest';
+    for (const r of whyRows('channel').sort((a, b) => a.order - b.order)) add(r, `${r.label}, ${r.scope === 'top' ? top : 'other lenders'}`);
+  }
+
+  function drawTraits(st) {
+    const table = document.getElementById('trait-table');
+    const rows = whyRows('trait');
+    table.closest('.vx-tablebox').classList.toggle('dash-skeleton', st === 'loading');
+    const scopes = [...new Map(rows.map((r) => [r.scope, r.label])).entries()];
+    const order = ['All'].concat(scopes.map(([s]) => s).filter((s) => s !== 'All' && s !== 'rest'), ['rest']).filter((s) => scopes.some(([x]) => x === s));
+    const name = new Map(scopes);
+    const head = table.tHead.rows[0];
+    head.replaceChildren();
+    const th0 = document.createElement('th');
+    th0.scope = 'col';
+    th0.className = 'vx-l';
+    th0.textContent = 'Loan trait';
+    head.append(th0);
+    for (const s of order) {
+      const th = document.createElement('th');
+      th.scope = 'col';
+      th.setAttribute('data-field', 'vs4_share');
+      th.textContent = name.get(s);
+      head.append(th);
+    }
+    const body = table.tBodies[0];
+    body.replaceChildren();
+    const dimOrder = { mi: 0, purpose: 1, channel: 2, ltv: 3, program: 4 };
+    const keys = [...new Map(rows.map((r) => [`${r.dim}|${r.key}`, r])).values()].sort((a, b) => dimOrder[a.dim] - dimOrder[b.dim] || a.key.localeCompare(b.key));
+    for (const t of keys) {
+      const tr = body.insertRow();
+      const td0 = tr.insertCell();
+      td0.className = 'vx-l';
+      td0.textContent = t.dim === 'ltv' ? `LTV ${t.key}` : t.key;
+      for (const s of order) {
+        const r = rows.find((d) => d.dim === t.dim && d.key === t.key && d.scope === s);
+        const td = tr.insertCell();
+        td.textContent = r ? d3.format('.0%')(r.vs4_share) : '—';
+        if (r) td.title = `${int(r.loans)} loans`;
+      }
+    }
+  }
+
+  function saidCheck(r) {
+    if (r.check === 'seller') {
+      const l = whyRows('lender').find((d) => d.id === r.seller_id);
+      if (!l) return '—';
+      const fe = rowsOf('fees').find((d) => d.view === 'lender' && d.id === r.seller_id);
+      return `${pct1(l.vs4_share)} priced on VS4, ${l.recent_share == null ? '—' : pct1(l.recent_share)} in the latest weeks; both scores on ${pct1(l.both_share)}; VS4 used on ${l.uses_higher == null ? '—' : pct1(l.uses_higher)} of loans where it is higher.${fe && fe.saving_avg_usd != null ? ` VS4 loans that save a fee save ${money(fe.saving_avg_usd)} on average.` : ''}`;
+    }
+    const mix = rowsOf('score_mix');
+    const head = mix.find((d) => d.view === 'month' && d.agency === 'All' && d.headline) || {};
+    const fn = mix.find((d) => d.view === 'month' && d.agency === 'FNMA' && d.start === head.start) || {};
+    if (r.check === 'fico') return head.fico_share == null ? '—' : `Classic FICO on ${pct1(head.fico_share)} of loans (${pct1(fn.fico_share)} at Fannie Mae); VS4 only on ${pct1(head.vs_only_share)} (${pct1(fn.vs_only_share)}).`;
+    if (r.check === 'lenders') {
+      const pr = olRows('params')[0] || {};
+      const using = d3.sum(whyRows('stage').filter((d) => d.key === 'pricing' || d.key === 'some'), (d) => d.lenders);
+      return `${pr.users == null ? '—' : int(pr.users)} lenders have delivered a VS4 loan to the GSEs since September, and ${int(using)} price on it regularly. VS4 only on ${head.vs_only_share == null ? '—' : pct1(head.vs_only_share)} of loans. This covers GSE loans only.`;
+    }
+    if (r.check === 'pricing') {
+      const o = rowsOf('pricing').find((d) => d.view === 'overall' && d.cover === 'all' && d.basis === 'headline');
+      return o ? `${bpSigned(o.net_bp)} bp in the same fee tier, on loans first disclosed from July 20, net of the model's miss.` : '—';
+    }
+    if (r.check === 'fees') {
+      const fm = rowsOf('fees').find((d) => d.view === 'market' && d.key === 'All') || {};
+      return fm.option_annual_usd == null ? '—' : `On the grid, ${usdM(fm.taken_annual_usd)} a year in fees not paid at today's use, ${usdM(fm.option_annual_usd)} if every lender took the lower fee.`;
+    }
+    if (r.check === 'august') {
+      const a = rowsOf('monthly').find((d) => d.agency === 'All' && d.month === '2026-08-01');
+      return a ? `${pct1(a.vs4_share)} in August here.` : '—';
+    }
+    return '—';
+  }
+
+  function drawSaid() {
+    const table = document.getElementById('said-table');
+    const st = dash.data('statements').status;
+    table.closest('.vx-tablebox').classList.toggle('dash-skeleton', st === 'loading');
+    const body = table.tBodies[0];
+    body.replaceChildren();
+    for (const r of rowsOf('statements').slice().sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : a.order - b.order))) {
+      const tr = body.insertRow();
+      tr.dataset.key = [r.date, r.who, r.source].map(keyPart).join(',');
+      const cells = [[shortDay(r.date), 'vx-l'], [r.who, 'vx-l'], [r.statement, 'vx-l vx-wrap'], [saidCheck(r), 'vx-l vx-opt vx-wrap']];
+      for (const [text, cls] of cells) {
+        const td = tr.insertCell();
+        td.textContent = text;
+        td.className = cls;
+      }
+      const link = tr.insertCell();
+      link.className = 'vx-l';
+      const a = document.createElement('a');
+      a.className = 'vx-link';
+      a.href = r.url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.textContent = r.source;
+      link.append(a);
+    }
+  }
+
   // ---- Score mix, on the Overview ----
   const MIX_GROUPS = [['fico_only', 'Classic FICO only', 'var(--cds-chart-muted)'], ['both_fico', 'Both, priced on Classic FICO', col(1)],
     ['both_vs', 'Both, priced on VS4', C_VS4], ['vs_only', 'VS4 only', col(3)]];
@@ -2599,6 +3006,7 @@
   const BASIS_TEXT = { headline: 'in the same fee tier', own_fico: 'at the borrower’s own Classic FICO' };
 
   function drawPricing(p) {
+    drawFees();
     const st = dash.data('pricing').status;
     const rows = rowsOf('pricing');
     const mine = (r) => r.cover === p.cover && r.basis === p.basis;
@@ -2633,6 +3041,74 @@
     drawPricingHist(st, rows.filter((r) => r.view === 'hist' && mine(r)).sort((a, b) => a.order - b.order));
   }
 
+  const usdM = (v) => (Math.abs(v) >= 1e9 ? `$${d3.format('.2f')(v / 1e9)}bn` : `$${d3.format('.1f')(v / 1e6)}m`);
+
+  function drawFees() {
+    const st = dash.data('fees').status;
+    const rows = rowsOf('fees');
+    const m = rows.find((r) => r.view === 'market' && r.key === 'All') || {};
+    const mw = 'view=market&key=All';
+    const val = (f, fmt) => (m[f] == null ? null : fmt(m[f]));
+    mark('.fe-month', 'month', mw, st, val('month', monthYear));
+    mark('.fe-month-s', 'month', mw, st, val('month', monthShort));
+    mark('.fe-avg', 'saving_avg_usd', mw, st, val('saving_avg_usd', money));
+    mark('.fe-share', 'saving_share', mw, st, val('saving_share', pct1));
+    mark('.fe-taken', 'taken_annual_usd', mw, st, val('taken_annual_usd', usdM));
+    mark('.fe-taken-m', 'taken_all_usd', mw, st, val('taken_all_usd', usdM));
+    mark('.fe-option', 'option_annual_usd', mw, st, val('option_annual_usd', usdM));
+    mark('.fe-option-bp', 'option_bp', mw, st, val('option_bp', d3.format('.1f')));
+    mark('.fe-left', 'left_usd', mw, st, val('left_usd', usdM));
+    mark('.fe-left-n', 'left_loans', mw, st, val('left_loans', int));
+    const lenders = rows.filter((r) => r.view === 'lender').sort((a, b) => a.rank - b.rank);
+    const topLeft = lenders.slice().sort((a, b) => b.left_usd - a.left_usd)[0];
+    mark('.fe-left-top', 'short', topLeft ? `view=lender&id=${enc(topLeft.id)}` : null, st, topLeft ? topLeft.short : null);
+    const table = document.getElementById('fee-table');
+    table.closest('.vx-tablebox').classList.toggle('dash-skeleton', st === 'loading');
+    const heads = table.tHead.rows[0].cells;
+    const body = table.tBodies[0];
+    body.replaceChildren();
+    const orDashL = (fmt) => (v) => (v == null ? '—' : fmt(v));
+    for (const r of lenders) {
+      const tr = body.insertRow();
+      tr.dataset.key = ['lender', r.id].map(keyPart).join(',');
+      [olName(r), int(r.priced_loans), r.priced_loans >= 20 ? orDashL(pct1)(r.saving_share) : '—', r.priced_loans >= 20 ? orDashL(money)(r.saving_avg_usd) : '—',
+        usdM(r.taken_usd), usdM(r.left_usd), usdM(r.est_usd), orDashL(d3.format('.1f'))(r.option_bp)].forEach((text, i) => {
+        const td = tr.insertCell();
+        td.textContent = text;
+        td.className = heads[i].className;
+      });
+    }
+    const gse = rows.filter((r) => r.view === 'gse');
+    const lift = rows.filter((r) => r.view === 'lift');
+    const scopes = [...new Map(gse.map((r) => [r.scope, r.scope_label])).entries()];
+    const gt = document.getElementById('gse-score-table');
+    const gh = gt.tHead.rows[0];
+    gh.replaceChildren(...['Fee bucket'].concat(scopes.map(([, l]) => l), ['Better VS4, same FICO']).map((text, i) => {
+      const th = document.createElement('th');
+      th.scope = 'col';
+      if (!i) th.className = 'vx-l';
+      th.textContent = text;
+      return th;
+    }));
+    const gb = gt.tBodies[0];
+    gb.replaceChildren();
+    const signed = d3.format('+.1f');
+    for (const key of [...new Set(gse.map((r) => r.key))].sort()) {
+      const tr = gb.insertRow();
+      const c0 = tr.insertCell();
+      c0.className = 'vx-l';
+      c0.textContent = gse.find((r) => r.key === key).label;
+      for (const [s] of scopes) {
+        const r = gse.find((d) => d.key === key && d.scope === s);
+        const td = tr.insertCell();
+        td.textContent = r ? signed(r.diff) : '—';
+        if (r) td.title = `${int(r.loans)} VS4-priced loans`;
+      }
+      const l = lift.find((d) => d.key === key);
+      tr.insertCell().textContent = l ? signed(l.diff) : '—';
+    }
+  }
+
   function drawValue(st, rows) {
     const table = document.getElementById('value-table');
     const all = rows.filter((r) => r.view === 'value');
@@ -2643,7 +3119,7 @@
     const addRow = (label, r, same) => {
       const tr = body.insertRow();
       tr.dataset.key = ['value', r.scope, r.key].map(keyPart).join(',');
-      [[label, 'vx-l'], [int(r.n)], [one(r.worth_bp)], [bpSigned(r.net_bp)], [r.reaches == null ? '—' : d3.format('.0%')(r.reaches)],
+      [[label, 'vx-l'], [int(r.n)], [r.fee_bp == null ? '—' : one(r.fee_bp), 'vx-opt'], [r.fee_rate_bp == null ? '—' : one(r.fee_rate_bp), 'vx-opt'], [one(r.worth_bp)], [bpSigned(r.net_bp)], [r.reaches == null || r.n < 100 ? '—' : d3.format('.0%')(r.reaches)],
         [same ? int(same.n) : '—', 'vx-opt'], [same ? bpSigned(same.net_bp) : '—', 'vx-opt']].forEach(([text, cls]) => {
         const td = tr.insertCell();
         td.textContent = text;
@@ -2799,6 +3275,7 @@
       drawNewAdopters(p);
       drawTables(p);
     } else if (current === 'scores') {
+      drawWhy(p);
       drawChoice(p);
       drawRules(p);
       drawCeiling(p);
