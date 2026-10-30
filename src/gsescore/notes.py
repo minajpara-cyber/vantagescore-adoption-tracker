@@ -93,13 +93,13 @@ def build_datasets(con, statements: list[dict], pricing: list[dict], score_mix: 
         lines = []
         pa, pf = prev.get("All"), prev.get("FNMA")
         ago = lambda now, was: f"{_pct(now)} ({_pct(was)} the week before)" if was is not None else _pct(now)  # noqa: E731
-        lines.append(("mix", f"{a['n']:,} loans first disclosed {label}{', so far' if partial else ''}: priced on VS4 {ago(a['v'], pa and pa['v'])}, both scores on "
-                             f"{ago(a['b'], pa and pa['b'])}, no Classic FICO on {ago(a['vo'], pa and pa['vo'])}."))
+        lines.append(("mix", f"{a['n']:,} loans first disclosed {label}{', so far' if partial else ''}: priced on VS4 {ago(a['v'], pa and pa['v'])}, both scores show on "
+                             f"{ago(a['b'], pa and pa['b'])}, only VS4 shows on {ago(a['vo'], pa and pa['vo'])}."))
         if f:
-            lines.append(("mix", f"At Fannie Mae, whose files show both scores more fully: priced on VS4 {ago(f['v'], pf and pf['v'])}, both scores on {ago(f['b'], pf and pf['b'])}."))
+            lines.append(("mix", f"At Fannie Mae, whose files show both scores more fully: priced on VS4 {ago(f['v'], pf and pf['v'])}, both scores show on {ago(f['b'], pf and pf['b'])}."))
         now_s, was_s = steady.get(week.isoformat()), steady.get(ordered[i - 1].isoformat()) if i else None
         if now_s:
-            lines.append(("mix", f"With the lender mix frozen, VS4 is on {ago(now_s['steady_carrying'], was_s and was_s['steady_carrying'])} and priced on {ago(now_s['steady_priced'], was_s and was_s['steady_priced'])}. "
+            lines.append(("mix", f"With the lender mix frozen, VS4 shows on {ago(now_s['steady_carrying'], was_s and was_s['steady_carrying'])} and priced on {ago(now_s['steady_priced'], was_s and was_s['steady_priced'])}. "
                                  "The figures above swing with which lenders delivered that week."))
         if i:
             sc, sp = by_seller.get(week, {}), by_seller.get(ordered[i - 1], {})

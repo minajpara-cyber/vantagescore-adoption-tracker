@@ -378,7 +378,7 @@ c5 = duckdb.connect()
 c5.execute("CREATE MACRO seller_key(x) AS x")
 c5.execute("CREATE TABLE seller_map AS SELECT 'R' AS key, 'r' AS id")
 c5.execute("CREATE TABLE entity_names AS SELECT 'r' AS id, 'R' AS short, 'R' AS name, NULL::VARCHAR AS ticker")
-c5.execute("""CREATE TABLE loans AS SELECT 'FNMA' AS agency, 'L' || i AS loan_id, DATE '2026-10-20' AS first_intraday_date, 'C' AS pricing_indicator, 'R' AS seller, 'R' AS channel, 'P' AS purpose, 'P' AS occupancy, 1 AS units, 'SF' AS property_type,
+c5.execute("""CREATE TABLE loans AS SELECT 'FNMA' AS agency, 'L' || i AS loan_id, DATE '2026-10-20' AS first_intraday_date, DATE '2026-11-01' AS first_pay_date, 'C' AS pricing_indicator, 'R' AS seller, 'R' AS channel, 'P' AS purpose, 'P' AS occupancy, 1 AS units, 'SF' AS property_type,
               300000 AS orig_loan_amt, 38 AS dti, 0.0 AS mi_pct, 'TX' AS state, 'N' AS fthb, 1 AS num_borrowers, 'C' AS score_model, 700 AS pricing_score, 700 AS classic_fico, CAST(NULL AS INT) AS vs4, DATE '2026-10-01' AS issue_month,
               '7' AS special_program, 80 AS ltv, 6.50 AS orig_rate, 360 AS loan_term, 'FRM' AS amort_type FROM range(2000) t(i)""")
 c5.execute("INSERT INTO loans SELECT * REPLACE ('M' || loan_id AS loan_id, 705 AS vs4, 6.53 AS orig_rate) FROM loans WHERE regexp_extract(loan_id, '[0-9]+')::INT < 500")
@@ -397,6 +397,42 @@ c6.executemany("INSERT INTO scw VALUES ('FNMA', ?, ?, ?, true, ?)", [("2026-10-0
                + [("2026-10-05", False, "t", False) for _ in range(5)] + [("2026-10-12", False, "t", i < 39) for i in range(195)])
 stead = scores_mod._steady(c6)
 assert stead[("All", "2026-10-05")] == (round(0.5 * 0.5 + 0.5 * 0.195, 6), round(0.5 * 0.1, 6)) and stead[("FNMA", "2026-10-12")] == (round(0.5 * 1 + 0.5 * 0.2, 6), round(0.5 * 0.2, 6)), stead
+
+# The closing month on planted loans, data through Oct 15 (15 of 31 days). Jan closings, the reference: S's 400 reach issue months Feb and Mar 300 and 100, T's 100 and 300. Aug closings, issued Sep: S 100 with 40 on VS4,
+# T 100 with none. Sep closings (first payment Nov), issued Oct: S 50 with 25 on VS4, all in records that show every score (10 FICO only, 15 both on FICO, 20 both on VS4, 5 VS4 only); T 10 on FICO, too few to count, so it keeps Aug's rate.
+# Weights from loans issued Mar to Sep: S 100 + 100, T 300 + 100, so 1/3 and 2/3.
+from gsescore import closing  # noqa: E402
+
+c7 = duckdb.connect()
+c7.execute("CREATE MACRO seller_key(x) AS x")
+c7.execute("CREATE TABLE seller_map AS SELECT * FROM (VALUES ('S', 's'), ('T', 't')) t(key, id)")
+c7.execute("CREATE TABLE loans (agency VARCHAR, seller VARCHAR, score_model VARCHAR, pricing_indicator VARCHAR, classic_fico INT, vs4 INT, first_pay_date DATE, issue_month DATE, first_intraday_date DATE)")
+def plant7(seller, n, model, indicator, fico, vs, first_pay, issue):
+    c7.executemany("INSERT INTO loans VALUES ('FNMA', ?, ?, ?, ?, ?, ?, ?, DATE '2026-10-15')", [(seller, model, indicator, fico, vs, first_pay, issue)] * n)
+for seller, feb, mar in (("S", 300, 100), ("T", 100, 300)):
+    plant7(seller, feb, "C", None, 700, None, "2026-03-01", "2026-02-01")
+    plant7(seller, mar, "C", None, 700, None, "2026-03-01", "2026-03-01")
+plant7("S", 40, "V", None, None, 720, "2026-10-01", "2026-09-01")
+plant7("S", 60, "C", None, 700, None, "2026-10-01", "2026-09-01")
+plant7("T", 100, "C", None, 700, None, "2026-10-01", "2026-09-01")
+plant7("S", 10, "C", "C", 700, 9999, "2026-11-01", "2026-10-01")
+plant7("S", 15, "C", "C", 700, 720, "2026-11-01", "2026-10-01")
+plant7("S", 20, "V", "V", 700, 720, "2026-11-01", "2026-10-01")
+plant7("S", 5, "V", "V", 9999, 720, "2026-11-01", "2026-10-01")
+plant7("T", 10, "C", None, 700, None, "2026-11-01", "2026-10-01")
+cl7 = closing.build_datasets(c7, [{"view": "lender", "id": "s"}])["closing"]
+assert c7.execute(f"SELECT {closing.closing_month('DATE ' + chr(39) + '2026-11-01' + chr(39))}").fetchone()[0] == date(2026, 9, 1)
+m7 = {(r["agency"], r["start"]): r for r in cl7 if r["view"] == "market"}
+part = 15 / 31
+sep7, aug7 = m7[("All", "2026-09-01")], m7[("FNMA", "2026-08-01")]
+assert aug7["n"] == 200 and aug7["delivered"] == 0.2 and abs(aug7["priced"] - 0.4 / 3) < 1e-5 and aug7["every_share"] == 0.0, aug7
+assert abs(aug7["arrived"] - ((0.75 + part * 0.25) / 3 + (0.25 + part * 0.75) * 2 / 3)) < 1e-5, aug7
+assert sep7["n"] == 60 and abs(sep7["delivered"] - 25 / 60) < 1e-5 and abs(sep7["priced"] - 0.5 / 3) < 1e-5 and abs(sep7["every_share"] - 50 / 60) < 1e-5, sep7  # T keeps Aug's 0%, it has too few loans in Sep
+assert abs(sep7["fico_only"] - (0.2 / 3 + 2 / 3)) < 1e-5 and abs(sep7["both_fico"] - 0.1) < 1e-5 and abs(sep7["both_vs"] - 0.4 / 3) < 1e-5 and abs(sep7["vs_only"] - 0.1 / 3) < 1e-5, sep7  # T shows nothing else, so it counts as FICO only
+assert abs(sep7["arrived"] - (part * 0.75 / 3 + part * 0.25 * 2 / 3)) < 1e-5, sep7
+s7 = next(r for r in cl7 if r["view"] == "lender" and r["id"] == "s" and r["agency"] == "All" and r["start"] == "2026-09-01")
+assert (s7["n"], s7["v"], s7["every"], s7["fo"], s7["bf"], s7["bv"], s7["vo"]) == (50, 25, 50, 10, 15, 20, 5) and abs(s7["arrived"] - part * 0.75) < 1e-5, s7
+assert not any(r["view"] == "lender" and r["id"] == "t" for r in cl7), "only listed lenders get rows"
 
 # The weekly note on planted loans. R goes from 10 of 100 to 30 of 100 priced on VS4, all with both scores and VS4 5 points higher. N, all at
 # Fannie Mae like R, goes from 50 with only a Classic FICO to 50 with both. The files stop on Oct 14, so the second week is partial.
@@ -419,7 +455,7 @@ wk = {r["week"]: r for r in wn if r["view"] == "week"}
 assert (wk["2026-10-05"]["partial"], wk["2026-10-05"]["latest"], wk["2026-10-12"]["partial"], wk["2026-10-12"]["latest"], wk["2026-10-12"]["label"]) == (False, True, True, False, "Oct 12 to Oct 14"), wk
 lines = {r["kind"]: r for r in wn if r["view"] == "line" and r["week"] == "2026-10-12"}
 mix_text = next(r["text"] for r in wn if r["view"] == "line" and r["week"] == "2026-10-12" and r["order"] == 0)
-assert mix_text == "150 loans first disclosed Oct 12 to Oct 14, so far: priced on VS4 20.0% (6.7% the week before), both scores on 100.0% (66.7% the week before), no Classic FICO on 0.0% (0.0% the week before).", mix_text
+assert mix_text == "150 loans first disclosed Oct 12 to Oct 14, so far: priced on VS4 20.0% (6.7% the week before), both scores show on 100.0% (66.7% the week before), only VS4 shows on 0.0% (0.0% the week before).", mix_text
 assert lines["movers"]["text"] == "VS4 share moved most at R 10.0% to 30.0%.", lines
 assert lines["both"]["text"] == "Both scores at Fannie Mae moved most at N 0.0% to 100.0%.", lines
 assert lines["rule"]["text"] == "Use of VS4 with its score 1 to 19 points above FICO moved at R 10.0% to 30.0%.", lines

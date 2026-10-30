@@ -43,7 +43,7 @@
     const k = p.measure === 'upb' ? '_upb' : '';
     const head = rows.find((r) => r.view === 'month' && r.agency === 'All' && r.headline);
     const title = document.getElementById('score-mix-h');
-    title.textContent = k ? 'Out of every $100 of loans, which scores are on the loan?' : 'Out of every 100 loans, which scores are on the loan?';
+    title.textContent = k ? 'Out of every $100 of loans, which scores does the file show?' : 'Out of every 100 loans, which scores does the file show?';
     if (!head) return box.replaceChildren();
     box.replaceChildren(...['All', 'FNMA', 'FHLMC'].map((a) => {
       const r = rows.find((d) => d.view === 'month' && d.agency === a && d.start === head.start);
@@ -67,7 +67,7 @@
         const li = node('li');
         const sw = node('span', 'vx-sw');
         sw.style.background = group(g)[2];
-        li.append(sw, node('b', null, pct1(shares[i])), group(g)[1]);
+        li.append(sw, node('b', null, pct1(shares[i])), `${group(g)[1]}${g === 'fico_only' || g === 'vs_only' ? ', a ceiling' : ''}`);
         list.append(li);
       });
       const sum = (label, v) => {
@@ -75,7 +75,7 @@
         li.append(node('b', null, pct1(v)), label);
         return li;
       };
-      list.append(sum('have Classic FICO on the loan', r[`fico${k}_share`] || 0), sum('have VS4 on the loan', r[`vs${k}_share`] || 0), sum('are priced on VS4', r[`vs4_priced${k}_share`] || 0));
+      list.append(sum('show Classic FICO, a floor', r[`fico${k}_share`] || 0), sum('show VS4, a floor', r[`vs${k}_share`] || 0), sum('are priced on VS4, exact', r[`vs4_priced${k}_share`] || 0));
       wrap.append(grid, list);
       return wrap;
     }));
@@ -196,7 +196,7 @@
         svg.append('text').attr('x', m.left - 6).attr('y', y(t)).attr('dy', '0.32em').attr('text-anchor', 'end').text(pct0(t));
       }
     }
-    svg.append('text').attr('x', (x(0) + x(1)) / 2).attr('y', H - 4).attr('text-anchor', 'middle').text('Share of its loans carrying VS4');
+    svg.append('text').attr('x', (x(0) + x(1)) / 2).attr('y', H - 4).attr('text-anchor', 'middle').text('Share of its loans showing VS4, a floor');
     svg.append('text').attr('transform', `translate(11,${(y(0) + y(topY)) / 2}) rotate(-90)`).attr('text-anchor', 'middle').text('Share priced on VS4');
     svg.append('line').attr('x1', x(0)).attr('y1', y(0)).attr('x2', x(topY)).attr('y2', y(topY)).attr('stroke', 'var(--cds-chart-reference)');
     const taken = [];
@@ -206,9 +206,9 @@
       taken.push({ x: anchor === 'end' ? zx - w : zx, y: zy - 12, w, h: 16 });
     };
     if (W >= 520) {
-      zone('Priced on VS4 whenever it is on the loan', x(topY) - 8, y(topY) + 12, 'end');
-      zone('Carries VS4, rarely prices on it', x(0.84), y(0.1), 'end');
-      zone('FICO only', x(0.01), y(0.1), 'start');
+      zone('Priced on VS4 whenever it shows', x(topY) - 8, y(topY) + 12, 'end');
+      zone('Shows VS4, rarely priced on it', x(0.84), y(0.1), 'end');
+      zone('Shows FICO only', x(0.01), y(0.1), 'start');
     }
     const drawn = data.slice().reverse();
     svg.append('g').selectAll('circle').data(drawn).join('circle').attr('cx', (d) => x(d.carrying)).attr('cy', (d) => y(d.priced)).attr('r', (d) => r(d.n))
@@ -245,7 +245,7 @@
       .on('pointermove', (event) => {
         const d = pick(event);
         if (!d) return tip.hide();
-        tip.show(event, d.name, [[null, 'Carrying VS4', pct1(d.carrying)], [null, 'Priced on VS4', pct1(d.priced)], [null, 'VS4 only', pct1(d.only)], [null, 'Loans', int(d.n)]]);
+        tip.show(event, d.name, [[null, 'Carrying VS4', pct1(d.carrying)], [null, 'Priced on VS4', pct1(d.priced)], [null, 'Shows VS4 only', pct1(d.only)], [null, 'Loans', int(d.n)]]);
       })
       .on('pointerleave', () => tip.hide())
       .on('click', (event) => {
@@ -373,10 +373,11 @@
     ['gse', 'GSE', 'Fannie Mae or Freddie Mac. This site covers loans they put into mortgage-backed securities.'],
     ['vs4', 'VS4', 'VantageScore 4.0, the credit score the GSEs began accepting alongside Classic FICO.'],
     ['priced', 'Priced on VS4', 'VS4 was the score that set the loan\'s upfront fee. The GSEs disclose which score did this on each loan.'],
-    ['carrying', 'Carrying VS4', 'The loan shows a VS4 score, whichever score priced it. A lender can carry VS4 and still price on FICO.'],
-    ['both', 'Both scores', 'The lender delivered both a Classic FICO and a VS4 on the loan, and can price on either.'],
-    ['only', 'FICO only, VS4 only', 'The file shows just that one score. A loan with one score shown may still have had the other ordered.'],
-    ['every', 'Records that show every score', 'Since October 19, 2026 the GSEs show every score a lender delivered. Before that they showed only the score that priced the loan, so older bars are a floor.'],
+    ['carrying', 'Carrying VS4', 'The loan shows a VS4 score, whichever score priced it. A lender can carry VS4 and still price on FICO. The share is a floor: a loan can have a VS4 that does not show.'],
+    ['both', 'Both scores', 'The GSE file shows both a Classic FICO and a VS4 on the loan. One of them priced it.'],
+    ['only', 'FICO only, VS4 only', 'The file shows just that one score. That does not mean the other was never pulled: lenders deliver one score, and at Freddie Mac some lenders\' loans often show only the one that priced them. So these shares are ceilings on loans with only one score.'],
+    ['floor', 'Floor, ceiling, exact', 'A score that does not show is unknown, not absent. So the share showing a score is a floor on loans that have it: the true share is at least this. The share showing only one score is a ceiling on loans that have only that one: the true share is at most this. The share priced on VS4 is exact, because the GSEs state it for every loan.'],
+    ['every', 'Records that show every score', 'Since October 19, 2026 the GSE files show every score the GSE has on a loan and which one priced it. Before that they showed only the score that priced the loan, so older bars are a floor.'],
     ['frozen', 'Lender mix frozen', 'Each week different lenders deliver different amounts. Freezing the mix gives each lender a fixed weight, its share of all the weeks shown, so only changes in what lenders do can move the number.'],
     ['fee', 'Upfront fee', 'The one-time fee the GSEs charge on a loan, set by its credit score, LTV and purpose. Also called an LLPA. Since October 1, 2026 one fee grid covers both scores.'],
     ['rateterms', 'Fee in rate terms', 'Upfront fees and note rates are different units. The rule of thumb used here is that 5 bp of upfront fee is worth about 1 bp of rate.'],
@@ -386,6 +387,7 @@
     ['channel', 'Channel', 'How the lender got the loan: retail (its own), broker, or correspondent (bought from another lender).'],
     ['week', 'By week', 'Loans by the week they first appeared in the GSEs\' intraday files, ahead of the month their pool is issued.'],
     ['issue', 'Issue month', 'The month the loan\'s mortgage-backed security was issued. The latest month is partial until its month-end file arrives.'],
+    ['closing', 'Closing month', 'The month the loan closed, as near as the files allow: its first payment month less two. A recent month is still arriving, so a label such as 60% in estimates how much of it has come through so far.'],
     ['lender', 'Lender', 'The company that delivered the loan to the GSE. It is not always the one that made the loan.'],
     ['bp', 'bp', 'Basis point, a hundredth of a percentage point. A pt is a full percentage point.'],
   ];

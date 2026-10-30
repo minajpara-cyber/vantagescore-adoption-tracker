@@ -32,6 +32,7 @@ from pathlib import Path
 
 from . import paths
 from .borrowers import build_datasets as build_borrower_datasets
+from .closing import build_datasets as build_closing_datasets
 from .exposure import build_datasets as build_exposure_datasets
 from .fees import build_datasets as build_fee_datasets
 from .lenders import build_datasets as build_lender_datasets
@@ -283,6 +284,7 @@ def build(out_dir: Path = paths.SITE_DATA) -> dict:
     more |= build_borrower_datasets(con, in_range, MIX_START, _rows)  # needs the seller map lenders.py made
     more |= build_score_datasets(con, in_range, MIX_START, _rows)
     more |= build_why_datasets(con)
+    more |= build_closing_datasets(con, more["lender_stage"])
     more |= build_fee_datasets(con)
     more |= build_outlook_datasets(con, LENDER_START)  # needs the ceiling's loans (scores.py) and the seller tables
     more["pricing"] = build_pricing(con, WEEKLY_START, in_range)

@@ -38,7 +38,7 @@
     if (!['all', 'both', 'vs4only'].includes(p.cover)) p.cover = 'all';
     if (p.cover !== 'both' || p.basis !== 'own_fico') p.basis = 'headline';
     if (p.orule !== 'better') p.orule = 'higher';
-    if (p.cperiod !== 'month') p.cperiod = 'week';
+    if (!['month', 'close'].includes(p.cperiod)) p.cperiod = 'week';
     if (!['carrying', 'rising'].includes(p.lsort)) p.lsort = 'share';
     if (p.ccohort !== 'latest') p.ccohort = 'all';
     return p;
@@ -1536,7 +1536,7 @@
 
   // ---- Why lenders choose ----
   const STAGE_COLOR = { pricing: C_VS4, some: col(2), both: col(1), trace: col(3), fico: 'var(--cds-chart-muted)' };
-  const STAGE_SHORT = { pricing: 'Prices on VS4', some: 'Sometimes', both: 'Delivers both', trace: 'A few VS4', fico: 'FICO only' };
+  const STAGE_SHORT = { pricing: 'Prices on VS4', some: 'Sometimes', both: 'Shows both', trace: 'A few VS4', fico: 'Shows FICO only' };
   const RULE_TEXT = { whenever: 'Whenever VS4 is higher', moving: '20-point rule, moving', line: '20-point rule', some: 'Some loans', rare: 'Rarely' };
   const whyRows = (v) => rowsOf('lender_stage').filter((r) => r.view === v);
 
@@ -1727,12 +1727,12 @@
     if (r.check === 'fico') {
       if (head.fico_share == null) return '—';
       const all = rowsOf('outlook').find((d) => d.view === 'ladder' && d.key === 'all' && d.rule === 'better');
-      return `Classic FICO on ${pct1(head.fico_share)} of loans (${pct1(fn.fico_share)} at Fannie Mae); VS4 only on ${pct1(head.vs_only_share)} (${pct1(fn.vs_only_share)}).${all ? ` Priced on VS4 wherever it saves a fee, VS4 would reach ${pct1(all.value)}.` : ''}`;
+      return `At least ${pct1(head.fico_share)} of loans have a Classic FICO (${pct1(fn.fico_share)} at Fannie Mae); at most ${pct1(head.vs_only_share)} have only VS4 (${pct1(fn.vs_only_share)}).${all ? ` Priced on VS4 wherever it saves a fee, VS4 would reach ${pct1(all.value)}.` : ''}`;
     }
     if (r.check === 'lenders') {
       const pr = olRows('params')[0] || {};
       const using = d3.sum(whyRows('stage').filter((d) => d.key === 'pricing' || d.key === 'some'), (d) => d.lenders);
-      return `${pr.users == null ? '—' : int(pr.users)} lenders have delivered a VS4 loan to the GSEs since September, and ${int(using)} price on it regularly. VS4 only on ${head.vs_only_share == null ? '—' : pct1(head.vs_only_share)} of loans. This covers GSE loans only.`;
+      return `${pr.users == null ? '—' : int(pr.users)} lenders have delivered a VS4 loan to the GSEs since September, and ${int(using)} price on it regularly. At most ${head.vs_only_share == null ? '—' : pct1(head.vs_only_share)} of loans have only VS4. This covers GSE loans only.`;
     }
     if (r.check === 'pricing') {
       const o = rowsOf('pricing').find((d) => d.view === 'overall' && d.cover === 'all' && d.basis === 'headline');
@@ -1777,8 +1777,8 @@
   }
 
   // ---- Score mix, on the Overview ----
-  const MIX_GROUPS = [['fico_only', 'Classic FICO only', 'var(--cds-chart-muted)'], ['both_fico', 'Both, priced on Classic FICO', col(1)],
-    ['both_vs', 'Both, priced on VS4', C_VS4], ['vs_only', 'VS4 only', col(4)]];
+  const MIX_GROUPS = [['fico_only', 'Shows Classic FICO only', 'var(--cds-chart-muted)'], ['both_fico', 'Shows both, priced on Classic FICO', col(1)],
+    ['both_vs', 'Shows both, priced on VS4', C_VS4], ['vs_only', 'Shows VS4 only', col(4)]];
 
   function drawScoreMix(p) {
     const st = dash.data('score_mix').status;
@@ -1824,8 +1824,8 @@
   const GRP_NAME = { vs4: 'VantageScore 4.0', fico: 'Classic FICO' };
   const COVER_NOTE = {
     all: 'Every VS4-priced and Classic FICO-priced loan, issued since July 2026 for the borrower mix and first disclosed since July 20, 2026 for rates.',
-    both: 'Loans disclosed with every score delivered (records since Oct 19, 2026) that carry both scores: priced on VS4 against priced on Classic FICO.',
-    vs4only: 'VS4-priced loans with no Classic FICO among loans disclosed with every score delivered (records since Oct 19, 2026), against every FICO-priced loan disclosed that way.',
+    both: 'Loans disclosed with every score (records since Oct 19, 2026) that show both scores: priced on VS4 against priced on Classic FICO.',
+    vs4only: 'VS4-priced loans that show no Classic FICO among loans disclosed with every score (records since Oct 19, 2026), against every FICO-priced loan disclosed that way. Read with care: a loan can have a FICO that does not show, so this group mixes loans with one score and loans with a hidden FICO. Fannie Mae\'s few such loans are the cleaner read.',
   };
   const keyPart = (v) => encodeURIComponent(String(v));
   const bpSigned = (v) => (Math.abs(v) < 0.05 ? '0.0' : d3.format('+.1f')(v));

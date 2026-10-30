@@ -125,7 +125,7 @@ private dashboard only.
    rebuilt on them, and the rate model compares in the same fee tier, adds seller x purpose, and shows how much of
    a better tier reaches the rate.
 2. Done Oct 30, 2026: the front page. Which scores loans carry (FICO only, both priced either way, VS4 only) by
-   GSE and week (dataset score_mix), Classic FICO on the loan, the latest weeks' pace, what changed, calendar quarters. Loans carrying VS4 runs back to April by issue month and to July by week as
+   GSE and week (dataset score_mix), loans with a Classic FICO, the latest weeks' pace, what changed, calendar quarters. Loans carrying VS4 runs back to April by issue month and to July by week as
    VS4-priced loans, a floor until the files show every score, with the same weeks at a steady mix of lenders.
 3. Done Oct 30, 2026: why lenders choose (src/gsescore/why.py, datasets lender_stage, lender_mix and statements). A cost-or-rate test: what lenders with both scores pick by what VS4 does
    to the fee (src/gsescore/fees.py, views choice and option). Each lender's score split by week and issue month. Each lender's stage (pricing on VS4,
@@ -144,11 +144,16 @@ private dashboard only.
    tab's table of which scores loans carry gave way to the front page's split.
    Oct 30, 2026: the page now leads with pictures and plain words: out of every 100 loans, why the weeks jump and the lender mix frozen, how far VS4 could go, where every lender stands, how lenders decide, where
    the fee saving goes, and a page of what the words mean. Long notes open on request, and lower-priority sections fold away.
-6. Deeper data. Done Oct 30, 2026: which lenders show fewer scores at Freddie Mac, and which factors do not explain it (the cause is still unknown), and FHA (it accepts VS4 for
+6. Deeper data. Done Oct 30, 2026: why some lenders show fewer scores at Freddie Mac. The delivery file has one score field, so a second score most likely reaches the GSE through underwriting, which
+   Freddie Mac sees less of. That is our reading of the GSEs' playbook (questions 14, 24 and 25); neither GSE states it, and Freddie Mac's investor inquiry desk could confirm. Also FHA (it accepts VS4 for
    case numbers from January 1, 2027). Waiting: the monthly loan file (L1_MONTHLY_ONGOING_LOAN_LEVEL, Freddie fuYYMMDD), whose origination score fields (L-097, L-099) and
-   back-filled Pricing Indicator may give both scores on earlier loans and replace the estimates for those months. The first file with the new fields should come about
+   back-filled Pricing Indicator may give both scores on earlier loans and replace the estimates for those months, though the single delivery field makes that less certain. The first file with the new fields should come about
    Nov 5, 2026. The weekly refresh lists its name and size from then (`__gseListMonthly`); then decide how to collect it, since the browser collector holds files in memory, and
    how much to keep (loans issued since VS4 opened, not the whole book). SFTP stays deferred until the user wants it.
+7. Done Oct 30, 2026: what the files can say, and which date a loan sits on. A score that shows and the Pricing Indicator are facts; a score that does not show is unknown. So priced on VS4 is exact, a score
+   showing is a floor on loans that have it, and showing only one score is a ceiling on loans that have only that one; the page and the workbook say which is which. Each clock has its job: issue month for
+   headline share, GSE volume and the fee grid; week first disclosed for news, read with the lender mix frozen; closing month (first payment month less two; src/gsescore/closing.py, dataset closing) for how
+   a lender's behavior is changing, read lender by lender or at fixed weights because recent months are still arriving. The rate model now has closing month and lender x channel x closing month as well as the week.
 
 ## 5. Open items
 - Seller is not originator: correspondent aggregators (AmeriHome, PennyMac) deliver loans other lenders

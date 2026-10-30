@@ -23,7 +23,8 @@ coarser, MIN_CELL+ loans).
         higher) and VS4's score against FICO's (up20, up1, equal, down1, down20, or all), the share priced on VS4; for all lenders, the largest VS4
         users and holders of both scores, and the rest; over all weeks and the latest CHOICE_WEEKS.
         view option: on those loans, the fee as bp of balance if every loan priced on FICO, on VS4, on the lower of the two, and as they did.
-Each lender's numbers rest on one month's loans. Grid fees are what the GSE charges, not what a borrower sees.
+Each lender's numbers rest on one month's loans. Grid fees are what the GSE charges, not what a borrower sees. A loan's second score can exist without showing:
+"taken" and "left" count loans that show both, so they run low where fewer loans do (Freddie Mac), and "est" then covers some loans that had both.
 """
 from datetime import timedelta
 

@@ -12,7 +12,7 @@ points higher, so a lender's rule shows up in score points (VS4 minus Classic FI
              view week: the same scopes by week first disclosed from WEEK_FROM and GSE (+ All): the share with
              both scores, the share priced on VS4, and the share priced on VS4 among loans with VS4 1-19 points
              above Classic FICO and 20 or more above it (MIN_N+ loans).
-  score_mix  which scores loans carry, among records with every score delivered: Classic FICO only, both priced
+  score_mix  which scores loans show, among records that carry the Pricing Indicator: Classic FICO only, both priced
              on FICO, both priced on VS4, VS4 only, with the share carrying each score and the share priced on VS4,
              count and balance. view month (headline marks the latest with HEADLINE_MIN+ loans), week (with steady_carrying and steady_priced: the same at a steady mix of lenders), recent (the
              latest RECENT_WEEKS weeks) and all, each by GSE (+ All). view quarter: VS4's share priced by calendar
@@ -83,7 +83,7 @@ def build_datasets(con, in_range: str, mix_start: str, rows) -> dict[str, list[d
                CASE WHEN l.vs4 BETWEEN 300 AND 850 THEN {_bucket('l.vs4')} END AS vb,
                CASE WHEN l.classic_fico BETWEEN 300 AND 850 THEN l.classic_fico END AS fico,
                CASE WHEN l.vs4 BETWEEN 300 AND 850 THEN l.vs4 END AS vs,
-               l.pricing_indicator IS NOT NULL AS win_both,  -- the record carries every score delivered
+               l.pricing_indicator IS NOT NULL AS win_both,  -- the record shows every score the GSE has
                l.issue_month >= DATE '{mix_start}' AS win_all
         FROM loans l JOIN seller_map m ON m.key = seller_key(l.seller)
         WHERE l.score_model IN ('V', 'C') AND ({in_range})""")
@@ -183,7 +183,7 @@ def build_datasets(con, in_range: str, mix_start: str, rows) -> dict[str, list[d
         labels(fb, label) AS (VALUES {band_labels}),
         bands AS (
           SELECT 'band' AS view, DATE '{BOTH_START}' AS start, 'All' AS agency,
-                 coalesce(scp.fb::VARCHAR, 'vs4only') AS key, coalesce(labels.label, 'No Classic FICO (VS4 only)') AS label,
+                 coalesce(scp.fb::VARCHAR, 'vs4only') AS key, coalesce(labels.label, 'Shows no Classic FICO (VS4 only)') AS label,
                  coalesce(scp.fb, -1) AS "order", count(*) AS loans,
                  count(*) / sum(count(*)) OVER () AS loan_share, avg(p_better) AS better, avg(p_higher) AS higher, avg(p_nw) AS not_worse,
                  sum(p_better) / sum(count(*)) OVER () AS adds_better, sum(p_higher) / sum(count(*)) OVER () AS adds_higher,

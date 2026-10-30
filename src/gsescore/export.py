@@ -95,7 +95,8 @@ def _read_me(b: _Book, through: str):
         ("FICO exposure: FICO's revenue on GSE loans under your inputs, as live formulas.", None),
         ("Your scenario: each lender's share priced on VS4 and share with no Classic FICO. Its totals feed FICO exposure.", None),
         ("Carrying VS4: the longest timeline. VS4-priced loans by issue month and week, split into both scores and VS4 only once the files show every score, with the same at a frozen lender mix.", None),
-        ("Score mix: FICO only, both scores (priced either way) and VS4 only, by issue month, week of first disclosure and quarter, by GSE.", None),
+        ("By closing month: priced on VS4 and the scores that show, by estimated closing month, for the market at fixed lender weights and for each large lender, with how much of each month has arrived.", None),
+        ("Score mix: shows FICO only, shows both (priced either way) and shows VS4 only, by issue month, week of first disclosure and quarter, by GSE.", None),
         ("Lenders: each large lender's stage, rule, score mix, fees and rates, with its ticker. Lender split by week: the same split over time, by GSE.", None),
         ("Cost or rate: what lenders pick when they hold both scores, by what VS4 would do to the fee, and what the pick is worth.", None),
         ("Fees: fee saved, taken, left and estimated from the GSEs' grid; the GSEs' own scores on these loans.", None),
@@ -105,8 +106,10 @@ def _read_me(b: _Book, through: str):
         ("Weekly note, Statements: what changed each week; what companies and others have said, with links.", None),
         ("", None),
         ("Read these with care", "bold"),
-        ("Records show every score a lender delivered only from Oct 19, 2026. Figures for loans disclosed with every score rest on those records. Earlier months show only the score that priced the loan.", None),
-        ("Some lenders that choose between scores show both far less often at Freddie Mac than at Fannie Mae, while pricing on VS4 about as often at each; most lenders look alike at both. The cause is not known. Fannie Mae is the cleaner read of both scores and of loans with no Classic FICO.", None),
+        ("Two things in these files are facts: a score that shows, and the Pricing Indicator saying which score priced the loan. A score that does not show is unknown, not absent. So priced on VS4 is exact, the share showing a score is a floor on loans that have it, and the share showing only one score is a ceiling on loans that have only that one.", None),
+        ("Dates: issue month ties to GSE volume and sets the fee grid. Weeks are the earliest news and swing with which lenders delivered. Closing month, the first payment month less two, sits nearest the borrower's application and lock, and its recent months are still arriving. A rate is set at lock, while a lender can pick the score as late as delivery, so rates can lag picks.", None),
+        ("Records show every score the GSE has on a loan only from Oct 19, 2026. Figures for loans disclosed with every score rest on those records. Earlier months show only the score that priced the loan.", None),
+        ("Lenders deliver one score: the delivery file has a single credit score field. A second score most likely reaches the GSE through underwriting. Neither GSE says this decides which scores show, so it is our reading. VS4 only at Freddie Mac does not mean Classic FICO was not pulled.", None),
         ("A week's figures move with the mix of lenders delivering that week. The seller is not always the lender that made the loan.", None),
         ("The fee grid is Freddie Mac Guide Exhibit 19 (Bulletin 2026-K); Fannie Mae's matrix is taken to match it, unchecked. Fees are what the GSE charges, not what a borrower sees.", None),
         ("The rate model is a comparison of like loans, not a test of cause. Points and lender credits are not disclosed, so a saving can reach the borrower without showing in the note rate.", None),
@@ -269,8 +272,8 @@ def _score_mix(b: _Book):
     rows = [r for r in _rows("score_mix") if r["view"] in label]
     rows.sort(key=lambda r: (list(label).index(r["view"]), r["start"], list(gse).index(r["agency"])))
     columns = [("Period", lambda r: label[r["view"]], "text", 11), ("From", "start", "day", 12), ("GSE", lambda r: gse[r["agency"]], "text", 12), ("Loans", "loans", "int", 10),
-               ("FICO only", "fico_only_share", "pct", 9), ("Both, priced on FICO", "both_fico_share", "pct", 10), ("Both, priced on VS4", "both_vs_share", "pct", 10), ("VS4 only", "vs_only_share", "pct", 9),
-               ("Classic FICO on the loan", "fico_share", "pct", 10), ("VS4 on the loan", "vs_share", "pct", 10), ("Priced on VS4", "vs4_priced_share", "pct", 10),
+               ("Shows FICO only", "fico_only_share", "pct", 9), ("Both, priced on FICO", "both_fico_share", "pct", 10), ("Both, priced on VS4", "both_vs_share", "pct", 10), ("Shows VS4 only", "vs_only_share", "pct", 9),
+               ("Shows Classic FICO (floor)", "fico_share", "pct", 10), ("Shows VS4 (floor)", "vs_share", "pct", 10), ("Priced on VS4", "vs4_priced_share", "pct", 10),
                ("Priced on VS4, by balance", "vs4_priced_upb_share", "pct", 10), ("Complete", lambda r: "Yes" if r.get("complete") else "So far" if r["view"] == "quarter" else None, "text", 9)]
     b.table(ws, 3, columns, rows)
     ws.freeze_panes(4, 0)
@@ -290,9 +293,9 @@ def _lenders(b: _Book):
     enough = lambda d, f: d[f] if d and d.get("n", 0) >= 100 else None  # noqa: E731
     columns = [("Lender", "short", "text", 24), ("Ticker", "ticker", "text", 7), ("Type", "kind", "text", 10), ("Main channel", "lead", "text", 12), ("Rank", "rank", "int", 6), ("Loans", "loans", "int", 8),
                ("Share of loans", "share", "pct", 8), ("Stage", "stage", "text", 8), ("Rule", "rule", "text", 9),
-               ("FICO only", "mix_fico_only", "pct", 8), ("Both, on FICO", "mix_both_fico", "pct", 8), ("Both, on VS4", "mix_both_vs", "pct", 8), ("VS4 only", "mix_vs_only", "pct", 8),
-               ("Fannie: FICO only", "fnma_fico_only", "pct", 8), ("Fannie: both, on FICO", "fnma_both_fico", "pct", 8), ("Fannie: both, on VS4", "fnma_both_vs", "pct", 8), ("Fannie: VS4 only", "fnma_vs_only", "pct", 8),
-               ("Freddie: FICO only", "fhlmc_fico_only", "pct", 8), ("Freddie: both, on FICO", "fhlmc_both_fico", "pct", 8), ("Freddie: both, on VS4", "fhlmc_both_vs", "pct", 8), ("Freddie: VS4 only", "fhlmc_vs_only", "pct", 8),
+               ("Shows FICO only", "mix_fico_only", "pct", 8), ("Both, on FICO", "mix_both_fico", "pct", 8), ("Both, on VS4", "mix_both_vs", "pct", 8), ("Shows VS4 only", "mix_vs_only", "pct", 8),
+               ("Fannie: shows FICO only", "fnma_fico_only", "pct", 8), ("Fannie: both, on FICO", "fnma_both_fico", "pct", 8), ("Fannie: both, on VS4", "fnma_both_vs", "pct", 8), ("Fannie: shows VS4 only", "fnma_vs_only", "pct", 8),
+               ("Freddie: shows FICO only", "fhlmc_fico_only", "pct", 8), ("Freddie: both, on FICO", "fhlmc_both_fico", "pct", 8), ("Freddie: both, on VS4", "fhlmc_both_vs", "pct", 8), ("Freddie: shows VS4 only", "fhlmc_vs_only", "pct", 8),
                ("Priced on VS4", "vs4_share", "pct", 8), ("Latest weeks", "recent_share", "pct", 8), ("Uses VS4 when higher", "uses_higher", "pct", 8),
                ("Under 20 pts, earlier", "below_early", "pct", 8), ("Under 20 pts, latest", "below_late", "pct", 8), ("20+ pts", "above", "pct", 8), ("Both, earlier", "both_early", "pct", 8), ("Both, latest", "both_late", "pct", 8),
                ("On the rule: saves a fee", out("on_better"), "pct", 8), ("On the rule: score higher", out("on_higher"), "pct", 8),
@@ -346,10 +349,33 @@ def _carrying(b: _Book):
         rows += [{"period": "Week", "start": r["week"], "agency": agency, "loans": r["scored_loans"], "priced": r["vs4_share"]} for r in _rows("weekly") if r["agency"] == agency and (not first_w or r["week"] < first_w)]
         rows += [split(r, "Week") for r in weeks]
     rows.sort(key=lambda r: (r["period"] != "Issue month", list(gse).index(r["agency"]), r["start"]))
-    columns = [("Period", "period", "text", 12), ("From", "start", "day", 12), ("GSE", lambda r: gse[r["agency"]], "text", 12), ("Loans", "loans", "int", 10), ("Priced on VS4", "priced", "pct", 9), ("Both, on VS4", "both_vs", "pct", 9), ("VS4 only", "vs_only", "pct", 9),
+    columns = [("Period", "period", "text", 12), ("From", "start", "day", 12), ("GSE", lambda r: gse[r["agency"]], "text", 12), ("Loans", "loans", "int", 10), ("Priced on VS4", "priced", "pct", 9), ("Both, on VS4", "both_vs", "pct", 9), ("Shows VS4 only", "vs_only", "pct", 9),
                ("Both, on FICO", "both_fico", "pct", 9), ("Carrying VS4", "carrying", "pct", 9), ("Carrying, lender mix frozen", "steady_carrying", "pct", 10), ("Priced on VS4, lender mix frozen", "steady_priced", "pct", 10)]
     b.table(ws, 3, columns, rows)
     ws.freeze_panes(4, 0)
+    ws.autofilter(3, 0, 3 + len(rows), len(columns) - 1)
+
+
+def _closing(b: _Book):
+    ws = b.sheet("By closing month", "Priced on VS4 and the scores that show, by estimated closing month", "Closing month: the first payment month less two. The market rows keep each lender at a fixed weight, since recent months otherwise hold mostly the fastest deliverers. Arrived estimates how much of the month's loans are in so far. Shows VS4 is a floor on loans that have it, from records that show every score, and is blank under 20 such loans.")
+    gse = {"All": "Both GSEs", "FNMA": "Fannie Mae", "FHLMC": "Freddie Mac"}
+    names = {r["id"]: r for r in _rows("lender_stage") if r.get("view") == "lender"}
+    rows = []
+    for r in _rows("closing"):
+        if r["start"] < MONTHS_FROM:
+            continue
+        if r["view"] == "market":
+            rows.append({"rank": 0, "lender": "All lenders, fixed weights", "ticker": None, "agency": r["agency"], "start": r["start"], "n": r["n"], "priced": r["priced"], "every": r["every_share"], "shows": r["both_fico"] + r["both_vs"] + r["vs_only"] if r["every_share"] >= 0.5 else None,
+                         "only": r["vs_only"] if r["every_share"] >= 0.5 else None, "arrived": r["arrived"]})
+        elif r["id"] in names and r["n"] >= 20:
+            enough = r["every"] >= 20
+            rows.append({"rank": names[r["id"]]["rank"], "lender": names[r["id"]]["short"], "ticker": names[r["id"]]["ticker"], "agency": r["agency"], "start": r["start"], "n": r["n"], "priced": r["v"] / r["n"], "every": r["every"] / r["n"],
+                         "shows": (r["bf"] + r["bv"] + r["vo"]) / r["every"] if enough else None, "only": r["vo"] / r["every"] if enough else None, "arrived": r["arrived"]})
+    rows.sort(key=lambda r: (r["rank"], list(gse).index(r["agency"]), r["start"]))
+    columns = [("Lender", "lender", "text", 26), ("Ticker", "ticker", "text", 7), ("GSE", lambda r: gse[r["agency"]], "text", 12), ("Closing month", "start", "day", 12), ("Loans so far", "n", "int", 9), ("Priced on VS4 (exact)", "priced", "pct", 10),
+               ("Shows VS4 (floor)", "shows", "pct", 9), ("Shows VS4 only (ceiling)", "only", "pct", 9), ("In records with every score", "every", "pct", 10), ("Arrived, estimated", "arrived", "pct", 9)]
+    b.table(ws, 3, columns, rows)
+    ws.freeze_panes(4, 1)
     ws.autofilter(3, 0, 3 + len(rows), len(columns) - 1)
 
 
@@ -360,7 +386,7 @@ def _lender_split(b: _Book):
     rows = [r for r in _rows("lender_mix") if r["n"] >= 20 and r["id"] in names]
     rows.sort(key=lambda r: (names[r["id"]]["rank"], r["view"] != "week", list(gse).index(r["agency"]), r["start"]))
     columns = [("Lender", lambda r: names[r["id"]]["short"], "text", 24), ("Ticker", lambda r: names[r["id"]]["ticker"], "text", 7), ("GSE", lambda r: gse[r["agency"]], "text", 12), ("Period", lambda r: "Week" if r["view"] == "week" else "Issue month", "text", 11), ("From", "start", "day", 12),
-               ("Loans", "n", "int", 8), ("FICO only", lambda r: r["fo"] / r["n"], "pct", 8), ("Both, on FICO", lambda r: r["bf"] / r["n"], "pct", 8), ("Both, on VS4", lambda r: r["bv"] / r["n"], "pct", 8), ("VS4 only", lambda r: r["vo"] / r["n"], "pct", 8),
+               ("Loans", "n", "int", 8), ("Shows FICO only", lambda r: r["fo"] / r["n"], "pct", 8), ("Both, on FICO", lambda r: r["bf"] / r["n"], "pct", 8), ("Both, on VS4", lambda r: r["bv"] / r["n"], "pct", 8), ("Shows VS4 only", lambda r: r["vo"] / r["n"], "pct", 8),
                ("Carrying VS4", lambda r: (r["bf"] + r["bv"] + r["vo"]) / r["n"], "pct", 8)]
     b.table(ws, 3, columns, rows)
     ws.freeze_panes(4, 1)
@@ -476,6 +502,7 @@ def build_workbook() -> Path:
     _exposure(b, _rows("assumptions"), nf_market, SCENARIO_NO_FICO, nf0)  # first in the book; reads the scenario's totals, whose place is fixed
     _scenario(b, rows)
     _carrying(b)
+    _closing(b)
     _score_mix(b)
     _lenders(b)
     _lender_split(b)

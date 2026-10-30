@@ -1,7 +1,8 @@
 """Rate engine: the note rate a Classic FICO-priced loan like each VS4 loan would carry.
 
 Model: a 30-year fixed, FICO-priced loan's note rate is a sum of effects, one per level of each factor
-in FACTORS: week of first disclosure, GSE, seller x channel, seller x channel x week, seller x purpose, LLPA
+in FACTORS: week of first disclosure, estimated closing month (closing.py; the rate is set near closing, not at delivery),
+GSE, seller x channel, seller x channel x week, seller x channel x closing month, seller x purpose, LLPA
 credit score bucket x LTV bucket x purpose, occupancy, units, property type, loan size, DTI, mortgage insurance,
 state, first-time buyer and number of borrowers. It is fitted by backfitting, each level's effect
 shrunk toward zero as if it had LAMBDA more loans at zero. It trains on FICO-priced loans first
@@ -14,8 +15,8 @@ Each VS4 loan's rate is compared with what the model gives a FICO-priced loan li
   own_fico  with the borrower's own Classic FICO, for VS4 loans that disclose both (from BOTH_START)
 
 Groups (the dashboard's score toggle): all (VS4 loans first disclosed from WEEKLY_START), both (VS4
-loans that also carry a Classic FICO) and vs4only (VS4 loans with no Classic FICO), the last two among
-loans disclosed with every score delivered (records from BOTH_START on, which carry the Pricing
+loans that also show a Classic FICO) and vs4only (VS4 loans that show no Classic FICO, which may still have one), the last two among
+loans disclosed with every score the GSE has (records from BOTH_START on, which carry the Pricing
 Indicator). Each is checked against the held-out FICO loans of the same group of records.
 
   pricing   view x cover x basis x key: n, premium_bp (mean actual minus expected rate, basis points),
@@ -33,6 +34,7 @@ Indicator). Each is checked against the held-out FICO loans of the same group of
 """
 import numpy as np
 
+from .closing import closing_month
 from .fee_grid import FEE_WAIVED, load_grid
 
 BOTH_START = "2026-10-19"  # the Pricing Indicator, and both scores, are disclosed from here
@@ -56,14 +58,14 @@ SEGMENT_SIZE = ([150e3, 250e3, 400e3, 600e3], ["Under $150k", "$150k-250k", "$25
 PURPOSE_LABELS = {"P": "Purchase", "C": "Cash-out refinance", "R": "No cash-out refinance"}
 CHANNEL_LABELS = {"R": "Retail", "B": "Broker", "C": "Correspondent"}
 HIST_EDGES = np.arange(-150.0, 150.1, 12.5)  # basis points; the end bins take everything beyond
-FACTORS = ["week", "agency", "seller", "seller_week", "seller_purpose", "grid", "occupancy", "units", "ptype", "size", "dti",
+FACTORS = ["week", "close", "agency", "seller", "seller_week", "seller_close", "seller_purpose", "grid", "occupancy", "units", "ptype", "size", "dti",
            "mi", "state", "fthb", "borrowers"]
 
 
 def _load(con, weekly_start: str, in_range: str):
     # Needs seller_map and seller_key from lenders.py on this connection. Ordered so the fit is repeatable.
     return con.execute(f"""
-        SELECT l.agency, date_trunc('week', l.first_intraday_date)::DATE::VARCHAR AS week,
+        SELECT l.agency, date_trunc('week', l.first_intraday_date)::DATE::VARCHAR AS week, coalesce({closing_month('l.first_pay_date')}::VARCHAR, '?') AS close,
                l.pricing_indicator IS NOT NULL AS both_era, m.id AS seller_id,
                coalesce(l.channel, '?') AS channel,
                CASE WHEN l.purpose = 'P' THEN 'P' WHEN l.purpose = 'C' THEN 'C' ELSE 'R' END AS purpose,
@@ -152,9 +154,11 @@ def build_pricing(con, weekly_start: str, in_range: str) -> list[dict]:
     week = d["week"].astype(str)
     purpose = d["purpose"].astype(str)
     seller_g = [(s if s in big else "other") + "|" + ch for s, ch in zip(seller, d["channel"].astype(str))]
+    close = d["close"].astype(str)
     raw = {
-        "week": week, "agency": d["agency"], "seller": seller_g,
+        "week": week, "close": close, "agency": d["agency"], "seller": seller_g,
         "seller_week": [g + "|" + w for g, w in zip(seller_g, week)],
+        "seller_close": [g + "|" + c for g, c in zip(seller_g, close)],
         "seller_purpose": [g + "|" + p for g, p in zip(seller_g, purpose)],
         "grid": [f"{s}|{l}|{p}" for s, l, p in zip(score_b, ltv_b, purpose)],
         "occupancy": d["occupancy"], "units": d["units"], "ptype": d["ptype"],
