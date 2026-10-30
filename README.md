@@ -1,13 +1,14 @@
 # GSE credit score tracker
 
-Tracks VantageScore 4.0 vs Classic FICO adoption in Fannie Mae and Freddie Mac MBS issuance, from the
-GSEs' loan-level issuance disclosure files. Plan and definitions: [notes/PLAN.md](notes/PLAN.md).
+Tracks VantageScore 4.0 vs FICO in US mortgages: Fannie Mae and Freddie Mac MBS issuance from the GSEs'
+loan-level issuance disclosure files, plus the federal HMDA record, SEC Form ABS-15G filings and Ginnie Mae
+loan files for the rest of the market. Plan and definitions: [notes/PLAN.md](notes/PLAN.md).
 Public site: https://minajpara-cyber.github.io/vantagescore-adoption-tracker/ (served from docs/, refreshed weekly).
-A private claude.ai dashboard (since Oct 29, 2026) carries more views; new views appear there first.
+A private claude.ai dashboard (since Oct 29, 2026) carries the same views; new views appear there first.
 
-New analysis goes to the private dashboard first. The public site keeps its own page
-(site/public/index.html) and dataset list (`PUBLIC_DATASETS` in src/gsescore/site.py) until a view is
-cleared to go public: copy it there and add its datasets (last done Oct 29, 2026).
+New analysis goes to the private dashboard first. The public site keeps its own copy of the page
+(site/public/) and dataset list (`PUBLIC_DATASETS` in src/gsescore/site.py) until a view goes public:
+copy the page there and add its datasets (last done Oct 30, 2026, with every tab and dataset).
 
 ## Layout
 
@@ -18,8 +19,8 @@ data/warehouse/{loan,security}/...         one parquet per ingested file (all co
 data/warehouse/manifest.jsonl              what was ingested, with header and row counts
 data/gse.duckdb                            DuckDB with the views below, for ad-hoc SQL
 site/data/*.json                           aggregates the pages read (git-ignored; docs/data holds the public site's copies)
-site/dashboard/                            the private dashboard page (claude.ai Dashboard type): index.html, page.css, app.js, tools.js, visuals.js. Tabs: Overview, Outlook, Lenders, Why lenders choose, Borrowers, Pricing, Method
-site/public/index.html                     the public site's page, pinned until new views are cleared to go public
+site/dashboard/                            the private dashboard page (claude.ai Dashboard type): index.html, page.css, app.js, tools.js, visuals.js, market.js. Tabs: Overview, Outlook, Lenders, Why lenders choose, Borrowers, Pricing, Whole market, Method
+site/public/                               the public site's copy of that page, pinned until a new view goes public
 site/standalone/                           template + `dash` stand-in that turn a page into a static site
 docs/                                      the public site (GitHub Pages serves main:/docs), aggregates only
 reference/sellers.csv                      hand-kept seller names, short labels, parent companies, tickers and lender types
@@ -70,6 +71,7 @@ python3 -m venv .venv && .venv/bin/pip install -e .
 .venv/bin/python -I -m gsescore.cli ingest data/raw     # idempotent; skips files already ingested
 .venv/bin/python -I -m gsescore.cli hmda 2025           # loads data/hmda/raw/2025/*.zip (the public HMDA files) into a small parquet, then deletes them
 .venv/bin/python -I -m gsescore.cli edgar               # reads new private-label deal reports from EDGAR; needs a contact address in data/edgar/contact.txt, as the SEC asks
+.venv/bin/python -I -m gsescore.cli ginnie <files>       # counts Ginnie Mae loan zips and the issuer file into data/ginnie/ and rebuilds the VA view; downloads need your own sign-in
 .venv/bin/python -I -m gsescore.cli status
 .venv/bin/python -I -m gsescore.cli build               # writes site/data/*.json and data/gse.duckdb
 .venv/bin/python -I -m gsescore.cli preview             # full dashboard page as a static site in build/preview/

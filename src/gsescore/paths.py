@@ -9,5 +9,6 @@ RAW = DATA / "raw"              # downloaded files, untouched: raw/{FNMA,FHLMC}/
 WAREHOUSE = DATA / "warehouse"  # one parquet per ingested file: warehouse/{loan,security}/{agency}/{kind}/
 MANIFEST = WAREHOUSE / "manifest.jsonl"
 HMDA = DATA / "hmda"              # the federal mortgage record, one parquet per year
+GINNIE = DATA / "ginnie"          # counts from Ginnie Mae's monthly loan files, one parquet per issue month
 DB = DATA / "gse.duckdb"
 SITE_DATA = ROOT / "site" / "data"

@@ -1,4 +1,4 @@
-"""Command line: gsescore {have,unpack,refresh,ingest,hmda,edgar,status,build,export,note,site,preview,publish,dashboard-changes,dashboard-record,sql}."""
+"""Command line: gsescore {have,unpack,refresh,ingest,hmda,edgar,ginnie,status,build,export,note,site,preview,publish,dashboard-changes,dashboard-record,sql}."""
 import argparse
 import json
 import re
@@ -120,6 +120,15 @@ def cmd_edgar(args):
     print(json.dumps(collect(since=args.since, until=args.until, limit=args.limit, log=lambda s: print(s, flush=True)), indent=1))
 
 
+def cmd_ginnie(args):
+    from .ginnie import build_datasets, ingest
+    from .warehouse import connect
+    print(json.dumps(ingest(args.files), indent=1))
+    rows = build_datasets(connect())["ginnie_va"]
+    (paths.SITE_DATA / "ginnie_va.json").write_text(json.dumps({"rows": rows}, separators=(",", ":")))
+    print(f"ginnie_va: {len(rows)} rows")
+
+
 def cmd_status(args):
     from .warehouse import connect
     con = connect()
@@ -187,6 +196,9 @@ def main():
     s.add_argument("--until", help="search to this date (default: today)")
     s.add_argument("--limit", type=int, help="read at most this many exhibits and filings")
     s.set_defaults(fn=cmd_edgar)
+    s = sub.add_parser("ginnie", help="count Ginnie Mae loan zips and the issuer file into data/ginnie/ and rebuild the VA view; reads the files where they are")
+    s.add_argument("files", nargs="+", type=Path)
+    s.set_defaults(fn=cmd_ginnie)
     sub.add_parser("status", help="show warehouse coverage").set_defaults(fn=cmd_status)
     sub.add_parser("build", help="build site/data/*.json and data/gse.duckdb").set_defaults(fn=cmd_build)
     sub.add_parser("export", help="build the analyst workbook in exports/ from site/data").set_defaults(fn=cmd_export)

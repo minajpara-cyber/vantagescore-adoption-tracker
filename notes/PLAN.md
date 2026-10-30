@@ -77,7 +77,7 @@ Loan-level data stays local. Only aggregates are published.
    dashboard's files, `publish` to GitHub Pages (https://minajpara-cyber.github.io/vantagescore-adoption-tracker/).
 
 **Phase 2: analytical layers** (agreed Oct 27, 2026; new views go to the private claude.ai dashboard
-first, and to the public site only once cleared; the build plan for items 2-5, with early findings, stays
+first, and to the public site when the user asks; the build plan for items 2-5, with early findings, stays
 local in notes/ANALYTICS_PLAN.md)
 1. Done Oct 27, 2026: lenders and adoption. Seller list matched across GSEs with parents and tickers
    (reference/sellers.csv); seller explorer (VS4 share by month and GSE, volume, weekly, channel and
@@ -115,10 +115,10 @@ local in notes/ANALYTICS_PLAN.md)
    others are starting; three paths by month (no change, today's users go deep, and others also start at
    the recent pace); and a lender table to add up any set of lenders.
 
-Items 2-5 were on the public site briefly on Oct 30, 2026 and came off the same morning; they are on the
-private dashboard only.
+Items 2-5 were on the public site briefly on Oct 30, 2026, came off the same morning and went back later
+that day with everything else.
 
-**Phase 3: built for covering the companies** (agreed Oct 30, 2026; private dashboard only)
+**Phase 3: built for covering the companies** (agreed Oct 30, 2026; public since that day)
 1. Done Oct 30, 2026: the framing. For MBS issued before Oct 1, 2026, FICO's fee tiers applied to VS4 at 20
    points higher; one grid since. Lender rules are now read in score points by week (src/gsescore/scores.py,
    dataset rules), the scenarios are rules on the one grid (saves a fee, score higher, no worse), the outlook is
@@ -157,7 +157,8 @@ private dashboard only.
 8. Beyond Fannie and Freddie, started Oct 30, 2026. As on the GSE tabs, a named model is a fact and the rest is unknown. Both views are on the Whole market tab.
    Done: every kind of loan by year from HMDA, 2018 on (src/gsescore/hmda.py; `gsescore hmda <year>` loads a year's public files into data/hmda/ and deletes them). It is annual, so a baseline and a yearly census, not a monitor. The form's list of models grew in 2022 and 2024, so Classic FICO is the one line that compares across all years.
    Done: private-label deals from SEC Form ABS-15G due diligence reports, January 2025 on, updated weekly (src/gsescore/edgar.py; `gsescore edgar`), since no residential deals file ABS-EE. Its requests declare the contact in data/edgar/contact.txt, which stays out of the repo. It reads three report layouts: tables, tables with headings broken across lines, and fixed-width text blocks.
-   Next: whether Ginnie Mae's loan files can say anything about FHA and VA, which needs the user's compliance view of Ginnie Mae's terms. Source surveys, with early findings, stay in notes/NON_CONFORMING_SOURCES.md and notes/GINNIE_FHA_SOURCES.md (git-ignored).
+   Done: a VA read from Ginnie Mae's loan files, April 2025 on (src/gsescore/ginnie.py; `gsescore ginnie <files>`). The files name no score model, so this is an inference from scores of 830 or more, which Classic FICO almost never reaches. A new month is by hand because downloads need the user's sign-in. Ginnie Mae starts collecting the model from issuers June 30, 2027, with no public release announced.
+   Source surveys, with early findings, stay in notes/NON_CONFORMING_SOURCES.md and notes/GINNIE_FHA_SOURCES.md (git-ignored).
 
 ## 5. Open items
 - Seller is not originator: correspondent aggregators (AmeriHome, PennyMac) deliver loans other lenders

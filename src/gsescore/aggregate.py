@@ -27,6 +27,7 @@ Loan-level data never leaves the local warehouse; only these aggregates are publ
                where each lender stands and what goes with it, and what companies have said, built in why.py
   whole_market which score lenders named across every kind of loan, from the federal HMDA record, built in hmda.py
   private_label which score model private-label deal reports name, from SEC filings, built in edgar.py
+  ginnie_va    which lenders' VA loans show scores Classic FICO almost never reaches, from Ginnie Mae's loan files, built in ginnie.py
 """
 import json
 from datetime import datetime, timezone
@@ -38,6 +39,7 @@ from .closing import build_datasets as build_closing_datasets
 from .exposure import build_datasets as build_exposure_datasets
 from .edgar import build_datasets as build_edgar_datasets
 from .fees import build_datasets as build_fee_datasets
+from .ginnie import build_datasets as build_ginnie_datasets
 from .hmda import build_datasets as build_hmda_datasets
 from .lenders import build_datasets as build_lender_datasets
 from .notes import build_datasets as build_note_datasets
@@ -296,6 +298,7 @@ def build(out_dir: Path = paths.SITE_DATA) -> dict:
     more |= build_exposure_datasets(con, more["score_mix"])
     more |= build_hmda_datasets()
     more |= build_edgar_datasets()
+    more |= build_ginnie_datasets(con)
     for name, rows in more.items():
         (out_dir / f"{name}.json").write_text(json.dumps({"rows": rows}, separators=(",", ":")))
         written[name] = len(rows)

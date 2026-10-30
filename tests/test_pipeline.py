@@ -8,6 +8,7 @@ import io
 import json
 import os
 import random
+import re
 import sys
 import tempfile
 import zipfile
@@ -730,5 +731,77 @@ assert len(p_mention) == 1 and p_mention[0]["key"] == "HOME 2026-HE1" and p_ment
 with zipfile.ZipFile(build_workbook()) as z:
     book_xml = z.read("xl/workbook.xml").decode()
 assert 'name="Private-label deals"' in book_xml and 'name="Private-label VantageScore"' in book_xml
+
+# Ginnie Mae's loan files: both layouts read alike, only new purchases and full refinances count, a lender's step shows by closing month, and FHA is the check
+import duckdb  # noqa: E402
+
+from gsescore import ginnie  # noqa: E402
+
+ginnie.MONTH_MIN = ginnie.START_MIN = 1
+
+
+def fixed_loan(issuer, agency, purpose, refi, score, channel, orig):
+    ln = [" "] * 193
+    for start, text in ((1, "L"), (18, issuer), (22, agency), (23, purpose), (24, refi), (109, score), (134, channel), (143, orig)):
+        ln[start - 1:start - 1 + len(text)] = text
+    return "".join(ln)
+
+
+def pipe_loan(issuer, agency, purpose, refi, score, channel, orig):
+    f = [""] * 55
+    f[0], f[7], f[8], f[9], f[10], f[26], f[36], f[40] = "LL", issuer, agency, purpose, refi, score, channel, orig
+    return "|".join(f)
+
+
+g_in = home / "ginnie_in"
+g_in.mkdir()
+old_file = g_in / "dailyllmni_202605.zip"
+with zipfile.ZipFile(old_file, "w") as z:
+    z.writestr("dailyllmni.txt", "\n".join(["HGNMA_MBS_LL_MON_202605001N20260520260601", "P3617GU3X0BG9814CET202605014262202605",
+                                            fixed_loan("4042", "V", "1", " ", "790", "3", "20260410"), fixed_loan("4042", "F", "1", " ", "690", "3", "20260410"),
+                                            fixed_loan("3725", "V", "2", "2", "790", "1", "20260412"), fixed_loan("9001", "V", "1", " ", "832", "3", "20260415"),
+                                            fixed_loan("9001", "V", "2", "3", "840", "3", "20260415"),  # a streamline
+                                            fixed_loan("9001", "V", "4", " ", "840", "3", "20260415"),  # a modification
+                                            fixed_loan("9001", "R", "1", " ", "840", "3", "20260415"),  # USDA
+                                            fixed_loan("9001", "V", "1", " ", "840", "3", "20200415"),  # re-pooled
+                                            fixed_loan("9001", "V", "1", " ", "   ", "3", "20260415")]))
+new_file = g_in / "dailyllmnipd.zip"
+with zipfile.ZipFile(new_file, "w") as z:
+    z.writestr("dailyllmnipd_202607.txt", "\n".join(["HH|202607|NM|20260801", pipe_loan("4042", "V", "1", "", "835", "3", "20260610"), pipe_loan("4042", "V", "1", "", "848", "3", "20260610"),
+                                                     pipe_loan("4042", "V", "2", "2", "790", "2", "20260610"), pipe_loan("4042", "F", "1", "", "700", "3", "20260610"),
+                                                     pipe_loan("3725", "V", "1", "", "831", "1", "20260612"), pipe_loan("3725", "V", "1", "", "700", "1", "20260612"), pipe_loan("9001", "V", "1", "", "790", "3", "20260612"),
+                                                     "TT|202607|7"]))
+issuers = g_in / "issrinfo_202609.txt"
+issuers.write_text("".join(f"{i}01{n:<100}{'x' * 60}\n" for i, n in (("4042", "ROCKET MORTGAGE, LLC"), ("3725", "UNITED WHOLESALE MORTGAGE, LLC"), ("9001", "OTHER BANK, N.A."))))
+assert ginnie.read_loans(old_file)[0] == "2026-05" and ginnie.read_loans(new_file)[0] == "2026-07"
+g_old = ginnie.read_loans(old_file)[1]
+assert g_old.n.sum() == 5 and g_old.score5.isna().sum() == 1 and set(g_old.agency) == {"V", "F"}, g_old  # the streamline, modification, USDA and re-pooled loans are left out; a blank score stays, unscored
+g_con = duckdb.connect()
+g_con.execute("CREATE TABLE loans AS SELECT * FROM (VALUES ('FNMA', 790, 835), ('FNMA', 790, 800), ('FNMA', 700, 730), ('FHLMC', 790, 846)) t(agency, classic_fico, vs4)")
+assert ginnie.build_datasets(g_con) == {"ginnie_va": []}  # nothing read yet
+ginnie.ingest([issuers, old_file, new_file])
+gv = ginnie.build_datasets(g_con)["ginnie_va"]
+g_meta = next(r for r in gv if r["view"] == "meta")
+assert g_meta["lead"] == "Rocket Mortgage" and g_meta["second"] == "United Wholesale Mortgage" and g_meta["since"] == "2026-06" and g_meta["first"] == "2026-04", g_meta
+assert g_meta["ref_n"] == 4 and g_meta["ref_vs4"] == 0.5 and g_meta["ref_classic"] == 0 and g_meta["fha_k"] == 0 and g_meta["fha_n"] == 2 and g_meta["high_elsewhere"] == 0, g_meta
+g_month = {(r["key"], r["month"]): r for r in gv if r["view"] == "month"}
+assert g_month[("lead_own", "2026-04")]["k"] == 0 and g_month[("lead_retail", "2026-06")]["k"] == 2 and g_month[("lead_retail", "2026-06")]["n"] == 2 and g_month[("lead_own", "2026-06")]["n"] == 2, g_month
+assert g_month[("second", "2026-06")]["share"] == 0.5 and g_month[("others", "2026-04")]["k"] == 1 and g_month[("fha", "2026-06")]["k"] == 0, g_month
+g_lender = {r["name"]: r for r in gv if r["view"] == "lender"}
+assert g_lender["Rocket Mortgage"]["k"] == 2 and g_lender["Rocket Mortgage"]["k_high"] == 1 and set(g_lender) == {"Rocket Mortgage", "United Wholesale Mortgage", "Other Bank"}, g_lender
+assert g_lender["Other Bank"]["k"] == 0 and g_lender["Other Bank"]["too_few"], g_lender  # a full signal under SMALL_FULL can't be read
+g_range = {r["key"]: r for r in gv if r["view"] == "range"}
+assert {"lead_retail", "lead_own", "second", "all"} == set(g_range) and g_range["lead_own"]["low"] < g_range["lead_own"]["high"] == g_range["lead_own"]["signal"], g_range
+(gse_paths.SITE_DATA / "ginnie_va.json").write_text(json.dumps({"rows": gv}))
+with zipfile.ZipFile(build_workbook()) as z:
+    assert 'name="VA loans at 830+"' in z.read("xl/workbook.xml").decode()
+
+# A copy of the dashboard page must read only datasets the public site carries, or its charts stay blank.
+from gsescore.site import PUBLIC_DATASETS  # noqa: E402
+public_page = Path(__file__).resolve().parents[1] / "site" / "public"  # the repo's, not the planted home's
+public_reads = set(re.findall(r'data-source="(\w+)"', (public_page / "index.html").read_text()))
+for js in public_page.glob("*.js"):
+    public_reads |=set(re.findall(r"(?:dash\.data|statusOf|rowsOf)\('(\w+)'\)", js.read_text()))
+assert public_reads and public_reads <= set(PUBLIC_DATASETS), public_reads - set(PUBLIC_DATASETS)
 
 print("ok:", home)

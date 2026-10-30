@@ -106,6 +106,7 @@ def _read_me(b: _Book, through: str):
         ("Weekly note, Statements: what changed each week; what companies and others have said, with links.", None),
         ("Whole market, Whole market lenders, Score models: which score lenders named on every kind of loan in the latest HMDA file, which lenders named what, and who uses each model.", None),
         ("Private-label deals: which model SEC due diligence reports name, by credit report month, quarter filed and kind of deal, with the deals and filers behind them.", None),
+        ("VA loans at 830+: whose VA loans show scores Classic FICO almost never reaches, by closing month and by lender, from Ginnie Mae's monthly loan files, with FHA as the check.", None),
         ("", None),
         ("Read these with care", "bold"),
         ("Two things in these files are facts: a score that shows, and the Pricing Indicator saying which score priced the loan. A score that does not show is unknown, not absent. So priced on VS4 is exact, the share showing a score is a floor on loans that have it, and the share showing only one score is a ceiling on loans that have only that one.", None),
@@ -119,7 +120,8 @@ def _read_me(b: _Book, through: str):
         ("The exposure calculator is arithmetic on your inputs, not a forecast. It covers loans sold to the GSEs only; FHA accepts VS4 from January 1, 2027.", None),
         ("Private-label reports cover only rated deals and reports with a model column; a score column headed FICO can hold a VantageScore, so a blank or a label is not a fact. The loans are months old when a deal files.", None),
         ("HMDA is annual and names the model the lender relied on. A named model is a fact; more than one model, other model, not applicable and exempt are unknown, so the shares naming FICO and VantageScore are floors. The buyer is whoever bought the loan that calendar year.", None),
-        ("Not affiliated with Fannie Mae, Freddie Mac, FICO or VantageScore Solutions.", None),
+        ("VA loans at 830 or above are inference: no Ginnie Mae file names a score model, and another model reaching 850 could look the same. A VS4 score sent to Ginnie Mae does not mean no FICO was bought. The share on VS4 is a range, because the files can't tell VS4 on every loan from VS4 only when it is 20 or more points higher.", None),
+        ("Not affiliated with Fannie Mae, Freddie Mac, Ginnie Mae, the VA, FICO or VantageScore Solutions.", None),
     ]
     for i, (text, style) in enumerate(lines):
         ws.write(2 + i, 0, text, b.fmt("text", bold=True) if style else b.fmt("wrap"))
@@ -544,6 +546,19 @@ def _private_label(b: _Book):
     b.table(ws, top + 1, [("Filed", "filed", "day", 12), ("Deal", "label", "text", 44), ("Filer", "filer", "text", 34), ("Mentions", "count", "int", 9), ("", lambda r: None, "text", 7), ("", lambda r: None, "text", 11), ("Filing", lambda r: ("Open", r["url"]), "link", 8)], [r for r in rows if r["view"] == "mention"])
 
 
+def _ginnie(b: _Book):
+    rows = _rows("ginnie_va")
+    meta = next((r for r in rows if r["view"] == "meta"), None)
+    if not meta:
+        return
+    ws = b.sheet("VA loans at 830+", "Whose VA loans show scores Classic FICO almost never reaches, from Ginnie Mae's loan files", "Inference: no file names a model, and a VS4 score does not mean no FICO was bought. Would reach 830 if all on VS4 uses the odds at each Classic score on Fannie loans showing both scores. By closing date.")
+    top = b.table(ws, 3, [("Closing month", "month", "text", 34), ("Loans", "label", "text", 34), ("VA or FHA loans", "n", "int", 10), ("At 830 or above", "k", "int", 10), ("Share", "share", "pct", 9), ("Would reach 830 if all on VS4", "full", "int", 10), ("Share of that showing", "signal", "pct", 10)], [r for r in rows if r["view"] == "month"]) + 1
+    ws.write(top, 0, f"Loans closed since {meta['since']}, by lender", b.fmt("text", bold=True))
+    top = b.table(ws, top + 1, [("Lender", "name", "text", 34), ("Issuer", "issuer", "text", 34), ("VA loans", "n", "int", 10), ("At 830 or above", "k", "int", 10), ("At 845 or above", "k_high", "int", 9), ("Would reach 830 if all on VS4", "full", "int", 10), ("Share of that showing", "signal", "pct", 10), ("95% upper limit", "upper", "pct", 9)], [r for r in rows if r["view"] == "lender"]) + 1
+    ws.write(top, 0, f"Rough estimate of VA loans on VS4, closed {meta['m1']} and {meta['m2']}", b.fmt("text", bold=True))
+    b.table(ws, top + 1, [("Loans", "label", "text", 34), ("", lambda r: None, "text", 34), ("VA loans", "n", "int", 10), ("At 830 or above", "k", "int", 10), ("Low: VS4 only when 20+ points higher", "low", "pct", 9), ("High: VS4 on every loan", "high", "pct", 10)], [r for r in rows if r["view"] == "range"])
+
+
 def build_workbook() -> Path:
     summary = next((r for r in _rows("summary") if r["agency"] == "All"), {})
     through = str(summary.get("data_through") or date.today().isoformat())[:10]
@@ -567,6 +582,7 @@ def build_workbook() -> Path:
     _by_month(b)
     _whole_market(b)
     _private_label(b)
+    _ginnie(b)
     _notes(b)
     _statements(b)
     b.book.close()

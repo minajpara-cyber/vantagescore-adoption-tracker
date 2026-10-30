@@ -1,5 +1,6 @@
 // The whole market. From HMDA: which score lenders named on every kind of loan, which lenders named what, who uses each model, and applications per loan.
 // From SEC filings: which model private-label deal reports name, and how much of the market they let us see.
+// From Ginnie Mae's loan files: whose VA loans show scores Classic FICO almost never reaches.
 // Runs after the other scripts; what they share is on window.vx.
 (() => {
   const vx = window.vx;
@@ -17,7 +18,7 @@
   const GROUPS = [['classic', 'Classic FICO', CLASSIC], ['fico_new', 'Newer FICO', NEWER], ['vs', 'VantageScore', VS], ['unnamed', 'Model not named', UNNAMED], ['none', 'No score reported', NONE]];
   const FAMILY = { classic: CLASSIC, fico_new: NEWER, vs4: VS, vs_old: VS, multi: UNNAMED, other: UNNAMED };
   const SHARE_CELLS = ['classic', 'fico_new', 'vs4', 'vs_old', 'multi', 'other', 'none'];
-  const OPTIONAL = new Set(['usd_bn', 'vs_old', 'multi', 'other', 'equity_share', 'filer']);
+  const OPTIONAL = new Set(['usd_bn', 'vs_old', 'multi', 'other', 'equity_share', 'filer', 'k_high']);
   const CHART_LENDERS = 15;
 
   const WHOLE_LINES = (r) => [[CLASSIC, 'Classic FICO', pct1(r.classic)], [NEWER, 'Newer FICO', pct1(r.fico_new)], [VS, 'VS4', pct1(r.vs4)], [VS, 'VantageScore 2.0, 3.0', pct1(r.vs_old)],
@@ -249,12 +250,122 @@
     }));
   }
 
+  // VA loans at the top of the score range, by closing month. Lender names come from the data.
+  const monthOf = (m) => new Date(`${m}-01T00:00:00Z`);
+  const monthLab = (m) => d3.utcFormat('%b %Y')(monthOf(m));
+  const monthLong = (m) => d3.utcFormat('%B %Y')(monthOf(m));
+  const LEAD = col(0), LEAD_ALL = `color-mix(in srgb, ${col(0)} 50%, var(--color-panel))`, NEXT = col(3);
+  const VA_LINES = [['lead_retail', LEAD], ['lead_own', LEAD_ALL], ['second', NEXT], ['others', UNNAMED]];
+  const seen =(r) => `${pct2(r.share)}, ${int(r.k)} of ${int(r.n)}`;
+
+  function drawVaChart(box, st, monthly) {
+    const keys = [...new Set(monthly.map((r) => r.month))].sort();
+    if (!box || !prep(box, st) || !keys.length) return;
+    const W = box.clientWidth, H = 280;
+    const svg = vx.svgFor(box, W, H, 'Share of VA loans at 830 or above, by closing month');
+    const of = (key) => monthly.filter((r) => r.key === key).sort((a, b) => d3.ascending(a.month, b.month));
+    // Names sit on the lines when they leave room for the plot; the legend names the lines otherwise.
+    const tag = (r) => `${r.label} ${pct1(r.share)}`;
+    const nameW = vx.textWidth(svg, VA_LINES.flatMap(([key]) => of(key).slice(-1).map(tag)));
+    const roomy = W - nameW >= 340;
+    const m = { top: 16, right: roomy ? Math.ceil(nameW) + 14 : 48, bottom: 32, left: 0 };
+    const top =Math.max(d3.max(monthly.filter((r) => r.key !== 'fha'), (r) => r.share) * 1.1, 0.01);
+    const y = d3.scaleLinear([0, top], [H - m.bottom, m.top]).nice(4);
+    const yf = y.domain()[1] >= 0.05 ? pct0 : d3.format('.1%');
+    const { x, widest } = vx.bandFrame(svg, keys, monthLab, y, yf, 4, W, m);
+    vx.yAxis(svg, y, yf, m.left, W - m.right, 4);
+    vx.bandAxis(svg, x, keys, monthLab, widest, H - m.bottom + 8);
+    const cx = (r) => x(r.month) + x.bandwidth() / 2;
+    const ends = [];
+    VA_LINES.forEach(([key, color]) => {
+      const line = of(key);
+      if (!line.length) return;
+      svg.append('path').attr('d', d3.line().x(cx).y((r) => y(r.share))(line)).attr('fill', 'none').attr('stroke', color).attr('stroke-width', 2).attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round');
+      const last = line[line.length - 1];
+      svg.append('circle').attr('cx', cx(last)).attr('cy', y(last.share)).attr('r', 4).attr('fill', color).attr('stroke', 'var(--color-panel)').attr('stroke-width', 2);
+      ends.push({ x: cx(last), y: y(last.share), text: roomy ? tag(last) : pct1(last.share) });
+    });
+    ends.sort((a, b) => a.y - b.y).forEach((e, i) => { if (i && e.y - ends[i - 1].y < 14) e.y = ends[i - 1].y + 14; });
+    ends.reduceRight((floor, e) => { e.y = Math.min(e.y, floor); return e.y - 14; }, H - m.bottom - 4);
+    ends.forEach((e) => svg.append('text').attr('x', e.x + 8).attr('y', e.y).attr('dy', '0.35em').style('fill', 'var(--color-fg)').text(e.text));
+    const labelOf = (key) => (of(key)[0] || {}).label;
+    vx.bandHover(svg, box, x, keys.map((month) => ({ month })), 'month', m, H, ({ month }) => [
+      `Closed ${monthLong(month)}${month === keys[keys.length - 1] ? ' (still filling in)' : ''}`,
+      [...VA_LINES, ['fha', NONE]].flatMap(([key, color]) => {
+        const r = monthly.find((c) => c.key === key && c.month === month);
+        return r ? [[color, labelOf(key), seen(r)]] : [];
+      })]);
+  }
+
+  function drawVaChannels(rows) {
+    const body = document.querySelector('#va-channels tbody');
+    if (!body) return;
+    const months = [...new Set(rows.map((r) => r.month))].sort();
+    const tr = node('tr');
+    tr.append(node('th', 'vx-l', 'Loans'), ...months.map((m) => node('th', null, monthLab(m))));
+    document.querySelector('#va-channels thead').replaceChildren(tr);
+    const groups = d3.groups(rows, (r) => `${r.name}, ${r.channel} ${r.kind}`).filter(([, list]) => d3.sum(list, (r) => r.n) >= 100);
+    body.replaceChildren(...groups.map(([label, list]) => {
+      const row = node('tr');
+      row.append(node('td', 'vx-l vx-name', label));
+      months.forEach((m) => {
+        const r = list.find((c) => c.month === m);
+        const shown = r && r.signal != null && r.n >= 50;
+        const td = node('td', 'mk-heat', shown ? pct0(r.signal) : '—');
+        if (shown) td.style.background = `color-mix(in srgb, ${LEAD} ${Math.round(Math.min(r.signal, 1) * 65)}%, transparent)`;
+        if (r) td.title = `${int(r.k)} of ${int(r.n)} loans at 830 or above`;
+        row.append(td);
+      });
+      return row;
+    }));
+  }
+
+  function drawVa() {
+    const st = statusOf('ginnie_va');
+    const rows = rowsOf('ginnie_va');
+    const meta = rows.find((r) => r.view === 'meta') || {};
+    const range = (key) => rows.find((r) => r.view === 'range' && r.key === key);
+    const at = (key) => `view=range&key=${key}`;
+    const markRange = (sel, key) => ['low', 'high'].forEach((end) => {
+      const v = (range(key) || {})[end];
+      mark(`${sel}-${end}`, end, at(key), st, v == null ? null : pct0(v));
+    });
+    mark('.va-ref-vs4', 'ref_vs4', 'view=meta', st, meta.ref_vs4 == null ? null : pct1(meta.ref_vs4));
+    mark('.va-ref-classic', 'ref_classic', 'view=meta', st, meta.ref_classic == null ? null : pct2(meta.ref_classic));
+    mark('.va-lead-name', 'lead', 'view=meta', st, meta.lead);
+    mark('.va-second-name', 'second', 'view=meta', st, meta.second);
+    markRange('.va-lead', 'lead_own');
+    markRange('.va-retail', 'lead_retail');
+    markRange('.va-second', 'second');
+    markRange('.va-all', 'all');
+    mark('.va-m1', 'm1', 'view=meta', st, meta.m1 ? monthLong(meta.m1) : null);
+    mark('.va-m2', 'm2', 'view=meta', st, meta.m2 ? monthLong(meta.m2) : null);
+    mark('.va-last', 'last_issue', 'view=meta', st, meta.last_issue ? monthLong(meta.last_issue) : null);
+    mark('.va-both', 'leaders_share', 'view=meta', st, meta.leaders_share == null ? null : pct0(meta.leaders_share));
+    mark('.va-since', 'since', 'view=meta', st, meta.since ? monthLong(meta.since) : null);
+    mark('.va-fha-k', 'fha_k', 'view=meta', st, meta.fha_k == null ? null : int(meta.fha_k));
+    mark('.va-fha-n', 'fha_n', 'view=meta', st, meta.fha_n == null ? null : int(meta.fha_n));
+    const monthly = rows.filter((r) => r.view === 'month');
+    const labelOf = (key) => (monthly.find((r) => r.key === key) || {}).label || '';
+    legend(document.getElementById('va-legend'), VA_LINES.map(([key, color]) => [color, labelOf(key), 'line']));
+    drawVaChart(document.getElementById('va-chart'), st, monthly);
+    const under = (r) => {
+      if (r.too_few) return 'Too few to read';
+      return r.upper != null ? `under ${pct0(Math.ceil(r.upper * 100) / 100)}` : pct0(r.signal);
+    };
+    const lenders = rows.filter((r) => r.view === 'lender').sort((a, b) => d3.descending(a.k, b.k) || a.rank - b.rank);
+    table('va-lender-table', lenders, (r) => key('lender', r.issuer), (r) => [['name', r.name, true], ['n', int(r.n)], ['k', int(r.k)], ['k_high', int(r.k_high)], ['full', int(Math.round(r.full))], ['signal', under(r)]]);
+    drawVaChannels(rows.filter((r) => r.view === 'channel'));
+  }
+
   function drawWholeMarket(p) {
     root.querySelectorAll('.mk-only-hmda').forEach((el) => { el.hidden = p.mview !== 'hmda'; });
     root.querySelectorAll('.mk-only-pl').forEach((el) => { el.hidden = p.mview !== 'pl'; });
+    root.querySelectorAll('.mk-only-va').forEach((el) => { el.hidden = p.mview !== 'va'; });
     drawMarket(p);
     if (p.mview === 'hmda') drawYears(p);
     drawPrivate(p);
+    if (p.mview === 'va') drawVa();
   }
 
   vx.hooks.market.push(drawWholeMarket);

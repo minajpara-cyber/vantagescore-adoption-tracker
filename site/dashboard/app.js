@@ -42,7 +42,7 @@
     if (!['carrying', 'rising'].includes(p.lsort)) p.lsort = 'share';
     if (p.ccohort !== 'latest') p.ccohort = 'all';
     if (!['all', 'first', 'equity', 'vs', 'fico_new'].includes(p.mscope)) p.mscope = 'all';
-    if (p.mview !== 'pl') p.mview = 'hmda';
+    if (!['pl', 'va'].includes(p.mview)) p.mview = 'hmda';
     if (!['all', 'first', 'gse', 'fha', 'va', 'jumbo', 'equity'].includes(p.myseg)) p.myseg = 'all';
     if (!['classic', 'fico_new', 'vs'].includes(p.mmeasure)) p.mmeasure = 'classic';
     if (!['pulled', 'filed', 'kind'].includes(p.pbasis)) p.pbasis = 'pulled';

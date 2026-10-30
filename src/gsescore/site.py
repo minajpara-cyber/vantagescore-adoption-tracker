@@ -4,10 +4,11 @@ The dashboard page (site/dashboard/index.html) is written for the claude.ai Dash
 supplies a `dash` object and theme tokens. site/standalone/ holds a stand-in for both, so a page
 source runs as a plain static site too. Only aggregate datasets are copied.
 
-The public site is pinned to its own page (site/public/index.html) and dataset list: new analysis
+The public site is pinned to its own copy of the page (site/public/) and dataset list: new analysis
 goes to the private claude.ai dashboard first and reaches the public site only once the dashboard
-page is copied there and its datasets added below (last done Oct 29, 2026). `build_preview()` builds
-the full dashboard page as a static site under build/preview/ (git-ignored) for checking it locally.
+page is copied there and its datasets added below (last done Oct 30, 2026, with every tab and
+dataset). `build_preview()` builds the full dashboard page as a static site under build/preview/
+(git-ignored) for checking it locally.
 """
 import hashlib
 import json
@@ -18,13 +19,15 @@ from pathlib import Path
 from . import paths
 
 # What the public page reads; keep it to datasets cleared for the public site.
-PUBLIC_DATASETS = ["monthly", "weekly", "composition", "profile", "summary", "events", "sellers", "seller_monthly",
-                   "seller_weekly", "seller_splits", "adoption", "adopters", "series", "highlights", "asof"]
+PUBLIC_DATASETS = ["monthly", "weekly", "summary", "events", "sellers", "seller_monthly", "seller_weekly",
+                   "seller_splits", "adoption", "adopters", "series", "asof", "borrowers", "borrower_profile",
+                   "pricing", "choice", "ceiling", "outlook", "rules", "score_mix", "lender_stage", "statements", "fees",
+                   "week_note", "assumptions", "lender_mix", "closing", "whole_market", "private_label", "ginnie_va"]
 # What the claude.ai dashboard page reads; data/dashboard_uploads.json records the version of each it has.
 DASHBOARD_DATASETS = ["monthly", "weekly", "summary", "events", "sellers", "seller_monthly", "seller_weekly",
                       "seller_splits", "adoption", "adopters", "series", "asof", "borrowers", "borrower_profile",
                       "pricing", "choice", "ceiling", "outlook", "rules", "score_mix", "lender_stage", "statements", "fees",
-                      "week_note", "assumptions", "lender_mix", "closing", "whole_market", "private_label"]
+                      "week_note", "assumptions", "lender_mix", "closing", "whole_market", "private_label", "ginnie_va"]
 UPLOADS = paths.DATA / "dashboard_uploads.json"
 DOCS = paths.ROOT / "docs"
 PREVIEW = paths.ROOT / "build" / "preview"

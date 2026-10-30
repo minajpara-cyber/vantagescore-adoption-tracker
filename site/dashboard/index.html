@@ -936,12 +936,68 @@
         <div class="vx-row">
           <h2 id="market-h">Beyond Fannie and Freddie: which score do lenders rely on?</h2>
           <div class="vx-seg" data-param="mview" role="group" aria-label="Which view">
-            <button type="button" data-v="hmda">Every kind of loan, by year</button><button type="button" data-v="pl">Private-label deals, weekly</button>
+            <button type="button" data-v="hmda">Every kind of loan, by year</button><button type="button" data-v="pl">Private-label deals, weekly</button><button type="button" data-v="va">VA loans, monthly</button>
           </div>
         </div>
         <p class="mk-only-hmda"><span data-term="hmda">HMDA</span>, the federal record nearly every lender files, names the score model behind each credit decision on every kind of loan. <span class="mk-year" data-source="whole_market" data-field="year" data-where="view=meta">—</span> is the starting line: lenders began delivering VS4 to Fannie and Freddie in 2026. The next file arrives about June <span class="mk-next">—</span>.</p>
         <p class="mk-only-pl" hidden>Deals to be rated file their due diligence findings with the SEC on <span data-term="abs15g">Form ABS-15G</span> before first sale, and some of those reports name the score model on each loan. This is the live read, updated weekly. It covers only rated deals and only reports with a model column, and the loans are months old by the time a deal files.</p>
+        <p class="mk-only-va" hidden>Ginnie Mae's monthly loan files show one score on each FHA and VA loan and don't name its model. But on Fannie and Freddie loans showing both scores, <span class="va-ref-vs4" data-source="ginnie_va">—</span> reach 830 on <span data-term="vs4">VS4</span> and <span class="va-ref-classic" data-source="ginnie_va">—</span> on <span data-term="classic">Classic FICO</span>. So a VA loan at 830 or above is very likely not on Classic FICO. FHA can't take VS4 until January 2027, which makes it the check. This is inference: no file names a model, and a VS4 score doesn't mean no FICO was bought.</p>
       </header>
+      <div class="vx-tiles mk-only-va" hidden>
+        <div class="vx-card">
+          <div class="vx-lbl"><span class="va-lead-name" data-source="ginnie_va">—</span> VA loans likely on VS4</div>
+          <div class="vx-val"><span class="va-lead-low dash-skeleton" data-source="ginnie_va">—</span> to <span class="va-lead-high dash-skeleton" data-source="ginnie_va">—</span></div>
+          <div class="vx-sub">Rough estimate, its retail and broker loans closed <span class="va-m1" data-source="ginnie_va">—</span> and <span class="va-m2" data-source="ginnie_va">—</span>. <span class="va-retail-low" data-source="ginnie_va">—</span> to <span class="va-retail-high" data-source="ginnie_va">—</span> on its retail purchases</div>
+        </div>
+        <div class="vx-card">
+          <div class="vx-lbl"><span class="va-second-name" data-source="ginnie_va">—</span> VA loans likely on VS4</div>
+          <div class="vx-val"><span class="va-second-low dash-skeleton" data-source="ginnie_va">—</span> to <span class="va-second-high dash-skeleton" data-source="ginnie_va">—</span></div>
+          <div class="vx-sub">Rough estimate, all its loans, same months</div>
+        </div>
+        <div class="vx-card">
+          <div class="vx-lbl">All VA loans likely on VS4</div>
+          <div class="vx-val"><span class="va-all-low dash-skeleton" data-source="ginnie_va">—</span> to <span class="va-all-high dash-skeleton" data-source="ginnie_va">—</span></div>
+          <div class="vx-sub"><span class="va-both" data-source="ginnie_va">—</span> of VA loans at 830 or above since <span class="va-since" data-source="ginnie_va">—</span> are these two lenders'</div>
+        </div>
+        <div class="vx-card">
+          <div class="vx-lbl">FHA loans at 830 or above</div>
+          <div class="vx-val"><span class="va-fha-k dash-skeleton" data-source="ginnie_va">—</span> of <span class="va-fha-n dash-skeleton" data-source="ginnie_va">—</span></div>
+          <div class="vx-sub">The check: FHA can't take VS4 yet</div>
+        </div>
+      </div>
+      <section class="vx-card mk-only-va" id="va-month-card" aria-labelledby="va-month-h" hidden>
+        <h2 id="va-month-h">When did VA loans start reaching 830?</h2>
+        <p class="vx-note">Share of VA purchases and full refinances at 830 or above, by closing date, from Ginnie Mae's files through <span class="va-last" data-source="ginnie_va">—</span>. The shares above are a range because the files can't tell VS4 on every loan from VS4 only when it is 20 or more points higher.</p>
+        <div class="vx-legend" id="va-legend"></div>
+        <div class="vx-chart" id="va-chart" data-source="ginnie_va"></div>
+      </section>
+      <section class="vx-card mk-only-va" id="va-lender-card" aria-labelledby="va-lender-h" hidden>
+        <h2 id="va-lender-h">Which lenders show it?</h2>
+        <p class="vx-note">VA loans closed since <span class="va-since" data-source="ginnie_va">—</span>. <span data-term="fullsignal">Would reach 830 if all on VS4</span> uses the odds at each Classic score on Fannie loans showing both scores, and the last column divides the loans at 830 or above by it. Under is a 95% upper limit. A lender with few high-scoring borrowers can't show much either way.</p>
+        <div class="vx-tablebox">
+          <table class="vx-table" id="va-lender-table" data-source="ginnie_va" data-row-key="view,issuer">
+            <thead><tr>
+              <th scope="col" class="vx-l" data-field="name">Lender</th>
+              <th scope="col" data-field="n">VA loans</th>
+              <th scope="col" data-field="k">At 830 or above</th>
+              <th scope="col" class="vx-opt" data-field="k_high">At 845 or above</th>
+              <th scope="col" data-field="full">Would reach 830 if all on VS4</th>
+              <th scope="col" data-field="signal">Share of that showing</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+      <section class="vx-card mk-only-va" id="va-channel-card" aria-labelledby="va-channel-h" hidden>
+        <h2 id="va-channel-h">Which of their loans?</h2>
+        <p class="vx-note">Loans at 830 or above as a share of how many would reach 830 if all were on VS4, by closing month. Hover a cell for the loans behind it. Correspondent loans were usually made by another lender, though lenders code this channel differently. The newest month is still filling in.</p>
+        <div class="vx-tablebox">
+          <table class="vx-table" id="va-channels" data-source="ginnie_va">
+            <thead></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
       <div class="vx-tiles mk-only-hmda">
         <div class="vx-card">
           <div class="vx-lbl">First-lien loans naming a FICO model</div>
@@ -1296,9 +1352,21 @@
         </ul>
       </details>
       <details class="vx-more">
-        <summary>Downloads</summary>
+        <summary>VA loans, from Ginnie Mae's loan files</summary>
         <ul>
-        <li>Sources on this dashboard downloads any dataset's rows as CSV. The Excel workbook, with these tables and the exposure calculator as live formulas, is rebuilt with each refresh in the exports folder of the project on this computer.</li>
+        <li>Ginnie Mae's monthly new-issue files list each FHA and VA loan with one score, the issuer, its channel and its closing date. They don't name the score model. Issuers start reporting the model to Ginnie Mae by June 30, 2027, and nothing says it will be published.</li>
+        <li>The test: on Fannie and Freddie loans showing both scores, Classic FICO almost never reaches 830 and VS4 often does. So a VA loan at 830 or above is very likely not on Classic FICO. FHA can't take VS4 until case numbers assigned from January 1, 2027, which makes it the check.</li>
+        <li>To size a move: how many of a group's loans would reach 830 if every loan showed VS4, from the odds of VS4 at 830 or above at each Classic score on Fannie loans showing both. The share showing divides the loans at 830 or above by that number.</li>
+        <li>The share of loans on VS4 is a range. Nearly every loan reaching 830 on VS4 is 20 or more points above its Classic FICO, so a lender using VS4 only when it is that much higher looks the same as one using it on every loan. The high end is the share showing. The low end scales it by how few loans are 20 or more points higher.</li>
+        <li>Loans are purchases and full refinances (cash-out or rate-and-term) closed within four months of the pool's issue month. Streamlines, modified and re-pooled loans are left out: their scores are optional or old. The newest closing months fill in with fast deliverers first. The chart leaves out a closing month with under 1,000 VA loans; the lender table and the FHA total count it.</li>
+        <li>What this can't tell: another model reaching 850 could look the same. A VS4 score sent to Ginnie Mae doesn't mean no FICO was bought. Only high-scoring borrowers can show it, so a lender with few of them can't be read, and VA borrowers may differ from the Fannie loans behind the odds. The issuer is the company that pooled the loan, not always the one that made it.</li>
+        <li>Source: <a class="vx-link" href="https://bulk.ginniemae.gov/" target="_blank" rel="noopener noreferrer">Ginnie Mae Disclosure Data Download</a>, which needs a sign-in. Only counts by lender and month are kept and shown, not loans. Not affiliated with Ginnie Mae or the VA.</li>
+        </ul>
+      </details>
+      <details class="vx-more">
+        <summary>Data</summary>
+        <ul>
+        <li>Every chart and table reads an aggregate data file. No loan-level record is published.</li>
         </ul>
       </details>
       <details class="vx-more">

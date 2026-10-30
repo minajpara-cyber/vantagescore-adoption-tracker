@@ -140,7 +140,9 @@
   .mk-t span { display: block; min-width: 1px; }
   @media (max-width: 40rem) { .mk-row { grid-template-columns: minmax(0, 1fr); } .mk-v b:first-of-type { margin-left: var(--cds-gap-xs); } .mk-t { grid-column: 1; } }
   #market-sec .vx-seg { flex-wrap: wrap; }
-  .mk-only-hmda[hidden], .mk-only-pl[hidden] { display: none; }
+  .mk-only-hmda[hidden], .mk-only-pl[hidden], .mk-only-va[hidden] { display: none; }
+  #va-channels td.mk-heat { text-align: center; border-left: 2px solid var(--color-panel); border-bottom: 2px solid var(--color-panel); font-variant-numeric: tabular-nums; }
+  #va-channels th:not(.vx-l) { text-align: center; }
   .mk-sub { font-weight: 400; font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
   .mk-gap { margin: var(--cds-gap-lg) 0 var(--cds-gap-sm); }
   #mk-lender-years td.mk-heat { text-align: center; border-left: 2px solid var(--color-panel); border-bottom: 2px solid var(--color-panel); font-variant-numeric: tabular-nums; }
