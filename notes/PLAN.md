@@ -154,10 +154,10 @@ private dashboard only.
    showing is a floor on loans that have it, and showing only one score is a ceiling on loans that have only that one; the page and the workbook say which is which. Each clock has its job: issue month for
    headline share, GSE volume and the fee grid; week first disclosed for news, read with the lender mix frozen; closing month (first payment month less two; src/gsescore/closing.py, dataset closing) for how
    a lender's behavior is changing, read lender by lender or at fixed weights because recent months are still arriving. The rate model now has closing month and lender x channel x closing month as well as the week.
-8. Beyond Fannie and Freddie, started Oct 30, 2026. Done: the starting line from HMDA, the federal record that names the score model lenders relied on (src/gsescore/hmda.py, the Whole market tab; `gsescore hmda <year>` loads a
-   year's public files into data/hmda/ and deletes them). As on the GSE tabs, a named model is a fact and the rest is unknown. The file is annual, so it is a baseline and a yearly census, not a monitor. Next: a weekly collector of Form
-   ABS-15G due-diligence exhibits for private-label deals, since no residential deals file ABS-EE; it needs a contact to declare to EDGAR. Then whether Ginnie Mae's loan files can say anything about FHA and VA, which needs the user's compliance
-   view of Ginnie Mae's terms. The source survey, with early findings, stays in notes/NON_CONFORMING_SOURCES.md (git-ignored).
+8. Beyond Fannie and Freddie, started Oct 30, 2026. As on the GSE tabs, a named model is a fact and the rest is unknown. Both views are on the Whole market tab.
+   Done: every kind of loan by year from HMDA, 2018 on (src/gsescore/hmda.py; `gsescore hmda <year>` loads a year's public files into data/hmda/ and deletes them). It is annual, so a baseline and a yearly census, not a monitor. The form's list of models grew in 2022 and 2024, so Classic FICO is the one line that compares across all years.
+   Done: private-label deals from SEC Form ABS-15G due diligence reports, January 2025 on, updated weekly (src/gsescore/edgar.py; `gsescore edgar`), since no residential deals file ABS-EE. Its requests declare the contact in data/edgar/contact.txt, which stays out of the repo. It reads three report layouts: tables, tables with headings broken across lines, and fixed-width text blocks.
+   Next: whether Ginnie Mae's loan files can say anything about FHA and VA, which needs the user's compliance view of Ginnie Mae's terms. Source surveys, with early findings, stay in notes/NON_CONFORMING_SOURCES.md and notes/GINNIE_FHA_SOURCES.md (git-ignored).
 
 ## 5. Open items
 - Seller is not originator: correspondent aggregators (AmeriHome, PennyMac) deliver loans other lenders

@@ -391,6 +391,7 @@
     ['lender', 'Lender', 'The company that delivered the loan to the GSE. It is not always the one that made the loan.'],
     ['bp', 'bp', 'Basis point, a hundredth of a percentage point. A pt is a full percentage point.'],
     ['hmda', 'HMDA', 'The Home Mortgage Disclosure Act record: a yearly federal filing by nearly every mortgage lender, covering each application whatever became of it. It names the score model the lender relied on for the credit decision.'],
+    ['abs15g', 'Form ABS-15G', 'Where a mortgage deal to be rated, registered or not, files its due diligence findings with the SEC, at least five business days before first sale. Some of these reports list each loan and the score model on it.'],
     ['classic', 'Classic FICO', 'The older FICO versions the GSEs have long required: Equifax Beacon 5.0, Experian Fair Isaac v2 and TransUnion FICO Classic 04 or 98.'],
     ['ficonew', 'Newer FICO', 'FICO 8, FICO 9, FICO 10 and FICO 10T. Still FICO, but not the versions the GSEs have long required.'],
     ['unnamed', 'Model not named', 'The lender said it relied on more than one model, or on another model, without saying which. It could be FICO or VantageScore, so it counts as neither.'],

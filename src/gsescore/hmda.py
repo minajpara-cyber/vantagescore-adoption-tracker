@@ -13,6 +13,9 @@ further, and "not applicable" or "exempt" says nothing at all, so none of those 
                 each lender with at least LENDER_MIN loans in the scope.
                 view model: each named model's loans, the share of them in home equity and its MODEL_TOP biggest users.
                 view apps: applications per loan made, by kind of loan, where the unfunded ones can be sorted.
+                view trend: the segment rows for every year loaded. view lender_year: the same lenders as view lender, each year they made at least LENDER_YEAR_MIN loans in the scope, going by legal entity.
+                view model_year: each named model's loans and share of that year's loans, which shows when the filing form began to list it.
+                Every view but the last three is the latest year.
 """
 import csv
 import io
@@ -28,6 +31,7 @@ from . import paths
 YEAR_FILES = {2025: "2026-06-02"}  # the date of each year's public file
 LENDER_TOP = 25
 LENDER_MIN = 500
+LENDER_YEAR_MIN = 20
 MODEL_TOP = 3
 CLASSIC, FICO_NEW, VS_OLD = (1, 2, 3, 4), (11, 12, 13, 14), (5, 6)
 VS4, MULTI, OTHER, NA, NO_CO, EXEMPT = 15, 7, 8, 9, 10, 1111
@@ -59,39 +63,52 @@ KEEP_INT = ["action_taken", "purchaser_type", "loan_type", "loan_purpose", "lien
             "occupancy_type", "applicant_credit_score_type", "co_applicant_credit_score_type", "submission_of_application", "initially_payable_to_institution", "aus_1"]
 KEEP_TEXT = ["lei", "conforming_loan_limit", "derived_dwelling_category"]
 PURCHASED = 6
+COUNT_GAP = 0.0001  # the 2018 file is a few hundred records short of its lenders' filings, out of 15 million
 
 
-def _member(z: zipfile.ZipFile, year: int, what: str) -> str:
-    name = f"{year}_public_{what}_csv.csv"
-    if name not in z.namelist():
-        raise ValueError(f"{name} is not in the zip: {z.namelist()}")
-    return name
+def _member(z: zipfile.ZipFile) -> str:
+    """The zip's one table; some years' zips also carry a Mac folder."""
+    names = [n for n in z.namelist() if n.lower().endswith((".csv", ".txt")) and "__MACOSX" not in n]
+    if len(names) != 1:
+        raise ValueError(f"expected one table in the zip: {z.namelist()}")
+    return names[0]
 
 
-def lender_names(ts_zip: Path, year: int) -> dict[str, tuple[str, int]]:
+def _column(name: str) -> str:
+    """Early years' files spell the same fields with hyphens (co-applicant_credit_score_type)."""
+    return name.strip().lower().replace("-", "_")
+
+
+def lender_names(ts_zip: Path) -> dict[str, tuple[str, int]]:
     """lei -> (name, how many records it filed), from the Transmittal Sheet file."""
-    with zipfile.ZipFile(ts_zip) as z, z.open(_member(z, year, "ts")) as f:
-        return {r["lei"]: (r["respondent_name"].strip(), int(r["lar_count"])) for r in csv.DictReader(io.TextIOWrapper(f, encoding="utf-8", newline=""))}
+    with zipfile.ZipFile(ts_zip) as z, z.open(_member(z)) as f:
+        rows = csv.DictReader(io.TextIOWrapper(f, encoding="utf-8-sig", newline=""))
+        rows.fieldnames = [_column(n) for n in rows.fieldnames]
+        return {r["lei"]: (r["respondent_name"].strip(), int(r["lar_count"])) for r in rows}
 
 
 def ingest(year: int, raw_dir: Path | None = None) -> dict:
-    """The year's zips -> data/hmda/{year}.parquet and lenders_{year}.parquet; deletes the raw files once the record count ties to the lenders' own filings."""
+    """The year's zips -> data/hmda/{year}.parquet and lenders_{year}.parquet; deletes the raw files once the record count ties to the lenders' own filings, within COUNT_GAP."""
     raw_dir = raw_dir or paths.HMDA / "raw" / str(year)
     lar_zip, ts_zip = raw_dir / f"{year}_public_lar_csv.zip", raw_dir / f"{year}_public_ts_csv.zip"
-    names = lender_names(ts_zip, year)
+    names = lender_names(ts_zip)
     filed = sum(n for _, n in names.values())
     csv_path = raw_dir / f"{year}_public_lar.csv"
     out, lenders = paths.HMDA / f"{year}.parquet", paths.HMDA / f"lenders_{year}.parquet"
     try:
-        with zipfile.ZipFile(lar_zip) as z, z.open(_member(z, year, "lar")) as src, open(csv_path, "wb") as dst:
+        with zipfile.ZipFile(lar_zip) as z, z.open(_member(z)) as src, open(csv_path, "wb") as dst:
             shutil.copyfileobj(src, dst, 1 << 22)
+        with open(csv_path, encoding="utf-8-sig", newline="") as f:
+            spelled = {_column(c): c for c in next(csv.reader(f))}
         con = duckdb.connect()
         src = f"read_csv('{csv_path}', header=true, all_varchar=true)"
         rows = con.execute(f"SELECT count(*) FROM {src}").fetchone()[0]
-        if rows != filed:
+        if abs(rows - filed) > filed * COUNT_GAP:
             raise ValueError(f"{rows:,} records in the file against {filed:,} on the lenders' filings")
-        cols = ", ".join([*KEEP_TEXT, *(f"try_cast({c} AS INTEGER) AS {c}" for c in KEEP_INT)])
-        con.execute(f"COPY (SELECT {cols} FROM {src} WHERE action_taken <> '{PURCHASED}') TO '{out}' (FORMAT parquet, COMPRESSION zstd)")
+        cols = ", ".join([*(f'"{spelled[c]}" AS {c}' for c in KEEP_TEXT), *(f'try_cast("{spelled[c]}" AS INTEGER) AS {c}' for c in KEEP_INT)])
+        part = out.with_suffix(".part")  # a finished year only: a stopped load leaves nothing that reads as one
+        con.execute(f"""COPY (SELECT {cols} FROM {src} WHERE "{spelled['action_taken']}" <> '{PURCHASED}') TO '{part}' (FORMAT parquet, COMPRESSION zstd)""")
+        part.replace(out)
         con.execute("CREATE TABLE l (lei VARCHAR, name VARCHAR, records BIGINT)")
         con.executemany("INSERT INTO l VALUES (?, ?, ?)", [(k, v[0], v[1]) for k, v in names.items()])
         con.execute(f"COPY l TO '{lenders}' (FORMAT parquet, COMPRESSION zstd)")
@@ -104,7 +121,7 @@ def ingest(year: int, raw_dir: Path | None = None) -> dict:
     for folder in (raw_dir, raw_dir.parent):
         if folder.is_dir() and not any(folder.iterdir()):
             folder.rmdir()
-    return {"year": year, "records": rows, "kept": kept, "lenders": len(names), "parquet_mb": round(out.stat().st_size / 1e6, 1)}
+    return {"year": year, "records": rows, "filed": filed, "kept": kept, "lenders": len(names), "parquet_mb": round(out.stat().st_size / 1e6, 1)}
 
 
 _AS_IS = {w.upper(): w for w in ("US", "USA", "NFM", "CMG", "PNC", "UMB", "TD", "BMO", "M&T", "ESL", "UW", "DHI", "NBKC", "USAA", "HSBC", "BOKF", "iQ", "OCMBC", "CrossCountry", "PennyMac", "AmeriSave", "CommunityAmerica", "HomeBridge", "loanDepot.com")}
@@ -136,6 +153,8 @@ def build_datasets() -> dict[str, list[dict]]:
         return {"whole_market": []}
     year = years[-1]
     con = duckdb.connect()
+    files = [str(paths.HMDA / f"{y}.parquet") for y in years]
+    con.execute(f"""CREATE VIEW every_year AS SELECT regexp_extract(filename, '(\\d{{4}})\\.parquet$', 1)::INTEGER AS year, * EXCLUDE (filename) FROM read_parquet({files}, filename=true)""")
     con.execute(f"CREATE VIEW h AS SELECT * FROM '{paths.HMDA / f'{year}.parquet'}'")
     con.execute(f"CREATE VIEW n AS SELECT * FROM '{paths.HMDA / f'lenders_{year}.parquet'}'")
     con.execute(f"""CREATE TEMP TABLE o AS SELECT lei, coalesce(loan_amount, 0) AS amt, {MODEL_SQL} AS m, {SEGMENT_SQL} AS seg, applicant_credit_score_type AS a, co_applicant_credit_score_type AS c
@@ -151,7 +170,7 @@ def build_datasets() -> dict[str, list[dict]]:
 
     out = []
     records = sum(r[0] for r in con.execute("SELECT records FROM n").fetchall())
-    out.append({"view": "meta", "year": year, "file_date": YEAR_FILES.get(year), "records": records, "n": con.execute("SELECT count(*) FROM o").fetchone()[0],
+    out.append({"view": "meta", "year": year, "first_year": years[0], "file_date": YEAR_FILES.get(year), "records": records, "n": con.execute("SELECT count(*) FROM o").fetchone()[0],
                 "lenders": con.execute("SELECT count(DISTINCT lei) FROM o").fetchone()[0]})
     by_seg = {r[0]: r for r in con.execute(f"SELECT seg, count(*), sum(amt), {count} FROM o WHERE seg IS NOT NULL GROUP BY 1").fetchall()}
     first_keys = [k for k, _ in SEGMENTS if k != "equity"]
@@ -162,13 +181,32 @@ def build_datasets() -> dict[str, list[dict]]:
         out.append({"view": "segment", "key": key, "label": label, "order": order, "first_lien": key in first_keys, "n": r[1], "usd_bn": round(r[2] / 1e9, 1), **row(list(r), 1)})
     scopes = {"all": ("seg IS NOT NULL", "n"), "first": ("seg IS NOT NULL AND seg <> 'equity'", "n"), "equity": ("seg = 'equity'", "n"),
               "vs": ("seg IS NOT NULL", "vs4_n + vs_old_n"), "fico_new": ("seg IS NOT NULL", "fico_new_n")}
+    con.execute(f"""CREATE TEMP TABLE y AS SELECT year, lei, coalesce(loan_amount, 0) AS amt, {MODEL_SQL} AS m, {SEGMENT_SQL} AS seg, applicant_credit_score_type AS a, co_applicant_credit_score_type AS c
+                    FROM every_year WHERE action_taken = 1""")
     for scope, (where, rank) in scopes.items():
         rows = con.execute(f"""
             WITH t AS (SELECT lei, count(*) AS n, sum(amt) AS amt, {count}, count(*) FILTER (WHERE seg = 'equity') AS equity_n FROM o WHERE {where} GROUP BY 1)
-            SELECT coalesce(l.name, t.lei), t.n, t.amt, {", ".join(f"t.{k}_n" for k in SHARES)}, t.equity_n
+            SELECT coalesce(l.name, t.lei), t.n, t.amt, {", ".join(f"t.{k}_n" for k in SHARES)}, t.equity_n, t.lei
             FROM t LEFT JOIN n l USING (lei) WHERE t.n >= {LENDER_MIN} ORDER BY {rank} DESC, t.n DESC, t.lei LIMIT {LENDER_TOP}""").fetchall()
         for i, r in enumerate(rows):
-            out.append({"view": "lender", "scope": scope, "rank": i + 1, "name": short_name(r[0]), "n": r[1], "usd_bn": round(r[2] / 1e9, 2), **row(list(r), 1), "equity_share": _r(r[-1] / r[1])})
+            out.append({"view": "lender", "scope": scope, "rank": i + 1, "name": short_name(r[0]), "n": r[1], "usd_bn": round(r[2] / 1e9, 2), **row(list(r), 1), "equity_share": _r(r[-2] / r[1])})
+        ranks = {r[-1]: (i + 1, short_name(r[0])) for i, r in enumerate(rows)}
+        leis = ", ".join(f"'{k}'" for k in ranks) or "''"
+        for r in con.execute(f"SELECT year, lei, count(*), sum(amt), {count} FROM y WHERE {where} AND lei IN ({leis}) GROUP BY 1, 2 HAVING count(*) >= {LENDER_YEAR_MIN} ORDER BY 1, 2").fetchall():
+            out.append({"view": "lender_year", "scope": scope, "rank": ranks[r[1]][0], "name": ranks[r[1]][1], "year": r[0], "n": r[2], **row(list(r[1:]), 1)})
+    by_year = {}
+    for r in con.execute(f"SELECT year, seg, count(*), sum(amt), {count} FROM y WHERE seg IS NOT NULL GROUP BY 1, 2").fetchall():
+        by_year.setdefault(r[0], {})[r[1]] = list(r[1:])
+    labels = {"all": "All home loans", "first": "All first-lien home loans", **dict(SEGMENTS)}
+    for y, parts in sorted(by_year.items()):
+        add = lambda keys: [None] + [sum(parts[k][i] for k in keys if k in parts) for i in range(1, len(next(iter(parts.values()))))]  # noqa: E731
+        firsts = [k for k in parts if k != "equity"]
+        for order, (key, values) in enumerate([("all", add(list(parts))), ("first", add(firsts))] + [(k, parts[k]) for k, _ in SEGMENTS if k in parts]):
+            out.append({"view": "trend", "key": key, "label": labels[key], "order": order, "year": y, "n": values[1], "usd_bn": round(values[2] / 1e9, 1), **row(values, 1)})
+    totals = {y: sum(v[1] for v in parts.values()) for y, parts in by_year.items()}
+    for code, name in MODEL_NAMES.items():
+        for y, n in con.execute(f"SELECT year, count(*) FROM y WHERE seg IS NOT NULL AND (a = {code} OR c = {code}) GROUP BY 1 ORDER BY 1").fetchall():
+            out.append({"view": "model_year", "code": code, "name": name, "family": MODEL_FAMILY[code], "year": y, "n": n, "share": _r(n / totals[y])})
     for code, name in MODEL_NAMES.items():
         hit = f"(a = {code} OR c = {code})"
         n, eq = con.execute(f"SELECT count(*), count(*) FILTER (WHERE seg = 'equity') FROM o WHERE seg IS NOT NULL AND {hit}").fetchone()

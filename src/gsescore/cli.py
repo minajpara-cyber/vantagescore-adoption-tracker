@@ -1,4 +1,4 @@
-"""Command line: gsescore {have,unpack,refresh,ingest,hmda,status,build,export,note,site,preview,publish,dashboard-changes,dashboard-record,sql}."""
+"""Command line: gsescore {have,unpack,refresh,ingest,hmda,edgar,status,build,export,note,site,preview,publish,dashboard-changes,dashboard-record,sql}."""
 import argparse
 import json
 import re
@@ -115,6 +115,11 @@ def cmd_hmda(args):
     print(json.dumps(ingest(args.year), indent=1))
 
 
+def cmd_edgar(args):
+    from .edgar import collect
+    print(json.dumps(collect(since=args.since, until=args.until, limit=args.limit, log=lambda s: print(s, flush=True)), indent=1))
+
+
 def cmd_status(args):
     from .warehouse import connect
     con = connect()
@@ -177,6 +182,11 @@ def main():
     s = sub.add_parser("hmda", help="load a year's HMDA zips from data/hmda/raw/<year>/ into a small parquet, then delete them")
     s.add_argument("year", type=int)
     s.set_defaults(fn=cmd_hmda)
+    s = sub.add_parser("edgar", help="search EDGAR for private-label deal reports and read the new ones")
+    s.add_argument("--since", help="search from this date, YYYY-MM-DD (default: a little before the last filing found)")
+    s.add_argument("--until", help="search to this date (default: today)")
+    s.add_argument("--limit", type=int, help="read at most this many exhibits and filings")
+    s.set_defaults(fn=cmd_edgar)
     sub.add_parser("status", help="show warehouse coverage").set_defaults(fn=cmd_status)
     sub.add_parser("build", help="build site/data/*.json and data/gse.duckdb").set_defaults(fn=cmd_build)
     sub.add_parser("export", help="build the analyst workbook in exports/ from site/data").set_defaults(fn=cmd_export)

@@ -139,7 +139,15 @@
   .mk-t { grid-column: 1 / -1; display: flex; gap: 2px; height: 16px; border-radius: 0 4px 4px 0; overflow: hidden; }
   .mk-t span { display: block; min-width: 1px; }
   @media (max-width: 40rem) { .mk-row { grid-template-columns: minmax(0, 1fr); } .mk-v b:first-of-type { margin-left: var(--cds-gap-xs); } .mk-t { grid-column: 1; } }
-  #mk-lender-card .vx-seg { flex-wrap: wrap; }
+  #market-sec .vx-seg { flex-wrap: wrap; }
+  .mk-only-hmda[hidden], .mk-only-pl[hidden] { display: none; }
+  .mk-sub { font-weight: 400; font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+  .mk-gap { margin: var(--cds-gap-lg) 0 var(--cds-gap-sm); }
+  #mk-lender-years td.mk-heat { text-align: center; border-left: 2px solid var(--color-panel); border-bottom: 2px solid var(--color-panel); font-variant-numeric: tabular-nums; }
+  #mk-lender-years th:not(.vx-l) { text-align: center; }
+  #mk-lender-years th:first-child, #mk-lender-years td:first-child { position: sticky; left: 0; z-index: 1; background: var(--color-panel); min-width: 6.5rem; white-space: normal; }
+  #pl-deal-table td:nth-child(2), #pl-mention-table td:nth-child(2) { white-space: normal; min-width: 12rem; }
+  #pl-filer-table td:first-child { white-space: normal; min-width: 12rem; }
   .mk-sum .mk-l { font-weight: var(--cds-font-weight-medium); }
   .mk-rule { padding-bottom: var(--cds-gap-md); border-bottom: 1px solid var(--color-border-line); }
   #mk-model-table td:last-child, #mk-model-table th:last-child { white-space: normal; min-width: 16rem; padding-left: var(--cds-gap-lg); }

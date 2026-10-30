@@ -26,6 +26,7 @@ Loan-level data never leaves the local warehouse; only these aggregates are publ
   lender_stage, statements
                where each lender stands and what goes with it, and what companies have said, built in why.py
   whole_market which score lenders named across every kind of loan, from the federal HMDA record, built in hmda.py
+  private_label which score model private-label deal reports name, from SEC filings, built in edgar.py
 """
 import json
 from datetime import datetime, timezone
@@ -35,6 +36,7 @@ from . import paths
 from .borrowers import build_datasets as build_borrower_datasets
 from .closing import build_datasets as build_closing_datasets
 from .exposure import build_datasets as build_exposure_datasets
+from .edgar import build_datasets as build_edgar_datasets
 from .fees import build_datasets as build_fee_datasets
 from .hmda import build_datasets as build_hmda_datasets
 from .lenders import build_datasets as build_lender_datasets
@@ -293,6 +295,7 @@ def build(out_dir: Path = paths.SITE_DATA) -> dict:
     more |= build_note_datasets(con, more["statements"], more["pricing"], more["score_mix"])
     more |= build_exposure_datasets(con, more["score_mix"])
     more |= build_hmda_datasets()
+    more |= build_edgar_datasets()
     for name, rows in more.items():
         (out_dir / f"{name}.json").write_text(json.dumps({"rows": rows}, separators=(",", ":")))
         written[name] = len(rows)

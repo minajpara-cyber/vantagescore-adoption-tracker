@@ -583,7 +583,23 @@ assert hmda.build_datasets() == {"whole_market": []} and not (h_raw / "2025_publ
 write_h_zips()
 h_in = hmda.ingest(2025)
 assert h_in["records"] == len(planted) and h_in["kept"] == len(planted) - 1 and not (home / "data" / "hmda" / "raw").exists(), h_in
+# An earlier year, spelled the way those files spell their columns, adds to the year-by-year views and leaves the latest year's as they are.
+h_raw_2024 = home / "data" / "hmda" / "raw" / "2024"
+h_raw_2024.mkdir(parents=True)
+hmda.LENDER_YEAR_MIN = 1
+old_head = [{"co_applicant_credit_score_type": "co-applicant_credit_score_type", "open_end_line_of_credit": "open-end_line_of_credit", "aus_1": "aus-1"}.get(h, h) for h in H_HEAD]
+with zipfile.ZipFile(h_raw_2024 / "2024_public_lar_csv.zip", "w") as z:
+    z.writestr("2024_public_lar_csv.csv", "\n".join([",".join(old_head), lar("A", a=3)[1], lar("B", a=8, lien=2)[1]]) + "\n")
+with zipfile.ZipFile(h_raw_2024 / "2024_public_ts_csv.zip", "w") as z:
+    z.writestr("2024_public_ts_csv.csv", "lei,respondent_name,lar_count\nA,BIG MORTGAGE,1\nB,Second Bank,1\n")
+assert hmda.ingest(2024)["kept"] == 2
 wm = hmda.build_datasets()["whole_market"]
+wm_trend = {(r["year"], r["key"]): r for r in wm if r["view"] == "trend"}
+assert wm_trend[(2024, "all")]["n"] == 2 and wm_trend[(2024, "first")]["n"] == 1 and wm_trend[(2024, "first")]["classic"] == 1 and wm_trend[(2024, "equity")]["other"] == 1 and wm_trend[(2025, "all")]["n"] == 24, wm_trend[(2024, "all")]
+assert wm_trend[(2025, "first")]["n"] == 19 and wm_trend[(2025, "equity")]["vs4"] == 0.6 and wm_trend[(2025, "all")]["order"] == 0 and wm_trend[(2024, "equity")]["fico"] == 0 and wm_trend[(2024, "equity")]["unnamed"] == 1
+big_years = {r["year"]: r for r in wm if r["view"] == "lender_year" and r["scope"] == "all" and r["name"] == "Big Mortgage"}
+assert big_years[2024]["n"] == 1 and big_years[2024]["classic"] == 1 and big_years[2025]["n"] == 12, big_years
+assert {r["year"]: r["n"] for r in wm if r["view"] == "model_year" and r["code"] == 3} == {2024: 1, 2025: 3} and next(r for r in wm if r["view"] == "meta")["first_year"] == 2024
 seg = {r["key"]: r for r in wm if r["view"] == "segment"}
 assert seg["gse"]["n"] == 11 and seg["gse"]["classic"] == 1
 assert seg["fha"]["n"] == 2 and seg["fha"]["classic"] == 0.5 and seg["fha"]["none"] == 0.5 and seg["fha"]["unknown"] == 0.5
@@ -607,6 +623,112 @@ assert hmda.short_name("CROSSCOUNTRY MORTGAGE, LLC") == "CrossCountry Mortgage" 
 (gse_paths.SITE_DATA / "whole_market.json").write_text(json.dumps({"rows": wm}))
 with zipfile.ZipFile(build_workbook()) as z:
     book_xml = z.read("xl/workbook.xml").decode()
-assert all(f'name="{n}"' in book_xml for n in ("Whole market", "Whole market lenders", "Score models")), book_xml[:400]
+assert all(f'name="{n}"' in book_xml for n in ("Whole market", "Whole market by year", "Lenders by year", "Whole market lenders", "Score models")), book_xml[:400]
+
+# Private-label reports on planted tables: a model counts wherever it sits, a spanning cell keeps columns in line, a table without a heading continues the last one, one loan in two reports counts once, and a label that only says FICO proves nothing.
+from gsescore import edgar  # noqa: E402
+
+assert edgar.model_family("VantageScore 4.0") == "vs4" and edgar.model_family("VantageScore 3.0") == "vs_old" and edgar.model_family("FICO Risk Score Classic 04") == "classic" and edgar.model_family("Beacon 5.0") == "classic"
+assert edgar.model_family("FICO Classic (09)") == "fico_new" and edgar.model_family("Fair Issac 4") == "classic" and edgar.model_family("FICO v2") == "classic" and edgar.model_family("Next Generation") == "fico_new"
+assert edgar.model_family("Classic 08") == "fico_new" and edgar.model_family("FICO Score 10T") == "fico_new" and edgar.model_family("3") == "code" and edgar.model_family("Other") == "other" and edgar.model_family("C3") == "junk" and edgar.model_family("75.000%") == "junk" and edgar.model_family("Classic") == "classic"
+assert edgar.loan_family(["Beacon 5.0", "VantageScore 4.0"]) == "vs4" and edgar.loan_family(["3"]) == "unclear" and edgar.loan_family(["FICO 9", "Beacon 5.0"]) == "fico_new" and edgar.loan_family(["C3", "75.000%"]) == "blank" and edgar.loan_family([]) == "blank"
+assert edgar.report_month("6/15/2026") == "2026-06" and edgar.report_month("20260615") == "2026-06" and edgar.report_month("XX/XX/2026") is None and edgar.report_month("[redacted]") is None
+assert edgar.deal_name("CROSS 2026-NQM13 Mortgage Trust (Exact name of Issuer as specified)", "cross.htm") == "CROSS 2026-NQM13" and edgar.deal_name("nothing", "abs15g_semt2026cd7.htm") == "SEMT 2026-CD7" and edgar.deal_name("nothing", "abs15g.htm") is None
+assert edgar.deal_kind("CROSS 2026-NQM13") == "nonqm" and edgar.deal_kind("TPMT 2026-CES4") == "second" and edgar.deal_kind("Sequoia Mortgage Trust 2026-CD8") == "prime" and edgar.deal_kind("GS Mortgage-Backed Securities Trust 2026-DSC1") == "investor" and edgar.deal_kind("EFMT 2026-RM3") == "other" and edgar.deal_kind(None) == "other"
+assert [len(t) for t in edgar.read_tables("<table><tr><td>Title</td></tr><table><tr><td>a</td><td>b</td></tr><tr><td>c</td><td>d</td></tr></table>")] == [2, 1]  # a table left open
+assert edgar.parse_exhibit("<table><tr><th>EDGAR ID</th><th>FICO Model Used</th><th>Rate</th></tr><tr><td>PRET 2026-RPL3-100661</td><td>1</td><td>7.1</td></tr></table>")[0][0]["id"] == "PRET 2026-RPL3-100661"
+assert edgar.mentions_vantage("<td>Most Recent Vantagescore Method</td><td>Vantagescore Primary Borrower</td><td>Vantage Score: Co-borrower</td><td>Vantage Score Date</td>") == 0 and edgar.mentions_vantage("<p>credit report data from Experian and/or Vantage used at origination</p>") == 1
+assert edgar.mentions_vantage("<p>Vantage Data Centers leased the site</p>") == 0 and edgar.mentions_vantage("<p>the alternate VantageScore model</p>") == 1
+report = """<table><tr><th>Customer Loan ID</th><th>Original Credit Report Date</th><th>Qualifying Credit Score</th><th>Borrower Experian FICO Model Used</th><th>Borrower Equifax FICO Model Used</th></tr>
+<tr><td>1000001</td><td>6/15/2026</td><td>740</td><td>Fair Isaac (VER. 2)</td><td>Beacon 5.0</td></tr>
+<tr><td>1000002</td><td>[redacted]</td><td>700</td><td colspan="2">VantageScore 4.0</td></tr>
+<tr><td>1000003</td><td>7/2/2026</td><td>[redacted]</td><td>[redacted]</td><td></td></tr></table>
+<p>page 2</p><table><tr><td>1000004</td><td>7/9/2026</td><td>680</td><td>FICO II</td><td>3</td></tr></table>
+<table><tr><td>Not a loan table</td></tr></table>"""
+rows, note = edgar.parse_exhibit(report)
+assert note["model_tables"] == 2 and note["rows"] == 4, note
+by_id = {r["id"]: r for r in rows}
+assert by_id["1000001"]["models"] == ["Beacon 5.0", "Fair Isaac (VER. 2)"] and by_id["1000001"]["pull"] == "2026-06" and by_id["1000001"]["score"] == 740
+assert by_id["1000002"]["models"] == ["VantageScore 4.0"] and by_id["1000002"]["pull"] is None
+assert by_id["1000003"]["models"] == [] and by_id["1000003"]["score"] is None and by_id["1000004"]["models"] == ["3", "FICO II"]
+no_model, note2 = edgar.parse_exhibit("<table><tr><th>Loan ID</th><th>Final Qualifying FICO</th><th>Rate</th></tr><tr><td>123456</td><td>753</td><td>9.1</td></tr></table>")
+assert no_model == [] and note2["model_tables"] == 0  # a score called FICO, with no model: not a fact about the model
+asf, _ = edgar.parse_exhibit("<table><tr><th>Loan Number</th><th>Vantage Score: Primary Borrower</th><th>Most Recent Vantage Score Method</th><th>Rate</th><th>Term</th></tr><tr><td>777777</td><td>712</td><td></td><td>7.1</td><td>360</td></tr><tr><td>888888</td><td></td><td></td><td>7.2</td><td>360</td></tr></table>")
+assert asf[0]["vs_value"] and not asf[1]["vs_value"]
+# The same report as a fixed-width text block, in two sections of the same loans, and with its headings broken across lines.
+pre_report = """<html><body><table><tr><td>Supplemental Data</td></tr></table><font><pre>
+
+
+SITUSAMC LOAN ID CUSTOMER LOAN ID SELLER LOAN ID ORIGINAL CREDIT REPORT DATE QUALIFYING CREDIT SCORE TILA STATUS
+(redacted)                     13 (redacted)                       6/15/2026                     740 Safe Harbor QM
+(redacted)                    684 (redacted)                      XX/XX/2026                     701 Non QM
+
+SITUSAMC LOAN ID CUSTOMER LOAN ID SELLER LOAN ID DOCUMENT LEVEL BORROWER EXPERIAN FICO MODEL USED BORROWER EQUIFAX FICO MODEL USED BORROWER TRANSUNION FICO MODEL USED CHANNEL
+(redacted)                     13 (redacted)     Full Doc       Fair Isaac (VER. 2)              Beacon 5.0                       FICO Risk Score Classic 04          Retail
+(redacted)                    684 (redacted)     Full Doc       VantageScore 4.0                                                                                      Broker
+</pre></font></body></html>"""
+pre_rows, pre_note = edgar.parse_exhibit(pre_report)
+assert pre_note.get("pre") and pre_note["rows"] == 2, pre_note
+pre_by = {r["id"]: r for r in pre_rows}
+assert pre_by["13"]["models"] == ["Beacon 5.0", "FICO Risk Score Classic 04", "Fair Isaac (VER. 2)"] and pre_by["13"]["pull"] == "2026-06" and pre_by["13"]["score"] == 740, pre_by
+assert pre_by["684"]["models"] == ["VantageScore 4.0"] and pre_by["684"]["pull"] is None and pre_by["684"]["score"] == 701, pre_by
+masked, _ = edgar.parse_exhibit("""<pre>
+SITUSAMC LOAN ID CUSTOMER LOAN ID SELLER LOAN ID BORROWER EXPERIAN FICO MODEL USED NEXT
+[Redacted]             [Redacted] (redacted)     FICO II                           X
+[Redacted]             [Redacted] (redacted)     Beacon 5.0                        X
+</pre>""")
+assert [r["id"] for r in masked] == ["line1", "line2"] and masked[0]["models"] == ["FICO II"], masked  # masked numbers do not collapse loans into one
+assert edgar.parse_exhibit("""<pre>
+SITUSAMC LOAN ID CUSTOMER LOAN ID SELLER LOAN ID FICO MODEL USED NEXT
+(redacted)                     13 (redacted)     1               X
+</pre>""")[0] == []  # only codes: nothing to add
+broken, broken_note = edgar.parse_exhibit("<TABLE><TR><TD>SitusAMC Loan ID</TD><TD>Borrower&nbsp;1<BR>TransUnion<BR>FICO<BR>Model Used</TD><TD>Rate</TD></TR><TR><TD>224733811</TD><TD>Beacon 5.0</TD><TD>7.1</TD></TR></TABLE>")
+assert broken_note["model_tables"] == 1 and broken[0]["models"] == ["Beacon 5.0"], broken_note
+os.environ.pop("EDGAR_CONTACT", None)
+try:
+    edgar.contact()
+    raise AssertionError("no requests without a contact")
+except SystemExit:
+    pass
+os.environ["EDGAR_CONTACT"] = "tester@example.com"
+assert "tester@example.com" in edgar.Edgar().ua
+del os.environ["EDGAR_CONTACT"]
+assert [w for w in edgar.month_windows("2026-01-15", "2026-03-02")] == [("2026-01-15", "2026-01-31"), ("2026-02-01", "2026-02-28"), ("2026-03-01", "2026-03-02")]
+assert edgar.build_datasets() == {"private_label": []}
+assert edgar._loan_key("A", "6000080192") == edgar._loan_key("B", "6000080192") and edgar._loan_key("A", "358") != edgar._loan_key("B", "358")
+e_home = home / "data" / "edgar"
+e_home.mkdir(parents=True, exist_ok=True)
+
+
+def e_hit(adsh, name, kind, day, filer="Deal Depositor LLC", typ="EX-99.1"):
+    return {"adsh": adsh, "file": name, "cik": "0000123456", "date": day, "form": "ABS-15G", "type": typ, "desc": "", "filer": filer, "kind": kind}
+
+
+edgar._append_jsonl(e_home / "hits.jsonl", [e_hit("A", "s5.htm", "model", "2026-09-10"), e_hit("A", "s6.htm", "model", "2026-09-10"), e_hit("B", "s5.htm", "model", "2026-09-20"), e_hit("C", "x.htm", "score", "2026-09-21", "Other Bank"),
+                                            e_hit("D", "n.htm", "mention", "2026-07-01", "Home Equity Inc."), e_hit("E", "x.htm", "model", "2026-09-01", "Motor Auto Receivables LLC"), e_hit("F", "n.htm", "mention", "2026-07-01", "Deal Depositor LLC")])
+edgar._append_jsonl(e_home / "filings.jsonl", [{"adsh": "A", "deal": "CROSS 2026-NQM1"}, {"adsh": "B", "deal": "CROSS 2026-NQM1"}, {"adsh": "D", "deal": "HOME 2026-HE1"}])
+edgar._append_jsonl(e_home / "exhibits.jsonl", [{"adsh": "A", "file": "s5.htm"}, {"adsh": "A", "file": "s6.htm"}, {"adsh": "B", "file": "s5.htm"}])
+edgar._append_jsonl(e_home / "mentions.jsonl", [{"adsh": "D", "file": "n.htm", "date": "2026-07-01", "count": 2}, {"adsh": "F", "file": "n.htm", "date": "2026-07-01", "count": 0}])
+loan = lambda adsh, i, models, pull=None, name="s5.htm": {"adsh": adsh, "file": name, "id": i, "models": models, "vs_value": False, "pull": pull, "score": 700}  # noqa: E731
+edgar._append_jsonl(e_home / "loans.jsonl", [loan("A", "1", ["Beacon 5.0"], "2026-05"), loan("A", "1", ["FICO II"], name="s6.htm"), loan("A", "2", ["VantageScore 4.0"], "2026-06"), loan("A", "3", []), loan("B", "2", ["Beacon 5.0"]), loan("B", "4", ["FICO 9"], "2026-06"), loan("B", "5", ["3"]),
+                                             loan("E", "9", ["VantageScore 4.0"])])
+pl = edgar.build_datasets()["private_label"]
+p_meta = next(r for r in pl if r["view"] == "meta")
+assert p_meta["n"] == 5 and p_meta["named"] == 4 and p_meta["classic_n"] == 1 and p_meta["vs4_n"] == 1 and p_meta["fico_new_n"] == 1 and p_meta["unclear_n"] == 1 and p_meta["blank_n"] == 1, p_meta  # the auto deal is out; loan 2's two reports count once, as VS4
+assert p_meta["filings"] == 3 and p_meta["with_model"] == 2 and p_meta["dated"] == 0.6 and p_meta["deals"] == 1 and p_meta["lag_months"] == 3 and p_meta["vs_no_fico_n"] == 0, p_meta
+q3 = next(r for r in pl if r["view"] == "period" and r["basis"] == "filed")
+assert q3["period"] == "2026-Q3" and q3["label"] == "Q3 2026" and q3["filings"] == 3 and q3["with_model"] == 2 and q3["vs"] == 0.2 and q3["fico"] == 0.4 and q3["none"] == 0.2
+assert not [r for r in pl if r["view"] == "period" and r["basis"] == "pulled"]  # too few loans in any month
+assert [r["key"] for r in pl if r["view"] == "kind"] == ["nonqm"]
+p_filers = {r["key"]: r for r in pl if r["view"] == "filer"}
+assert p_filers["Deal Depositor LLC"]["filings"] == 2 and p_filers["Deal Depositor LLC"]["with_model"] == 2 and p_filers["Other Bank"]["filings"] == 1 and p_filers["Other Bank"]["with_model"] == 0 and p_filers["Other Bank"]["n"] == 0
+p_deal = next(r for r in pl if r["view"] == "deal")
+assert p_deal["key"] == "CROSS 2026-NQM1" and p_deal["vs4_n"] == 1 and p_deal["filed"] == "2026-09-10" and p_deal["url"].endswith("/123456/A/A-index.html"), p_deal
+p_mention = [r for r in pl if r["view"] == "mention"]
+assert len(p_mention) == 1 and p_mention[0]["key"] == "HOME 2026-HE1" and p_mention[0]["kind"] == "second" and p_mention[0]["count"] == 2, p_mention
+(gse_paths.SITE_DATA / "private_label.json").write_text(json.dumps({"rows": pl}))
+with zipfile.ZipFile(build_workbook()) as z:
+    book_xml = z.read("xl/workbook.xml").decode()
+assert 'name="Private-label deals"' in book_xml and 'name="Private-label VantageScore"' in book_xml
 
 print("ok:", home)

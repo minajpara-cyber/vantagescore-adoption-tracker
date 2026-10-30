@@ -105,6 +105,7 @@ def _read_me(b: _Book, through: str):
         ("VS4 share by month, Loans by month: the largest lenders and every lender with a ticker, both GSEs.", None),
         ("Weekly note, Statements: what changed each week; what companies and others have said, with links.", None),
         ("Whole market, Whole market lenders, Score models: which score lenders named on every kind of loan in the latest HMDA file, which lenders named what, and who uses each model.", None),
+        ("Private-label deals: which model SEC due diligence reports name, by credit report month, quarter filed and kind of deal, with the deals and filers behind them.", None),
         ("", None),
         ("Read these with care", "bold"),
         ("Two things in these files are facts: a score that shows, and the Pricing Indicator saying which score priced the loan. A score that does not show is unknown, not absent. So priced on VS4 is exact, the share showing a score is a floor on loans that have it, and the share showing only one score is a ceiling on loans that have only that one.", None),
@@ -116,6 +117,7 @@ def _read_me(b: _Book, through: str):
         ("The rate model is a comparison of like loans, not a test of cause. Points and lender credits are not disclosed, so a saving can reach the borrower without showing in the note rate.", None),
         ("Until late September the files show only the score that priced a loan, so the earlier part of Carrying VS4 is a floor. Pulls on loans that never fund cannot be seen anywhere in these files.", None),
         ("The exposure calculator is arithmetic on your inputs, not a forecast. It covers loans sold to the GSEs only; FHA accepts VS4 from January 1, 2027.", None),
+        ("Private-label reports cover only rated deals and reports with a model column; a score column headed FICO can hold a VantageScore, so a blank or a label is not a fact. The loans are months old when a deal files.", None),
         ("HMDA is annual and names the model the lender relied on. A named model is a fact; more than one model, other model, not applicable and exempt are unknown, so the shares naming FICO and VantageScore are floors. The buyer is whoever bought the loan that calendar year.", None),
         ("Not affiliated with Fannie Mae, Freddie Mac, FICO or VantageScore Solutions.", None),
     ]
@@ -502,12 +504,44 @@ def _whole_market(b: _Book):
     next_row = b.table(ws, 3, [("Kind of loan", "label", "text", 44), ("Loans", "n", "int", 11), ("$bn", "usd_bn", "usdm", 10), *shares], sorted((r for r in rows if r["view"] == "segment"), key=lambda r: r["order"]))
     ws.write(next_row + 1, 0, "Applications taken for each loan made, funded or not", b.fmt("text", bold=True))
     b.table(ws, next_row + 2, [("Kind of loan", "label", "text", 44), ("Loans", "n", "int", 11), ("Applications", "apps", "int", 10), ("Per loan", "per_loan", "num", 9)], [r for r in rows if r["view"] == "apps"])
+    trend = sorted((r for r in rows if r["view"] == "trend"), key=lambda r: (r["order"], r["year"]))
+    if trend:
+        ws = b.sheet("Whole market by year", f"Which score lenders named each year, {meta['first_year']} to {meta['year']}, from HMDA", "The form's list of models grew over time: a lender using a model not yet listed had to mark another model, so a model's first year is partly the form changing.")
+        top = b.table(ws, 3, [("Kind of loan", "label", "text", 44), ("Year", lambda r: str(r["year"]), "text", 7), ("Loans", "n", "int", 11), ("$bn", "usd_bn", "usdm", 10), *shares], trend) + 1
+        ws.write(top, 0, "Each model's loans by year (a loan counts under each model it names)", b.fmt("text", bold=True))
+        b.table(ws, top + 1, [("Model named", "name", "text", 44), ("Year", lambda r: str(r["year"]), "text", 7), ("Loans", "n", "int", 11), ("Share of the year's loans", "share", "pct", 10)], [r for r in rows if r["view"] == "model_year"])
+        ws = b.sheet("Lenders by year", "Which score each big lender named each year, going by legal entity", "The same lender groups as Whole market lenders. A merger or a new entity breaks a row.")
+        groups_y = {"all": "Biggest", "first": "Biggest in first-lien", "equity": "Biggest in home equity", "vs": "Most VantageScore", "fico_new": "Most newer FICO"}
+        b.table(ws, 3, [("Group", lambda r: groups_y[r["scope"]], "text", 22), ("Rank", "rank", "int", 6), ("Lender", "name", "text", 34), ("Year", lambda r: str(r["year"]), "text", 7), ("Loans", "n", "int", 10), *shares],
+                sorted((r for r in rows if r["view"] == "lender_year"), key=lambda r: (list(groups_y).index(r["scope"]), r["rank"], r["year"])))
     ws = b.sheet("Whole market lenders", f"Which score each lender named on loans made in {meta['year']}, from HMDA", "The biggest lenders in each group. Names as filed; a lender's record covers the loans it made.")
     groups = {"all": "Biggest", "first": "Biggest in first-lien", "equity": "Biggest in home equity", "vs": "Most VantageScore", "fico_new": "Most newer FICO"}
     lenders = sorted((r for r in rows if r["view"] == "lender"), key=lambda r: (list(groups).index(r["scope"]), r["rank"]))
     b.table(ws, 3, [("Group", lambda r: groups[r["scope"]], "text", 22), ("Rank", "rank", "int", 6), ("Lender", "name", "text", 34), ("Loans", "n", "int", 10), ("In home equity", "equity_share", "pct", 9), *shares], lenders)
     ws = b.sheet("Score models", f"Who used each score model on loans made in {meta['year']}, from HMDA", "A loan counts under each model it names.")
     b.table(ws, 3, [("Model named", "name", "text", 28), ("Loans", "n", "int", 11), ("In home equity", "equity_share", "pct", 9), ("Biggest users", "users", "text", 90)], [r for r in rows if r["view"] == "model"])
+
+
+def _private_label(b: _Book):
+    rows = _rows("private_label")
+    meta = next((r for r in rows if r["view"] == "meta"), None)
+    if not meta:
+        return
+    counts = [("Loans", "n", "int", 10), ("Classic FICO", "classic_n", "int", 10), ("Newer FICO", "fico_new_n", "int", 10), ("VS4", "vs4_n", "int", 8), ("Other VantageScore", "vs_old_n", "int", 11), ("A code or word not read", "unclear_n", "int", 11), ("None named", "blank_n", "int", 9), ("Names FICO", "fico", "pct", 9)]
+    ws = b.sheet("Private-label deals", "Which model private-label deal reports name, from SEC Form ABS-15G", f"Reports filed {meta['from']} to {meta['through']}. A named model is a fact; a blank or a score column headed FICO is not. Share naming VantageScore is at the right of each row.")
+    vs = ("Names VantageScore", lambda r: r["vs"], "pct", 11)
+    groups = [("By month of credit report", [r for r in rows if r["view"] == "period" and r["basis"] == "pulled"]), ("By quarter filed", [r for r in rows if r["view"] == "period" and r["basis"] == "filed"]), ("By kind of deal", [r for r in rows if r["view"] == "kind"])]
+    top = 3
+    for title, picked in groups:
+        ws.write(top, 0, title, b.fmt("text", bold=True))
+        top = b.table(ws, top + 1, [("", "label", "text", 34), *counts, vs], sorted(picked, key=lambda r: r["order"])) + 1
+    ws.write(top, 0, "By filer", b.fmt("text", bold=True))
+    top = b.table(ws, top + 1, [("", "label", "text", 34), *counts, vs, ("Filings with a score column", "filings", "int", 11), ("With a model column", "with_model", "int", 10)], sorted((r for r in rows if r["view"] == "filer"), key=lambda r: r["rank"])) + 1
+    ws = b.sheet("Private-label VantageScore", "Deals with a loan naming VantageScore, and reports naming it elsewhere", "Mentions are in a report's text or notes; each needs a read.")
+    deal_rows = [r for r in rows if r["view"] == "deal"]
+    top = b.table(ws, 3, [("Filed", "filed", "day", 12), ("Deal", "label", "text", 44), ("Filer", "filer", "text", 34), ("Loans", "n", "int", 9), ("VS4", "vs4_n", "int", 7), ("Other VantageScore", "vs_old_n", "int", 11), ("Filing", lambda r: ("Open", r["url"]), "link", 8)], deal_rows) + 1
+    ws.write(top, 0, "Reports that name VantageScore outside a model column", b.fmt("text", bold=True))
+    b.table(ws, top + 1, [("Filed", "filed", "day", 12), ("Deal", "label", "text", 44), ("Filer", "filer", "text", 34), ("Mentions", "count", "int", 9), ("", lambda r: None, "text", 7), ("", lambda r: None, "text", 11), ("Filing", lambda r: ("Open", r["url"]), "link", 8)], [r for r in rows if r["view"] == "mention"])
 
 
 def build_workbook() -> Path:
@@ -532,6 +566,7 @@ def build_workbook() -> Path:
     _rules(b)
     _by_month(b)
     _whole_market(b)
+    _private_label(b)
     _notes(b)
     _statements(b)
     b.book.close()

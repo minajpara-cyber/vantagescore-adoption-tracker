@@ -69,6 +69,7 @@ back to Jul 1, 2026 (about four months kept); month-end files `FRE_ILLD_{YYYYMM}
 python3 -m venv .venv && .venv/bin/pip install -e .
 .venv/bin/python -I -m gsescore.cli ingest data/raw     # idempotent; skips files already ingested
 .venv/bin/python -I -m gsescore.cli hmda 2025           # loads data/hmda/raw/2025/*.zip (the public HMDA files) into a small parquet, then deletes them
+.venv/bin/python -I -m gsescore.cli edgar               # reads new private-label deal reports from EDGAR; needs a contact address in data/edgar/contact.txt, as the SEC asks
 .venv/bin/python -I -m gsescore.cli status
 .venv/bin/python -I -m gsescore.cli build               # writes site/data/*.json and data/gse.duckdb
 .venv/bin/python -I -m gsescore.cli preview             # full dashboard page as a static site in build/preview/
