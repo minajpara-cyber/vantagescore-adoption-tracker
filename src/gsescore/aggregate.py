@@ -5,7 +5,7 @@ Shares are of loans with a valid score: loans with no score disclosed (score_mod
 re-performing pools such as Fannie Mae prefix I4) are left out of every denominator.
 Loan-level data never leaves the local warehouse; only these aggregates are published.
 
-  monthly      VS4 / Classic FICO share by issue month and GSE (+ All); final once a month-end file exists
+  monthly      VS4 / Classic FICO share by issue month and GSE (+ All), through series_end(); final once a month-end file exists
   weekly       the same by week of first intraday disclosure, from WEEKLY_START
   daily        the same by day of first disclosure (local only; too noisy to chart)
   composition  borrower mix of VS4 vs Classic FICO loans since MIX_START, one row per dim x bucket x model
@@ -18,7 +18,7 @@ Loan-level data never leaves the local warehouse; only these aggregates are publ
                seller-level adoption, built in lenders.py
   borrowers, borrower_profile
                which scores loans carry, and borrower mix by score group, built in borrowers.py
-  pricing      VS4 note rates against a model of FICO-priced loans' rates, built in pricing.py
+  pricing      VS4 note rates against a model of FICO-priced loans' rates, built in pricing.py; since Oct 31, 2026 only the workbook reads it
   choice, ceiling, rules, score_mix
                when lenders price on VS4, how high its share could go, and which scores loans carry, built in scores.py
   outlook      where VS4's share could go, lender by lender, built in outlook.py
@@ -30,7 +30,7 @@ Loan-level data never leaves the local warehouse; only these aggregates are publ
   ginnie_va    which lenders' VA loans show scores Classic FICO almost never reaches, from Ginnie Mae's loan files, built in ginnie.py
 """
 import json
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from . import paths
@@ -129,10 +129,19 @@ _SHARES = """
     fico_upb / nullif(scored_upb, 0) AS fico_upb_share"""
 
 
+def series_end(con) -> date:
+    """The last issue month the series cover. A month joins once the files reach the 15th of it or its month-end file is in, since its first pools can read far from where it ends."""
+    return con.execute("""
+        SELECT greatest(date_trunc('month', least(current_date, max(first_intraday_date)) - INTERVAL 14 DAY)::DATE,
+                        (SELECT max(file_date) FROM loan_records WHERE kind = 'monthend'))
+        FROM loans""").fetchone()[0]
+
+
 def build(out_dir: Path = paths.SITE_DATA) -> dict:
     con = connect()
     out_dir.mkdir(parents=True, exist_ok=True)
-    in_range = f"issue_month >= DATE '{SERIES_START}' AND issue_month <= date_trunc('month', current_date)"
+    last_month = series_end(con)
+    in_range = f"issue_month >= DATE '{SERIES_START}' AND issue_month <= DATE '{last_month}'"
 
     con.execute(f"""
         CREATE OR REPLACE TEMP VIEW monthly AS
@@ -289,12 +298,12 @@ def build(out_dir: Path = paths.SITE_DATA) -> dict:
     more = build_lender_datasets(con, in_range, WEEKLY_START, _rows)
     more |= build_borrower_datasets(con, in_range, MIX_START, _rows)  # needs the seller map lenders.py made
     more |= build_score_datasets(con, in_range, MIX_START, _rows)
-    more |= build_why_datasets(con)
+    more |= build_why_datasets(con, last_month)
     more |= build_closing_datasets(con, more["lender_stage"])
-    more |= build_fee_datasets(con)
+    more |= build_fee_datasets(con, last_month)
     more |= build_outlook_datasets(con, LENDER_START)  # needs the ceiling's loans (scores.py) and the seller tables
     more["pricing"] = build_pricing(con, WEEKLY_START, in_range)
-    more |= build_note_datasets(con, more["statements"], more["pricing"], more["score_mix"])
+    more |= build_note_datasets(con, more["statements"], more["score_mix"])
     more |= build_exposure_datasets(con, more["score_mix"])
     more |= build_hmda_datasets()
     more |= build_edgar_datasets()

@@ -4,13 +4,15 @@
   const AG_NAME = { All: 'Both GSEs', FNMA: 'Fannie Mae', FHLMC: 'Freddie Mac' };
   const AG_NOUN = { All: 'GSE', FNMA: 'Fannie Mae', FHLMC: 'Freddie Mac' };
   const MODELS = ['VantageScore 4.0', 'Classic FICO'];
-  const TABS = ['overview', 'outlook', 'lenders', 'scores', 'borrowers', 'pricing', 'market', 'method'];
+  const TABS = ['overview', 'pricing', 'outlook', 'lenders', 'scores', 'borrowers', 'market', 'method'];
+  // The tab reads Rates and its id stays pricing, so a link to #rates opens it as well.
+  const tabOf = (name) => (name === 'rates' ? 'pricing' : name);
   const DEF_FIRST = { any: 'first_vs4_month', ten: 'first_10_month', pct5: 'first_5pct_month' };
   // Months drawn on the adoption and seller charts: VS4 deliveries begin in April 2026.
   const ADOPT_FROM = '2026-04-01';
   const CHANGE_FROM = '2026-05-01';
   const RECENT_FROM = '2026-05-01';
-  const DEFAULTS = { agency: 'All', measure: 'loans', dim: 'pricing_score', seller: 'rocket-mortgage', adopt: 'any', period: 'month', top: 25, mapmonth: '', cover: 'all', basis: 'headline', pdim: 'purpose', cscope: 'All', orule: 'higher', cperiod: 'week', lsort: 'share', ccohort: 'all' };
+  const DEFAULTS = { agency: 'All', measure: 'loans', dim: 'fico', seller: 'rocket-mortgage', adopt: 'any', period: 'month', top: 25, mapmonth: '', cover: 'both', cscope: 'All', cperiod: 'week', lsort: 'share', ccohort: 'all' };
   const DAY = 864e5;
   const pct1 = d3.format('.1%');
   const ptsSigned = (v) => (Math.abs(v) < 0.05 ? '0.0' : d3.format('+.1f')(v));
@@ -28,7 +30,6 @@
   const enc = (s) => String(s).replace(/%/g, '%25').replace(/&/g, '%26').replace(/=/g, '%3D');
   const col = (i) => dash.colors[i % dash.colors.length];
   const agencyColor = (a) => col(Math.max(0, AGENCIES.indexOf(a)));
-  const shade = (a) => `color-mix(in srgb, ${agencyColor(a)} 30%, transparent)`;
   const C_VS4 = col(0), C_WITHIN = col(2), C_FIXED = col(1), C_EX = col(3), C_NEW = col(2), C_DEEP = col(0), C_MIX = col(1);
   const PARTIAL = 0.6;  // how strongly a part-month or part-week bar is drawn
 
@@ -64,9 +65,7 @@
     p.top = Number(p.top) === 50 ? 50 : 25;
     if (!DEF_FIRST[p.adopt]) p.adopt = 'any';
     if (p.period !== 'week') p.period = 'month';
-    if (!['all', 'both', 'vs4only'].includes(p.cover)) p.cover = 'all';
-    if (p.cover !== 'both' || p.basis !== 'own_fico') p.basis = 'headline';
-    if (p.orule !== 'better') p.orule = 'higher';
+    if (!['all', 'both', 'vs4only'].includes(p.cover)) p.cover = DEFAULTS.cover;
     if (!['month', 'close'].includes(p.cperiod)) p.cperiod = 'week';
     if (!['carrying', 'rising'].includes(p.lsort)) p.lsort = 'share';
     if (p.ccohort !== 'latest') p.ccohort = 'all';
@@ -112,7 +111,7 @@
   function show(t) {
     if (!TABS.includes(t)) return;
     place(t);
-    dash.setLink(t);
+    dash.setLink(t === 'pricing' ? 'rates' : t);
     draw();
   }
   function openSeller(id) {
@@ -164,7 +163,6 @@
     if (event.target.id === 'why-stage') return drawWhyTable(params());
     if (event.target.id === 'seller-pick') openSeller(event.target.value);
     else if (event.target.id === 'mix-dim') dash.setParams({ dim: event.target.value });
-    else if (event.target.id === 'pricing-dim') dash.setParams({ pdim: event.target.value });
     else if (event.target.id === 'choice-scope') dash.setParams({ cscope: event.target.value });
     else if (event.target.id === 'market-month') dash.setParams({ mapmonth: event.target.value });
   });
@@ -207,6 +205,9 @@
     put('h-cur-month', 'current_month', monthYear, both, 'All');
     put('h-final-share', 'final_vs4_share', pct1, both, 'All');
     put('h-cur-share', 'current_vs4_share', pct1, both, 'All');
+    // Between a month's final file and the next month joining the series, the latest month is the final one: nothing is "so far".
+    root.querySelectorAll('.h-so-far').forEach((el) => { el.hidden = !!both.final_month && both.current_month === both.final_month; });
+    root.querySelectorAll('.s-so-far').forEach((el) => { el.hidden = !!mine.final_month && mine.current_month === mine.final_month; });
   }
 
   function drawTiles(p) {
@@ -219,20 +220,6 @@
     mark('.a-active', 'active_sellers', where, as, ad.active_sellers == null ? null : int(ad.active_sellers));
     mark('.a-active-share', af, where, as, ad[af] == null ? null : pct1(ad[af]));
     root.querySelectorAll('.a-active-unit').forEach((el) => { el.textContent = upb ? 'balance' : 'loans'; });
-    // Where the current month would end if it moved as past months did from the same day.
-    const rg = rowsOf('asof').find((r) => r.kind === 'open' && r.agency === p.agency && r.month === sum.current_month);
-    const rs = statusOf('asof', 'summary');
-    const rw = `kind=open&agency=${enc(p.agency)}&month=${enc(sum.current_month ?? '')}`;
-    const lo = upb ? 'vs4_upb_share_lo' : 'vs4_share_lo', hi = upb ? 'vs4_upb_share_hi' : 'vs4_share_hi';
-    document.getElementById('range-line').hidden = rs !== 'loading' && !rg;
-    mark('.r-lo', lo, rw, rs, rg && rg[lo] != null ? pct1(rg[lo]) : null);
-    mark('.r-hi', hi, rw, rs, rg && rg[hi] != null ? pct1(rg[hi]) : null);
-    mark('.r-from', 'first_month', rw, rs, rg ? monthShort(rg.first_month) : null);
-    mark('.r-to', 'last_month', rw, rs, rg ? monthShort(rg.last_month) : null);
-    mark('.r-day', 'day', rw, rs, rg ? String(rg.day) : null);
-    root.querySelector('.r-to-part').hidden = !rg || rg.first_month === rg.last_month;
-    root.querySelector('.r-day-part').hidden = !!rg && rg.day === 31;
-    root.querySelector('.r-end-part').hidden = !rg || rg.day !== 31;
   }
 
   function prep(box, status) {
@@ -278,7 +265,7 @@
     el.replaceChildren(...items.map(([color, label, kind, strong]) => {
       const item = document.createElement('span');
       const sw = document.createElement('span');
-      sw.className = kind === 'line' ? 'vx-sw vx-sw-line' : kind === 'diamond' ? 'vx-sw vx-sw-diamond' : 'vx-sw';
+      sw.className = kind === 'line' ? 'vx-sw vx-sw-line' : kind === 'diamond' ? 'vx-sw vx-sw-diamond' : kind === 'dot' ? 'vx-sw vx-sw-dot' : 'vx-sw';
       if (kind === 'diamond') sw.style.borderColor = color;
       else sw.style.background = color;
       item.append(sw, label);
@@ -305,7 +292,7 @@
             sw.style.background = color;
             r.append(sw);
           }
-          r.append(`${label}: ${value}`);
+          r.append(value == null ? label : `${label}: ${value}`);  // a line can be plain words, with no value
           return r;
         }));
         const [px, py] = d3.pointer(event, box);
@@ -390,9 +377,8 @@
       .on('pointerleave', () => tip.hide());
   }
 
-  // VS4 share over issue months, one line per GSE, the picked one drawn strongest. Each of `ranges`
-  // ({month, lo, hi, label}) shades where the picked GSE's month would end if it moved as `label` did.
-  function agencyLines(box, status, rows, f, countKey, p, label, finalOf, ranges = []) {
+  // VS4 share over issue months, one line per GSE, the picked one drawn strongest.
+  function agencyLines(box, status, rows, f, countKey, p, label, finalOf) {
     if (!prep(box, status)) return;
     const data = rows.filter((r) => r[f] != null)
       .map((r) => ({ ...r, final: finalOf ? finalOf(r) : r.final, mid: new Date(parse(r.month).getTime() + 14.5 * DAY) }));
@@ -400,7 +386,7 @@
     const W = box.clientWidth, H = 260;
     const m = { top: 40, right: 10, bottom: 26, left: 0 };
     const svg = svgFor(box, W, H, label);
-    const top = Math.max(d3.max(data, (r) => r[f]) || 0, d3.max(ranges, (r) => r.hi) || 0) || 0.01;
+    const top = d3.max(data, (r) => r[f]) || 0.01;
     const y = d3.scaleLinear([0, top * 1.1], [H - m.bottom, m.top]).nice(5);
     const yf = y.tickFormat(5, '%');
     m.left = Math.ceil(textWidth(svg, y.ticks(5).map(yf))) + 10;
@@ -424,16 +410,6 @@
     }, m.top, H - m.bottom);
 
     const xf = (r) => x(r.mid);
-    const shown = ranges.filter((r) => r.lo != null && r.hi != null && parse(r.month) >= first && parse(r.month) < last);
-    const rx = (r) => x(new Date(parse(r.month).getTime() + 14.5 * DAY));
-    const bars = svg.append('g').selectAll('g').data(shown).join('g');
-    bars.append('rect').attr('x', (r) => rx(r) - 7).attr('width', 14)
-      .attr('y', (r) => y(r.hi)).attr('height', (r) => Math.max(2, y(r.lo) - y(r.hi))).attr('rx', 2)
-      .attr('fill', agencyColor(p.agency)).attr('fill-opacity', 0.3);
-    for (const k of ['lo', 'hi']) {  // caps, so a narrow range still shows around the point
-      bars.append('line').attr('x1', (r) => rx(r) - 7).attr('x2', (r) => rx(r) + 7).attr('y1', (r) => y(r[k])).attr('y2', (r) => y(r[k]))
-        .attr('stroke', agencyColor(p.agency)).attr('stroke-width', 1.5);
-    }
     for (const a of AGENCIES.filter((a) => a !== p.agency).concat(p.agency)) {
       partialLine(svg, data.filter((r) => r.agency === a), xf, (r) => r[f], y, agencyColor(a), 'final', a === p.agency);
     }
@@ -450,10 +426,8 @@
         if (!near) return;
         rule.attr('x1', x(near.t)).attr('x2', x(near.t)).attr('opacity', 1);
         const rs = AGENCIES.map((a) => data.find((r) => r.agency === a && r.month === near.mo)).filter(Boolean);
-        const rg = shown.find((r) => r.month === near.mo);
         tip.show(event, `${monthYear(near.mo)}${rs.every((r) => r.final) ? '' : ' (partial)'}`,
-          rs.map((r) => [agencyColor(r.agency), AG_NAME[r.agency], `${pct1(r[f])}${f.includes('upb') ? '' : ` of ${int(r[countKey])} loans`}`])
-            .concat(rg ? [[shade(p.agency), `${AG_NAME[p.agency]} if it moves as ${rg.label} did`, `${pct1(rg.lo)} to ${pct1(rg.hi)}`]] : []));
+          rs.map((r) => [agencyColor(r.agency), AG_NAME[r.agency], `${pct1(r[f])}${f.includes('upb') ? '' : ` of ${int(r[countKey])} loans`}`]));
       })
       .on('pointerleave', () => { rule.attr('opacity', 0); tip.hide(); });
   }
@@ -499,15 +473,10 @@
   function drawMonthly(p) {
     const box = document.getElementById('monthly-chart');
     const upb = p.measure === 'upb';
-    const ranges = rowsOf('asof').filter((r) => r.kind === 'open' && r.agency === p.agency).map((r) => ({
-      month: r.month, lo: r[upb ? 'vs4_upb_share_lo' : 'vs4_share_lo'], hi: r[upb ? 'vs4_upb_share_hi' : 'vs4_share_hi'],
-      label: r.first_month === r.last_month ? monthShort(r.first_month) : `${monthShort(r.first_month)}–${monthShort(r.last_month)}`,
-    }));
     document.getElementById('monthly-base').textContent = upb ? 'Share of balance on loans' : 'Share of loans';
-    legend(document.getElementById('monthly-legend'), AGENCIES.map((a) => [agencyColor(a), AG_NAME[a], 'line', a === p.agency])
-      .concat(ranges.length ? [[shade(p.agency), 'If it moves as past months did', 'box']] : []));
+    legend(document.getElementById('monthly-legend'), AGENCIES.map((a) => [agencyColor(a), AG_NAME[a], 'line', a === p.agency]));
     agencyLines(box, statusOf('monthly', 'events'), rowsOf('monthly'), upb ? 'vs4_upb_share' : 'vs4_share',
-      'scored_loans', p, 'VS4 share by issue month', null, ranges);
+      'scored_loans', p, 'VS4 share by issue month', null);
   }
 
   function drawWeekly(p) {
@@ -1197,14 +1166,13 @@
   function drawCeiling(p) {
     const box = document.getElementById('ceiling-chart');
     const k = p.measure === 'upb' ? '_upb' : '';
-    const lines = [[`actual${k}`, 'Actual', C_VS4], [`better${k}`, 'Wherever VS4 saves a fee', col(1)],
-      [`higher${k}`, 'Wherever the VS4 score is higher', col(2)], [`not_worse${k}`, 'Wherever VS4 is no worse', col(3)]];
+    const lines = [[`actual${k}`, 'Actual', C_VS4], [`higher${k}`, 'Wherever the VS4 score is higher', col(2)]];
     legend(document.getElementById('ceiling-legend'), lines.map(([, l, c], i) => [c, l, 'line', i === 0]));
     if (!prep(box, dash.data('ceiling').status)) return;
     const data = rowsOf('ceiling').filter((r) => r.view === 'month' && r.agency === p.agency).sort((a, b) => (a.start < b.start ? -1 : 1));
     if (!data.length) return;
     const W = box.clientWidth, H = 240, m = { top: 12, right: 10, bottom: 26, left: 0 };
-    const svg = svgFor(box, W, H, 'VS4 share by issue month against its ceiling');
+    const svg = svgFor(box, W, H, 'VS4 share by issue month, actual and wherever its score is higher');
     const y = d3.scaleLinear([0, (d3.max(data, (r) => d3.max(lines, ([f]) => r[f] ?? 0)) || 0.01) * 1.08], [H - m.bottom, m.top]).nice(5);
     const yf = y.tickFormat(5, '%');
     const keys = data.map((r) => r.start), lab = monthLabel(keys);
@@ -1242,23 +1210,13 @@
     for (const r of rows) {
       const tr = body.insertRow();
       tr.dataset.key = [r.view, r.key].map(keyPart).join(',');
-      [[rangeDash(r.label), 'vx-l'], [pct1(r.loan_share)], [pct1(r.better)], [pct1(r.higher)], [pct1(r.not_worse), 'vx-opt'], [int(r.measured), 'vx-opt'], [pct1(r.adds_better)]]
+      [[rangeDash(r.label), 'vx-l'], [pct1(r.loan_share)], [r.measured ? pct1(r.higher) : '—'], [int(r.measured), 'vx-opt'], [pct1(r.adds_higher)]]
         .forEach(([text, cls]) => {
           const td = tr.insertCell();
           td.textContent = text;
           if (cls) td.className = cls;
         });
     }
-  }
-
-  function drawCeilingTile(p) {
-    const st = dash.data('ceiling').status;
-    const k = p.measure === 'upb' ? '_upb' : '';
-    const r = rowsOf('ceiling').find((d) => d.view === 'both' && d.agency === p.agency) || {};
-    const where = `view=both&agency=${enc(p.agency)}`;
-    mark('.ce-better', `better${k}`, where, st, r[`better${k}`] == null ? null : pct1(r[`better${k}`]));
-    mark('.ce-higher', `higher${k}`, where, st, r[`higher${k}`] == null ? null : pct1(r[`higher${k}`]));
-    mark('.ce-actual', `actual${k}`, where, st, r[`actual${k}`] == null ? null : pct1(r[`actual${k}`]));
   }
 
   // A lender's rule in score points: the curve by point gap, and the 20-point line by week.
@@ -1328,13 +1286,14 @@
   // ---- Outlook ----
   const OL_STATUS = { heavy: 'Biggest user', using: 'Started', stopped: 'Stopped', none: 'Not yet' };
   const OL_CASES = [['recent', 'Nothing changes', 'var(--color-fg-muted)'], ['heavy', 'Biggest users go all the way', col(2)],
-    ['users', 'Every lender using VS4 does', col(4)], ['pace', 'Other lenders start too', col(5)]];
+    ['users', 'Every lender using VS4 does', col(4)]];
+  const OL_RULE = 'higher';  // the one what-if rule the page reads: VS4 whenever its score is higher
   const olPicked = new Set();
   const olRows = (v) => rowsOf('outlook').filter((r) => r.view === v);
   const olName = (r, name = r.short) => (r.ticker && !new RegExp(`\\b${r.ticker}\\b`).test(name) ? `${name} (${r.ticker})` : name);
   const olPct = (v) => (v > 0 && v < 0.0005 ? '<0.1%' : pct1(v));
   const orDash = (fmt) => (v) => (v == null ? '—' : fmt(v));
-  const olRung = (key, rule) => olRows('ladder').find((r) => r.key === key && (r.rule == null || r.rule === rule));
+  const olRung = (key) => olRows('ladder').find((r) => r.key === key && (r.rule == null || r.rule === OL_RULE));
   const olWhere = (r) => `view=ladder&key=${r.key}${r.rule ? `&rule=${r.rule}` : ''}`;
 
   function drawOutlookRecent(p) {
@@ -1349,9 +1308,8 @@
   function drawOutlook(p) {
     const st = dash.data('outlook').status;
     const k = p.measure === 'upb' ? '_upb' : '';
-    const rule = p.orule;
     const pr = olRows('params')[0] || {};
-    const path = olRows('path').filter((r) => r.case === 'actual' || r.rule === rule);
+    const path = olRows('path').filter((r) => r.case === 'actual' || (r.rule === OL_RULE && r.case !== 'pace'));
     const pw = 'view=params';
     const val = (r, f, fmt) => (r && r[f] != null ? fmt(r[f]) : null);
     const f = `value${k}`;
@@ -1361,38 +1319,34 @@
     mark('.ol-heavy-names', 'heavy_names', pw, st, pr.heavy_names || null);
     mark('.ol-users', 'users', pw, st, val(pr, 'users', int));
     mark('.ol-user-share', `user_share${k}`, pw, st, val(pr, `user_share${k}`, pct1));
-    mark('.ol-pace', `pace${k}`, pw, st, val(pr, `pace${k}`, pct1));
-    mark('.ol-end', 'end_month', pw, st, val(pr, 'end_month', monthShortYear));
     drawOutlookRecent(p);
-    for (const [cls, key] of [['ol-today', 'today'], ['ol-heavy-v', 'heavy'], ['ol-all', 'all'], ['ol-nw', 'not_worse']]) {
-      const r = olRung(key, rule);
+    for (const [cls, key] of [['ol-today', 'today'], ['ol-heavy-v', 'heavy'], ['ol-all', 'all']]) {
+      const r = olRung(key);
       mark(`.${cls}`, f, r ? olWhere(r) : null, st, val(r, f, pct1));
     }
-    const end = path.find((r) => r.case === 'pace' && r.month === pr.end_month);
-    mark('.ol-pace-v', f, `view=path&case=pace&rule=${rule}&month=${enc(pr.end_month ?? '')}`, st, val(end, f, pct1));
     // The first month the heavy users' case comes within 0.05 points of where it settles.
-    const goal = (olRung('heavy', rule) || {})[f];
+    const goal = (olRung('heavy') || {})[f];
     const by = goal == null ? null : path.filter((r) => r.case === 'heavy' && r[f] >= goal - 0.0005).sort((a, b) => (a.month < b.month ? -1 : 1))[0];
-    mark('.ol-heavy-by', 'month', by ? `view=path&case=heavy&rule=${rule}&month=${enc(by.month)}` : null, st, by ? monthShortYear(by.month) : null);
+    mark('.ol-heavy-by', 'month', by ? `view=path&case=heavy&rule=${OL_RULE}&month=${enc(by.month)}` : null, st, by ? monthShortYear(by.month) : null);
     const next = root.querySelector('#ol-pick [data-pick="next"]');
     if (next && pr.next_n) next.textContent = `Plus the ${pr.next_n} largest`;
-    drawOutlookPaths(st, k, rule, path, pr);
-    drawOutlookLadder(st, k, rule, pr);
+    drawOutlookPaths(st, k, path, pr);
+    drawOutlookLadder(st, k, pr);
     drawOutlookRamp(st, k);
     drawOutlookTable(p);
     drawOutlookPace(st, k);
   }
 
-  function drawOutlookPaths(st, k, rule, path, pr) {
+  function drawOutlookPaths(st, k, path, pr) {
     const box = document.getElementById('ol-path-chart');
     const f = `value${k}`;
     legend(document.getElementById('ol-path-legend'), [[C_VS4, 'Actual', 'line', true]].concat(OL_CASES.map(([, l, c]) => [c, l, 'line'])));
     if (!prep(box, st) || !path.length) return;
-    const refs = [['all', 'Every lender', col(3)]].concat(rule === 'better' ? [] : [['not_worse', 'Wherever VS4 is no worse', col(1)]])
-      .map(([key, label, color]) => ({ label, color, v: (olRung(key, rule) || {})[f] })).filter((r) => r.v != null);
+    const refs = [['all', 'Every lender', col(3)]]
+      .map(([key, label, color]) => ({ label, color, v: (olRung(key) || {})[f] })).filter((r) => r.v != null);
     const months = [...new Set(path.map((r) => r.month))].sort();
     const W = box.clientWidth, H = 300, m = { top: 12, right: 10, bottom: 26, left: 0 };
-    const svg = svgFor(box, W, H, 'VS4 share by issue month, actual and four cases');
+    const svg = svgFor(box, W, H, 'VS4 share by issue month, actual and three cases');
     const top = Math.max(d3.max(path, (r) => r[f] ?? 0), d3.max(refs, (r) => r.v) ?? 0) || 0.01;
     const y = d3.scaleLinear([0, top * 1.08], [H - m.bottom, m.top]).nice(5);
     const yf = y.tickFormat(5, '%');
@@ -1425,13 +1379,13 @@
     });
   }
 
-  function drawOutlookLadder(st, k, rule, pr) {
+  function drawOutlookLadder(st, k, pr) {
     const box = document.getElementById('ol-ladder-chart');
     if (!prep(box, st)) return;
     const f = `value${k}`;
     const names = { today: 'Today', recent: 'Latest two weeks', heavy: 'The biggest users', users: 'Every lender using VS4',
-      next: `And the ${pr.next_n ?? ''} largest not using it`, all: 'Every lender', not_worse: 'Wherever VS4 is no worse' };
-    const items = ['today', 'recent', 'heavy', 'users', 'next', 'all', 'not_worse'].map((key) => olRung(key, rule)).filter((r) => r && r[f] != null);
+      next: `And the ${pr.next_n ?? ''} largest not using it`, all: 'Every lender' };
+    const items = ['today', 'recent', 'heavy', 'users', 'next', 'all'].map((key) => olRung(key)).filter((r) => r && r[f] != null);
     if (!items.length) return;
     // Labels sit left of the bars, or above them where the card is narrow.
     const W = box.clientWidth, narrow = W < 480, rowH = narrow ? 48 : 34, m = { top: 4, right: 12, bottom: 24, left: 0 };
@@ -1450,21 +1404,20 @@
     const yb = d3.scaleBand(items.map((r) => r.key), [m.top, H - m.bottom]).paddingInner(0.3);
     const top = (r) => yb(r.key) + (narrow ? 18 : 0), bh = narrow ? yb.bandwidth() - 18 : yb.bandwidth();
     const cy = (r) => top(r) + bh / 2;
-    const color = (r) => (r.key === 'not_worse' ? col(1) : C_VS4);
     const g = svg.append('g').selectAll('g').data(items).join('g');
     g.append('text').attr('x', narrow ? m.left + 4 : m.left - 10).attr('y', (r) => (narrow ? yb(r.key) + 7 : cy(r))).attr('dy', '0.35em')
       .attr('text-anchor', narrow ? 'start' : 'end').style('fill', 'var(--color-fg)').text((r) => names[r.key])
       .each(function () { clip(this, narrow ? W - m.left : m.left - 14); });
     g.append('rect').attr('x', m.left).attr('width', (r) => Math.max(1, x(r[f]) - m.left)).attr('y', top)
-      .attr('height', bh).attr('rx', 3).attr('fill', color).attr('fill-opacity', (r) => (r.key === 'today' ? 1 : 0.7));
+      .attr('height', bh).attr('rx', 3).attr('fill', C_VS4).attr('fill-opacity', (r) => (r.key === 'today' ? 1 : 0.7));
     // Each step is taken between the printed levels, so the labels add up.
     const printed = (r) => parseFloat(pct1(r[f])) / 100;
     g.append('text').attr('x', (r) => x(r[f]) + 6).attr('y', cy).attr('dy', '0.35em').style('fill', 'var(--color-fg)')
-      .text((r, i) => (i && r.key !== 'not_worse' ? `${pct1(r[f])} (${pts(printed(r) - printed(items[i - 1]))})` : pct1(r[f])));
+      .text((r, i) => (i ? `${pct1(r[f])} (${pts(printed(r) - printed(items[i - 1]))})` : pct1(r[f])));
     const tip = tooltip(box);
     g.append('rect').attr('x', 0).attr('width', W).attr('y', (r) => yb(r.key) - 3).attr('height', yb.bandwidth() + 6)
       .attr('fill', 'transparent')
-      .on('pointermove', (event, r) => tip.show(event, names[r.key], [[color(r), 'VS4 share', pct1(r[f])]]
+      .on('pointermove', (event, r) => tip.show(event, names[r.key], [[C_VS4, 'VS4 share', pct1(r[f])]]
         .concat(r.lenders ? [[null, 'Lenders moved', int(r.lenders)]] : [])))
       .on('pointerleave', () => tip.hide());
   }
@@ -1509,12 +1462,12 @@
     const table = document.getElementById('ol-table');
     if (!table) return;
     const st = dash.data('outlook').status;
-    const upb = p.measure === 'upb', k = upb ? '_upb' : '', rule = p.orule;
+    const upb = p.measure === 'upb', k = upb ? '_upb' : '';
     const cols = [['name', 'short', (v, r) => (r.id === 'other' ? 'All other lenders' : olName(r))],
       ['status', 'status', (v, r) => (v === 'other' ? `${int(r.sellers)} lenders` : OL_STATUS[v] || v)],
       ['share', `share${k}`, olPct], ['vs4', upb ? 'vs4_upb_share' : 'vs4_share', pct1], ['recent', upb ? 'recent_upb_share' : 'recent_share', pct1],
-      ['uses', 'higher_vs4', pct1], ['both', 'both_share', pct1], ['on', `on_${rule}${k}`, pct1],
-      ['adds', `adds_${rule}${k}`, (v) => (v > 0 && v < 0.0005 ? '<0.1' : fixed(1)(v * 100))]];
+      ['uses', 'higher_vs4', pct1], ['both', 'both_share', pct1], ['on', `on_${OL_RULE}${k}`, pct1],
+      ['adds', `adds_${OL_RULE}${k}`, (v) => (v > 0 && v < 0.0005 ? '<0.1' : fixed(1)(v * 100))]];
     table.querySelector('th[data-col="share"] button').textContent = upb ? 'Share of balance' : 'Share of loans';
     const s = sorts['ol-table'];
     table.querySelectorAll('th[data-col]').forEach((th) => {
@@ -1564,7 +1517,7 @@
     const k = p.measure === 'upb' ? '_upb' : '';
     const base = (olRung('recent') || {})[`value${k}`];
     const picked = olRows('lender').filter((r) => olPicked.has(r.id));
-    const add = d3.sum(picked, (r) => r[`adds_${p.orule}${k}`] || 0);
+    const add = d3.sum(picked, (r) => r[`adds_${OL_RULE}${k}`] || 0);
     const n = d3.sum(picked, (r) => r.sellers || 1);
     root.querySelector('.ol-pick-n').textContent = `${int(n)} lender${n === 1 ? '' : 's'}`;
     root.querySelector('.ol-pick-v').textContent = base == null ? '—' : pct1(base + add);
@@ -1793,29 +1746,24 @@
     if (r.check === 'seller') {
       const l = whyRows('lender').find((d) => d.id === r.seller_id);
       if (!l) return '—';
-      const fe = rowsOf('fees').find((d) => d.view === 'lender' && d.id === r.seller_id);
-      return `${pct1(l.vs4_share)} priced on VS4, ${l.recent_share == null ? '—' : pct1(l.recent_share)} in the latest weeks; both scores on ${pct1(l.both_share)}; VS4 used on ${l.uses_higher == null ? '—' : pct1(l.uses_higher)} of loans where it is higher.${fe && fe.saving_avg_usd != null ? ` VS4 loans that save a fee save ${money(fe.saving_avg_usd)} on average.` : ''}`;
+      return `${pct1(l.vs4_share)} priced on VS4, ${l.recent_share == null ? '—' : pct1(l.recent_share)} in the latest weeks; both scores on ${pct1(l.both_share)}; VS4 used on ${l.uses_higher == null ? '—' : pct1(l.uses_higher)} of loans where it is higher.`;
     }
     const mix = rowsOf('score_mix');
     const head = mix.find((d) => d.view === 'month' && d.agency === 'All' && d.headline) || {};
     const fn = mix.find((d) => d.view === 'month' && d.agency === 'FNMA' && d.start === head.start) || {};
     if (r.check === 'fico') {
       if (head.fico_share == null) return '—';
-      const all = rowsOf('outlook').find((d) => d.view === 'ladder' && d.key === 'all' && d.rule === 'better');
-      return `At least ${pct1(head.fico_share)} of loans have a Classic FICO (${pct1(fn.fico_share)} at Fannie Mae); at most ${pct1(head.vs_only_share)} have only VS4 (${pct1(fn.vs_only_share)}).${all ? ` Priced on VS4 wherever it saves a fee, VS4 would reach about ${d3.format('.0%')(all.value)}.` : ''}`;
+      return `At least ${pct1(head.fico_share)} of loans have a Classic FICO (${pct1(fn.fico_share)} at Fannie Mae); at most ${pct1(head.vs_only_share)} have only VS4 (${pct1(fn.vs_only_share)}).`;
     }
     if (r.check === 'lenders') {
       const pr = olRows('params')[0] || {};
       const using = d3.sum(whyRows('stage').filter((d) => d.key === 'pricing' || d.key === 'some'), (d) => d.lenders);
       return `${pr.users == null ? '—' : int(pr.users)} lenders have delivered a VS4 loan to the GSEs since September, and ${int(using)} price on it regularly. At most ${head.vs_only_share == null ? '—' : pct1(head.vs_only_share)} of loans have only VS4. This covers GSE loans only.`;
     }
-    if (r.check === 'pricing') {
-      const o = rowsOf('pricing').find((d) => d.view === 'overall' && d.cover === 'all' && d.basis === 'headline');
-      return o ? `${bpSigned(o.net_bp)} bp in the same fee tier, on loans first disclosed from July 20, net of the model's miss.` : '—';
-    }
+    if (r.check === 'pricing') return (rowsOf('rate_readout').find((d) => d.view === 'meta') || {}).said_check || '—';
     if (r.check === 'fees') {
       const fm = rowsOf('fees').find((d) => d.view === 'market' && d.key === 'All') || {};
-      return fm.option_annual_usd == null ? '—' : `On the grid, ${usdM(fm.taken_annual_usd)} a year in fees not paid at today's use, ${usdM(fm.option_annual_usd)} if every lender took the lower fee.`;
+      return fm.taken_annual_usd == null ? '—' : `On the grid, ${usdM(fm.taken_annual_usd)} a year in LLPAs not paid at today's use.`;
     }
     if (r.check === 'august') {
       const a = rowsOf('monthly').find((d) => d.agency === 'All' && d.month === '2026-08-01');
@@ -1904,20 +1852,23 @@
     vs4only: 'VS4-priced loans that show no Classic FICO among loans disclosed with every score (records since Oct 19, 2026), against every FICO-priced loan disclosed that way. Read with care: a loan can have a FICO that does not show, so this group mixes loans with one score and loans with a hidden FICO. Fannie Mae\'s few such loans are the cleaner read.',
   };
   const keyPart = (v) => encodeURIComponent(String(v));
-  const bpSigned = ptsSigned;
   const bpTick = (v) => (v === 0 ? '0' : d3.format('+')(v));
 
   function drawMix(p) {
     const box = document.getElementById('mix-chart');
     const dimSel = document.getElementById('mix-dim');
     const all = rowsOf('borrowers').filter((r) => r.cover === p.cover);
-    const dims = [...new Map(all.map((r) => [r.dim, r.dim_label])).entries()];
+    const dims = [...new Map(all.filter((r) => r.dim !== 'pricing_score').map((r) => [r.dim, r.dim_label])).entries()];
     const sig = `${p.cover}:${dims.map(([d]) => d).join(',')}`;
     if (dimSel.dataset.sig !== sig) {
       dimSel.replaceChildren(...dims.map(([v, l]) => new Option(l, v)));
       dimSel.dataset.sig = sig;
     }
-    const dim = dims.some(([v]) => v === p.dim) ? p.dim : dims.length ? dims[0][0] : null;
+    // The param can hold a breakdown no longer offered, from the shim's defaults or the store. Then the page's own default leads, or, where that has
+    // one side only (Classic FICO shows on FICO-priced loans alone outside Both scores), the first breakdown with both sides.
+    const twoSided = (d) => new Set(all.filter((r) => r.dim === d).map((r) => r.grp)).size > 1;
+    const picked = (dash.params() || {}).dim;
+    const dim = dims.some(([v]) => v === picked) ? picked : (dims.find(([v]) => v === DEFAULTS.dim && twoSided(v)) || dims.find(([v]) => twoSided(v)) || dims[0] || [null])[0];
     if (dim) dimSel.value = dim;
     const data = all.filter((r) => r.dim === dim).sort((a, b) => a.bucket_order - b.bucket_order);
     const grps = ['vs4', 'fico'].filter((g) => data.some((r) => r.grp === g));
@@ -1973,7 +1924,7 @@
       .on('pointerleave', () => tip.hide());
   }
 
-  const PROFILE_FMT = { loans: int, wa_score: fixed(0), wa_fico: fixed(0), wa_vs4: fixed(0), avg_gap: ptsSigned,
+  const PROFILE_FMT = { loans: int, wa_fico: fixed(0), wa_vs4: fixed(0), avg_gap: ptsSigned,
     wa_ltv: (v) => `${fixed(1)(v)}%`, wa_dti: (v) => `${fixed(1)(v)}%`, wa_rate_30: (v) => `${fixed(2)(v)}%`, avg_loan: money, purchase_share: pct1, cashout_share: pct1,
     fthb_share: pct1, investor_share: pct1, broker_share: pct1, mi_share: pct1, fixed30_share: pct1 };
   function drawProfile(p) {
@@ -1988,51 +1939,100 @@
     });
   }
 
-  // ---- Pricing ----
-  const PDIMS = { purpose: 'Loan purpose', score: 'Fee tier', ltv: 'Loan-to-value', channel: 'Origination channel', size: 'Loan size' };
-  const BASIS_TEXT = { headline: 'in the same fee tier', own_fico: 'at the borrower’s own Classic FICO' };
+  // ---- Rates ----
+  const RATE_KEY = [['var(--color-fg)', 'Central figure', 'dot'], [C_VS4, 'Spread across the fuller methods', 'box'],
+    ['var(--color-fg-muted)', 'Rough 95% range from redrawing lenders and channels at random', 'line']];
+  const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
+  const bpText = (v) => (Math.abs(v) < 0.05 ? '0' : d3.format('+.1~f')(v));
+  const bpFigure = (v) => (!isNum(v) ? '—' : Math.abs(v) < 0.05 ? 'about 0' : `${bpText(v)} bp`);
+  const bpSpan = (a, b) => (isNum(a) && isNum(b) ? `${bpText(a)} to ${bpText(b)} bp` : '—');
+  const rateName = (r) => [r.title, r.sub].filter(Boolean).join(', ');
 
-  function drawPricing(p) {
-    drawFees();
-    const st = dash.data('pricing').status;
-    const rows = rowsOf('pricing');
-    const mine = (r) => r.cover === p.cover && r.basis === p.basis;
-    const o = rows.find((r) => r.view === 'overall' && mine(r)) || {};
-    const fit = rows.find((r) => r.view === 'fit') || {};
-    const where = `view=overall&cover=${p.cover}&basis=${p.basis}`;
-    const one = d3.format('.1f');
-    mark('.pr-net', 'net_bp', where, st, o.net_bp == null ? null : bpSigned(o.net_bp));
-    mark('.pr-check', 'check_bp', where, st, o.check_bp == null ? null : bpSigned(o.check_bp));
-    mark('.pr-premium', 'premium_bp', where, st, o.premium_bp == null ? null : bpSigned(o.premium_bp));
-    mark('.pr-se', 'se_bp', where, st, o.se_bp == null ? null : one(o.se_bp));
-    mark('.pr-median', 'median_bp', where, st, o.median_bp == null ? null : bpSigned(o.median_bp));
-    mark('.pr-n', 'n', where, st, o.n == null ? null : int(o.n));
-    mark('.pr-since', 'since', where, st, o.since ? longDay(o.since) : null);
-    mark('.pr-rmse', null, null, st, fit.rmse_bp == null ? null : one(fit.rmse_bp));
-    mark('.pr-r2', null, null, st, fit.r2 == null ? null : d3.format('.2f')(fit.r2));
-    mark('.pr-held', null, null, st, fit.n == null ? null : int(fit.n));
-    mark('.pr-trained', null, null, st, fit.n_train == null ? null : int(fit.n_train));
-    document.getElementById('basis-seg').hidden = p.cover !== 'both';
-    root.querySelectorAll('.pr-window').forEach((el) => { el.textContent = p.cover === 'all' ? 'first disclosed' : 'disclosed with every score'; });
-    root.querySelectorAll('.pricing-basis').forEach((el) => { el.textContent = BASIS_TEXT[p.basis]; });
-    const weeks = rows.filter((r) => r.view === 'week' && mine(r)).sort((a, b) => a.order - b.order);
-    root.querySelectorAll('.pr-first').forEach((el) => { el.textContent = p.cover === 'all' || !weeks.length ? '' : `; first disclosed from ${shortDay(weeks[0].key)}`; });
-    drawValue(st, rows);
-    legend(document.getElementById('pricing-seller-legend'), BP_KEY);
-    legend(document.getElementById('pricing-segment-legend'), BP_KEY);
-    drawPricingWeeks(st, weeks);
-    hbarsBp(document.getElementById('pricing-seller-chart'), st, rows.filter((r) => r.view === 'seller' && mine(r)).sort((a, b) => a.order - b.order).slice(0, 12),
-      'VS4 rate against the model by lender');
-    const sel = document.getElementById('pricing-dim');
-    if (sel.options.length !== Object.keys(PDIMS).length) sel.replaceChildren(...Object.entries(PDIMS).map(([v, l]) => new Option(l, v)));
-    sel.value = PDIMS[p.pdim] ? p.pdim : 'purpose';
-    hbarsBp(document.getElementById('pricing-segment-chart'), st,
-      rows.filter((r) => r.view === 'segment' && mine(r) && r.dim === sel.value).sort((a, b) => a.order - b.order),
-      'VS4 rate against the model by type of loan');
-    drawPricingHist(st, rows.filter((r) => r.view === 'hist' && mine(r)).sort((a, b) => a.order - b.order));
+  // The question, the answer, its chart and its limits. Every finding comes from rate_readout; a row or field it lacks is left out, never drawn as zero.
+  function drawRateAnswer() {
+    const st = dash.data('rate_readout').status;
+    const all = rowsOf('rate_readout');
+    const meta = all.find((r) => r.view === 'meta') || {};
+    mark('#ra-answer', 'answer', 'view=meta', st, meta.answer);
+    for (const f of ['stamp', 'dated', 'changed']) {
+      document.getElementById(`ra-${f}`).hidden = st !== 'loading' && !meta[f];
+      mark(`#ra-${f}`, f, 'view=meta', st, meta[f]);
+    }
+    const list = document.getElementById('ra-limits');
+    list.classList.toggle('dash-skeleton', st === 'loading');
+    list.replaceChildren(...all.filter((r) => r.view === 'limit' && r.text).sort((a, b) => a.order - b.order).map((r) => {
+      const li = document.createElement('li');
+      li.textContent = r.text;
+      return li;
+    }));
+    list.hidden = st !== 'loading' && !list.children.length;
+    const box = document.getElementById('ra-chart');
+    legend(document.getElementById('ra-legend'), RATE_KEY);
+    if (!prep(box, st)) return;
+    const items = all.filter((r) => r.view === 'row').sort((a, b) => a.order - b.order);
+    const vals = items.flatMap((r) => [r.tl, r.th, r.lo, r.hi, r.dot]).filter(isNum);
+    if (!vals.length) return;
+    // Under about 520 px the title and sub take their own lines above the row's plot, and the figure ends the title's line.
+    const W = box.clientWidth, narrow = W < 520, rowH = narrow ? 62 : 46;
+    const m = { top: 2, right: 8, bottom: 46, left: 8 };
+    const H = m.top + m.bottom + items.length * rowH;
+    box.style.minHeight = `${H}px`;
+    const svg = svgFor(box, W, H, `VS4 minus FICO, bp of note rate. ${items.map((r) => `${rateName(r)}: central figure ${bpFigure(r.dot)}, fuller methods ${bpSpan(r.lo, r.hi)}, rough 95% range ${bpSpan(r.tl, r.th)}`).join('. ')}.`);
+    const indent = (r) => (r.strong ? 0 : 12);
+    const heavy = 1.08;  // the medium weight runs wider than the text it is measured in
+    const figureW = Math.ceil(textWidth(svg, items.map((r) => bpFigure(r.dot))) * heavy);
+    if (!narrow) {
+      const widest = d3.max(items, (r) => indent(r) + Math.max(textWidth(svg, [r.title ?? '']) * heavy, textWidth(svg, [r.sub ?? ''])));
+      m.left = Math.min(Math.ceil(widest) + 16, Math.max(150, Math.floor(W * 0.4)));
+      m.right = figureW + 16;
+    }
+    const x = d3.scaleLinear([Math.min(0, d3.min(vals)) - 1, Math.max(0, d3.max(vals)) + 1], [m.left, W - m.right]);
+    const ticks = x.ticks(Math.max(3, Math.min(9, Math.floor((W - m.left - m.right) / 44))));
+    if (narrow) {  // a tick label at the edge of the plot stays inside the chart
+      m.left = m.right = Math.max(m.left, Math.ceil(textWidth(svg, ticks.map(bpTick)) / 2) + 1);
+      x.range([m.left, W - m.right]);
+    }
+    const titleY = narrow ? 8 : rowH / 2 - 8, subY = narrow ? 23 : rowH / 2 + 8, cy = narrow ? 45 : rowH / 2;
+    // Where labels sit above each plot, the grid runs only beside the plots, so no line crosses a label.
+    for (const [y1, y2] of narrow ? items.map((r, i) => [m.top + i * rowH + cy - 11, m.top + i * rowH + cy + 11]) : [[m.top, H - m.bottom]]) {
+      svg.append('g').selectAll('line').data(ticks).join('line').attr('x1', (v) => x(v)).attr('x2', (v) => x(v))
+        .attr('y1', y1).attr('y2', y2).attr('stroke', 'var(--cds-chart-grid)');
+      svg.append('line').attr('x1', x(0)).attr('x2', x(0)).attr('y1', y1).attr('y2', y2)
+        .attr('stroke', 'var(--cds-chart-axis)').attr('stroke-width', 1.5);
+    }
+    svg.append('g').attr('transform', `translate(0,${H - m.bottom + 8})`)
+      .call(d3.axisBottom(x).tickValues(ticks).tickFormat(bpTick).tickSize(0)).call(styleAxis);
+    svg.append('text').attr('x', (m.left + W - m.right) / 2).attr('y', H - 4).attr('text-anchor', 'middle').text(W < 340 ? 'VS4 minus FICO, bp (left of 0: VS4 lower)' : 'VS4 minus FICO, bp of note rate (left of 0: VS4 lower)');
+    const g = svg.append('g').selectAll('g').data(items).join('g').attr('transform', (r, i) => `translate(0,${m.top + i * rowH})`);
+    const weight = (r) => (r.strong ? 'var(--cds-font-weight-medium)' : null);
+    g.append('text').attr('x', indent).attr('y', titleY).attr('dy', '0.35em').style('fill', 'var(--color-fg)').style('font-weight', weight)
+      .text((r) => r.title ?? '').each(function (r) { clip(this, (narrow ? W - figureW - 10 : m.left - 12) - indent(r)); });
+    g.append('text').attr('x', indent).attr('y', subY).attr('dy', '0.35em')
+      .text((r) => r.sub ?? '').each(function (r) { clip(this, (narrow ? W : m.left - 12) - indent(r)); });
+    g.append('text').attr('x', W).attr('y', narrow ? titleY : cy).attr('dy', '0.35em').attr('text-anchor', 'end').style('fill', 'var(--color-fg)').style('font-weight', weight)
+      .text((r) => bpFigure(r.dot));
+    const range = g.filter((r) => isNum(r.tl) && isNum(r.th));
+    range.append('line').attr('x1', (r) => x(r.tl)).attr('x2', (r) => x(r.th)).attr('y1', cy).attr('y2', cy).attr('stroke', 'var(--color-fg-muted)').attr('stroke-width', 1.5);
+    for (const k of ['tl', 'th']) {
+      range.append('line').attr('x1', (r) => x(r[k])).attr('x2', (r) => x(r[k])).attr('y1', cy - 4).attr('y2', cy + 4).attr('stroke', 'var(--color-fg-muted)').attr('stroke-width', 1.5);
+    }
+    const barW = (r) => Math.max(4, Math.abs(x(r.hi) - x(r.lo)));
+    g.filter((r) => isNum(r.lo) && isNum(r.hi)).append('rect').attr('x', (r) => (x(r.lo) + x(r.hi) - barW(r)) / 2).attr('width', barW)
+      .attr('y', cy - 6).attr('height', 12).attr('rx', 3).attr('fill', C_VS4);
+    g.filter((r) => isNum(r.dot))// on a phone a dot this size would hide a narrow bar
+      .append('circle').attr('cx', (r) => x(r.dot)).attr('cy', cy).attr('r', narrow ? 3.5 : 6)
+      .attr('fill', 'var(--color-fg)').attr('stroke', 'var(--color-panel)').attr('stroke-width', narrow ? 1.5 : 2);
+    // A tap has no pointer left to leave, so its tip stays until the next tap elsewhere.
+    const tip = tooltip(box);
+    const showTip = (event, r) => tip.show(event, rateName(r), [
+      [RATE_KEY[0][0], 'Central figure', bpFigure(r.dot)], [RATE_KEY[1][0], 'Fuller methods', bpSpan(r.lo, r.hi)], [RATE_KEY[2][0], '95% range', bpSpan(r.tl, r.th)],
+      ...[r.loans, r.money].filter(Boolean).map((text) => [null, text])]);
+    g.append('rect').attr('class', 'ra-hit').attr('width', W).attr('height', rowH).attr('fill', 'transparent')
+      .on('pointermove', showTip).on('click', showTip).on('pointerleave', () => tip.hide());
+    d3.select(document).on('click.rates', (event) => { if (!event.target.closest('.ra-hit')) tip.hide(); });
   }
 
-  // Dollars at any size: $0, $420, $48k, $2.1m, $1.0bn, $2.1tn. Under $100k it reads in thousands, so a small amount never shows as $0.0m.
+  // Dollars at any size: $0, $420, $48k, $2.1m, $3.4bn, $2.1tn. Under $100k it reads in thousands, so a small amount never shows as $0.0m.
   const usdM = (v) => {
     const a = Math.abs(v), one = d3.format('.1f');
     const text = a >= 999.95e9 ? `$${one(a / 1e12)}tn` : a >= 999.95e6 ? `$${one(a / 1e9)}bn` : a >= 1e5 ? `$${one(a / 1e6)}m` : a >= 1e3 ? `$${d3.format('.0f')(a / 1e3)}k` : money(a);
@@ -2051,13 +2051,7 @@
     mark('.fe-share', 'saving_share', mw, st, val('saving_share', pct1));
     mark('.fe-taken', 'taken_annual_usd', mw, st, val('taken_annual_usd', usdM));
     mark('.fe-taken-m', 'taken_all_usd', mw, st, val('taken_all_usd', usdM));
-    mark('.fe-option', 'option_annual_usd', mw, st, val('option_annual_usd', usdM));
-    mark('.fe-option-bp', 'option_bp', mw, st, val('option_bp', d3.format('.1f')));
-    mark('.fe-left', 'left_usd', mw, st, val('left_usd', usdM));
-    mark('.fe-left-n', 'left_loans', mw, st, val('left_loans', int));
-    const lenders = rows.filter((r) => r.view === 'lender').sort((a, b) => a.rank - b.rank);
-    const topLeft = lenders.slice().sort((a, b) => b.left_usd - a.left_usd)[0];
-    mark('.fe-left-top', 'short', topLeft ? `view=lender&id=${enc(topLeft.id)}` : null, st, topLeft ? topLeft.short : null);
+    const lenders = rows.filter((r) => r.view === 'lender' && r.priced_loans >= 20).sort((a, b) => b.taken_usd - a.taken_usd);
     const table = document.getElementById('fee-table');
     table.closest('.vx-tablebox').classList.toggle('dash-skeleton', st === 'loading');
     const heads = table.tHead.rows[0].cells;
@@ -2067,8 +2061,7 @@
     for (const r of lenders) {
       const tr = body.insertRow();
       tr.dataset.key = ['lender', r.id].map(keyPart).join(',');
-      [olName(r), int(r.priced_loans), r.priced_loans >= 20 ? orDashL(pct1)(r.saving_share) : '—', r.priced_loans >= 20 ? orDashL(money)(r.saving_avg_usd) : '—',
-        r.priced_loans ? usdM(r.taken_usd) : '—', r.left_loans ? usdM(r.left_usd) : '—', r.one_loans ? usdM(r.est_usd) : '—', orDashL(d3.format('.1f'))(r.option_bp)].forEach((text, i) => {
+      [olName(r), int(r.priced_loans), orDashL(pct1)(r.saving_share), orDashL(money)(r.saving_avg_usd), usdM(r.taken_usd)].forEach((text, i) => {
         const td = tr.insertCell();
         td.textContent = text;
         td.className = heads[i].className;
@@ -2079,7 +2072,7 @@
     const scopes = [...new Map(gse.map((r) => [r.scope, r.scope_label])).entries()];
     const gt = document.getElementById('gse-score-table');
     const gh = gt.tHead.rows[0];
-    gh.replaceChildren(...['Fee bucket'].concat(scopes.map(([, l]) => l), ['Better VS4, same FICO']).map((text, i) => {
+    gh.replaceChildren(...['Score band'].concat(scopes.map(([, l]) => l), ['Better VS4, same FICO']).map((text, i) => {
       const th = document.createElement('th');
       th.scope = 'col';
       if (!i) th.className = 'vx-l';
@@ -2104,151 +2097,6 @@
     }
   }
 
-  // The fall in rate over the fee at 5 to 1. Sampling noise can put it past either end.
-  const reachText = (v) => (v == null ? '—' : v >= 0.95 ? 'About all' : v <= 0.05 ? 'None visible' : d3.format('.0%')(v));
-
-  function drawValue(st, rows) {
-    const table = document.getElementById('value-table');
-    const all = rows.filter((r) => r.view === 'value');
-    table.closest('.vx-tablebox').classList.toggle('dash-skeleton', st === 'loading');
-    const one = d3.format('.1f');
-    const body = table.tBodies[0];
-    body.replaceChildren();
-    const addRow = (label, r, same) => {
-      const tr = body.insertRow();
-      tr.dataset.key = ['value', r.scope, r.key].map(keyPart).join(',');
-      [[label, 'vx-l'], [int(r.n)], [r.fee_bp == null ? '—' : one(r.fee_bp), 'vx-opt'], [r.fee_rate_bp == null ? '—' : one(r.fee_rate_bp), 'vx-opt'], [bpSigned(r.net_bp)], [r.n < 50 ? '—' : reachText(r.reaches_fee)],
-        [same ? int(same.n) : '—', 'vx-opt'], [same ? bpSigned(same.net_bp) : '—', 'vx-opt']].forEach(([text, cls]) => {
-        const td = tr.insertCell();
-        td.textContent = text;
-        if (cls) td.className = cls;
-      });
-    };
-    const scopes = all.filter((r) => r.key === 'better' && r.n >= 100).sort((a, b) => a.scope_rank - b.scope_rank);
-    for (const r of scopes) addRow(r.label, r, all.find((d) => d.scope === r.scope && d.key === 'same'));
-    const bands = { to25: 'fee saved up to 25 bp', to50: 'fee saved 25 to 50 bp', to100: 'fee saved 50 to 100 bp', over100: 'fee saved over 100 bp' };
-    const first = all.filter((r) => r.channel).sort((a, b) => a.scope_rank - b.scope_rank).find((r) => r.channel === 'R' && r.key === 'better' && r.n >= 100);
-    const uwm = all.filter((r) => r.channel === 'B' && r.key === 'better' && r.n >= 100).map((r) => r.scope);
-    for (const scope of [...new Set([first && first.scope, ...uwm].filter(Boolean))]) {
-      for (const [key, label] of Object.entries(bands)) {
-        const r = all.find((d) => d.scope === scope && d.key === key);
-        if (r && r.n >= 50) addRow(`${r.label}, ${label}`, r);
-      }
-    }
-    const left = all.find((d) => d.scope === 'All' && d.key === 'fico_better');
-    document.getElementById('value-left').textContent = left ? `For comparison: ${int(left.n)} 30-year fixed loans priced on FICO though VS4 had the lower fee. Rate against the lender's own FICO loans: ${bpSigned(left.net_bp)} bp. Fee they could have saved: ${one(left.fee_bp)} bp (${one(left.fee_rate_bp)} bp in rate terms).` : '';
-  }
-
-  function pricingTip(r) {
-    return [
-      [C_VS4, 'VS4 loans', `${bpSigned(r.premium_bp)} bp (± ${d3.format('.1f')(2 * (r.se_bp || 0))}) on ${int(r.n)}`],
-      ['var(--color-fg)', 'FICO loans the model did not see', r.check_bp == null ? 'too few to show' : `${bpSigned(r.check_bp)} bp on ${int(r.check_n)}`],
-      [null, 'Net', r.net_bp == null ? '—' : `${bpSigned(r.net_bp)} bp`],
-    ];
-  }
-
-  const BP_KEY = [[C_VS4, 'VS4 loans', 'box'], ['var(--color-fg)', 'FICO loans the model did not see', 'diamond'], ['var(--color-fg)', 'Margin of error', 'line']];
-
-  function drawPricingWeeks(st, data) {
-    const box = document.getElementById('pricing-week-chart');
-    legend(document.getElementById('pricing-week-legend'), BP_KEY);
-    if (!prep(box, st) || !data.length) return;
-    const W = box.clientWidth, H = 240, m = { top: 12, right: 10, bottom: 26, left: 0 };
-    const svg = svgFor(box, W, H, 'VS4 rate against the model by week of first disclosure');
-    const lo = Math.min(0, d3.min(data, (r) => r.premium_bp - 2 * (r.se_bp || 0)), d3.min(data, (r) => r.check_bp ?? 0));
-    const hi = Math.max(0, d3.max(data, (r) => r.premium_bp + 2 * (r.se_bp || 0)), d3.max(data, (r) => r.check_bp ?? 0));
-    const y = d3.scaleLinear([lo, hi], [H - m.bottom, m.top]).nice(5);
-    const keys = data.map((r) => r.key);
-    const { x, widest } = bandFrame(svg, keys, shortDay, y, bpTick, 5, W, m);
-    yAxis(svg, y, bpTick, m.left, W - m.right);
-    bandAxis(svg, x, keys, shortDay, widest, H - m.bottom + 8);
-    const bw = Math.min(28, x.bandwidth()), off = (x.bandwidth() - bw) / 2;
-    const cx = (r) => x(r.key) + x.bandwidth() / 2;
-    svg.append('g').selectAll('rect').data(data).join('rect')
-      .attr('x', (r) => x(r.key) + off).attr('width', bw).attr('y', (r) => y(Math.max(0, r.premium_bp)))
-      .attr('height', (r) => Math.abs(y(r.premium_bp) - y(0))).attr('rx', 3).attr('fill', C_VS4).attr('fill-opacity', 0.85);
-    svg.append('g').selectAll('line').data(data.filter((r) => r.se_bp != null)).join('line')
-      .attr('x1', cx).attr('x2', cx).attr('y1', (r) => y(r.premium_bp - 2 * r.se_bp)).attr('y2', (r) => y(r.premium_bp + 2 * r.se_bp))
-      .attr('stroke', 'var(--color-fg)').attr('stroke-width', 1.5);
-    svg.append('g').selectAll('path').data(data.filter((r) => r.check_bp != null)).join('path')
-      .attr('d', d3.symbol(d3.symbolDiamond, 40)).attr('transform', (r) => `translate(${cx(r)},${y(r.check_bp)})`)
-      .attr('fill', 'var(--color-panel)').attr('stroke', 'var(--color-fg)');
-    bandHover(svg, box, x, data, 'key', m, H, (r) => [`Week of ${shortDay(r.key)}`, pricingTip(r)]);
-  }
-
-  function hbarsBp(box, st, items, label) {
-    if (!prep(box, st)) return;
-    if (!items.length) return;
-    const W = box.clientWidth, rowH = W > 360 ? Math.max(26, 208 / items.length) : 26;  // on a wide card a short list fills the height of the charts around it
-    const m = { top: 6, right: 12, bottom: 26, left: 0 };
-    const H = m.top + m.bottom + items.length * rowH;
-    box.style.minHeight = `${H}px`;
-    const svg = svgFor(box, W, H, label);
-    const text = (r) => `${rangeDash(r.label).replace(/ \([A-Z]+\)$/, '').replace(/ refinance$/, ' refi')} · ${int(r.n)}`;  // short names, so the count always fits; the tooltip has the full one
-    m.left = Math.min(Math.ceil(textWidth(svg, items.map(text))) + 14, Math.max(160, Math.floor(W * 0.5)));
-    const lo = Math.min(0, d3.min(items, (r) => r.premium_bp - 2 * (r.se_bp || 0)), d3.min(items, (r) => r.check_bp ?? 0));
-    const hi = Math.max(0, d3.max(items, (r) => r.premium_bp + 2 * (r.se_bp || 0)), d3.max(items, (r) => r.check_bp ?? 0));
-    const x = d3.scaleLinear([lo, hi], [m.left, W - m.right]).nice(5);
-    const ticks = x.ticks(5);
-    svg.append('g').selectAll('line').data(ticks).join('line')
-      .attr('x1', (v) => x(v)).attr('x2', (v) => x(v)).attr('y1', m.top).attr('y2', H - m.bottom)
-      .attr('stroke', (v) => (v === 0 ? 'var(--cds-chart-axis)' : 'var(--cds-chart-grid)'));
-    svg.append('g').attr('transform', `translate(0,${H - m.bottom + 8})`)
-      .call(d3.axisBottom(x).tickValues(ticks).tickFormat(bpTick).tickSize(0)).call(styleAxis);
-    const idx = new Map(items.map((r, i) => [r, i]));
-    const yb = d3.scaleBand(d3.range(items.length), [m.top, H - m.bottom]).paddingInner(0.35);
-    const cy = (r) => yb(idx.get(r)) + yb.bandwidth() / 2;
-    const bh = Math.min(28, yb.bandwidth());
-    const g = svg.append('g').selectAll('g').data(items).join('g');
-    g.append('text').attr('x', m.left - 10).attr('y', cy).attr('dy', '0.35em').attr('text-anchor', 'end')
-      .style('fill', 'var(--color-fg)').text(text).each(function () { clip(this, m.left - 14); });
-    g.append('rect').attr('x', (r) => x(Math.min(0, r.premium_bp))).attr('width', (r) => Math.abs(x(r.premium_bp) - x(0)))
-      .attr('y', (r) => cy(r) - bh / 2).attr('height', bh).attr('rx', 3).attr('fill', C_VS4).attr('fill-opacity', 0.85);
-    g.filter((r) => r.se_bp != null).append('line')
-      .attr('x1', (r) => x(r.premium_bp - 2 * r.se_bp)).attr('x2', (r) => x(r.premium_bp + 2 * r.se_bp))
-      .attr('y1', cy).attr('y2', cy).attr('stroke', 'var(--color-fg)').attr('stroke-width', 1.5);
-    g.filter((r) => r.check_bp != null).append('path').attr('d', d3.symbol(d3.symbolDiamond, 40))
-      .attr('transform', (r) => `translate(${x(r.check_bp)},${cy(r)})`).attr('fill', 'var(--color-panel)').attr('stroke', 'var(--color-fg)');
-    const tip = tooltip(box);
-    g.append('rect').attr('x', 0).attr('width', W).attr('y', (r) => yb(idx.get(r)) - 3).attr('height', yb.bandwidth() + 6)
-      .attr('fill', 'transparent')
-      .on('pointermove', (event, r) => tip.show(event, rangeDash(r.label), pricingTip(r)))
-      .on('pointerleave', () => tip.hide());
-  }
-
-  function drawPricingHist(st, data) {
-    const box = document.getElementById('pricing-hist-chart');
-    legend(document.getElementById('pricing-hist-legend'), [[C_VS4, 'VS4 loans', 'box'], ['var(--color-fg-muted)', 'FICO loans the model did not see', 'line']]);
-    if (!prep(box, st) || !data.length) return;
-    const W = box.clientWidth, H = 220, m = { top: 10, right: 10, bottom: 26, left: 0 };
-    const svg = svgFor(box, W, H, 'Spread of VS4 and held-out FICO loans’ rates against the model');
-    const width = data.find((r) => r.bin_lo != null && r.bin_hi != null);
-    const step = width ? width.bin_hi - width.bin_lo : 1;
-    const lo = (r) => (r.bin_lo == null ? r.bin_hi - step : r.bin_lo);
-    const hi = (r) => (r.bin_hi == null ? r.bin_lo + step : r.bin_hi);
-    const y = d3.scaleLinear([0, (d3.max(data, (r) => Math.max(r.share, r.check_share)) || 0.01) * 1.1], [H - m.bottom, m.top]).nice(4);
-    const yf = d3.format('.0%');
-    m.left = Math.ceil(textWidth(svg, y.ticks(4).map(yf))) + 10;
-    const x = d3.scaleLinear([d3.min(data, lo), d3.max(data, hi)], [m.left, W - m.right]);
-    yAxis(svg, y, yf, m.left, W - m.right, 4);
-    svg.append('g').attr('transform', `translate(0,${H - m.bottom + 8})`)
-      .call(d3.axisBottom(x).ticks(6).tickFormat(bpTick).tickSize(0)).call(styleAxis);
-    svg.append('g').selectAll('rect').data(data).join('rect')
-      .attr('x', (r) => x(lo(r)) + 1).attr('width', (r) => Math.max(0, x(hi(r)) - x(lo(r)) - 2))
-      .attr('y', (r) => y(r.share)).attr('height', (r) => Math.max(0, y(0) - y(r.share))).attr('fill', C_VS4).attr('fill-opacity', 0.8);
-    const last = data[data.length - 1];
-    svg.append('path').attr('d', d3.line().curve(d3.curveStepAfter)(data.map((r) => [x(lo(r)), y(r.check_share)]).concat([[x(hi(last)), y(last.check_share)]])))
-      .attr('fill', 'none').attr('stroke', 'var(--color-fg-muted)').attr('stroke-width', 2);
-    const tip = tooltip(box);
-    svg.append('g').selectAll('rect').data(data).join('rect')
-      .attr('x', (r) => x(lo(r))).attr('width', (r) => Math.max(0, x(hi(r)) - x(lo(r)))).attr('y', m.top)
-      .attr('height', H - m.top - m.bottom).attr('fill', 'transparent')
-      .on('pointermove', (event, r) => tip.show(event,
-        r.bin_lo == null ? `Below ${bpSigned(r.bin_hi)} bp` : r.bin_hi == null ? `${bpSigned(r.bin_lo)} bp and above` : `${bpSigned(r.bin_lo)} to ${bpSigned(r.bin_hi)} bp`,
-        [[C_VS4, 'VS4 loans', `${pct1(r.share)} of ${int(r.n)}`], ['var(--color-fg-muted)', 'FICO loans the model did not see', `${pct1(r.check_share)} of ${int(r.check_n)}`]]))
-      .on('pointerleave', () => tip.hide());
-  }
-
   function draw() {
     const p = params();
     root.querySelectorAll('.vx-seg[data-param]').forEach((seg) => {
@@ -2260,7 +2108,6 @@
     if (current === 'overview') {
       drawTiles(p);
       drawOutlookRecent(p);
-      drawCeilingTile(p);
       drawQuarters(p);
       drawMonthly(p);
       drawWeekly(p);
@@ -2296,17 +2143,17 @@
       drawMix(p);
       drawProfile(p);
     } else if (current === 'pricing') {
-      root.querySelectorAll('.cover-note').forEach((el) => { el.textContent = p.cover === 'all' ? 'Every VS4-priced and Classic FICO-priced 30-year fixed loan first disclosed since July 20, 2026.' : COVER_NOTE[p.cover]; });
-      drawPricing(p);
+      drawRateAnswer();
+      drawFees();
     }
     (window.vx.hooks[current] || []).forEach((fn) => fn(p));
     window.vx.after.forEach((fn) => fn());
   }
-  window.vx = { root, rowsOf, statusOf, int, pct1, money, usdM, ptsSigned, inkOn, olName, olPct, openSeller, entityOf, monthShort, monthYear, monthLabel, shortDay, reachText, prep, svgFor, bandFrame, yAxis, bandAxis, bandHover, legend, tooltip, textWidth,
+  window.vx = { root, rowsOf, statusOf, int, pct1, money, usdM, ptsSigned, inkOn, olName, olPct, openSeller, entityOf, monthShort, monthYear, monthLabel, shortDay, prep, svgFor, bandFrame, yAxis, bandAxis, bandHover, legend, tooltip, textWidth,
     MIX_GROUPS, ADOPT_FROM, AG_NAME, show, col, mark, redraw: draw, after: [], hooks: { overview: [], outlook: [], lenders: [], scores: [], borrowers: [], pricing: [], market: [], method: [] } };
 
   // A link names a page (#lenders) or a seller (#seller-rocket-mortgage); the page opens it as it loads.
-  const named = decodeURIComponent(location.hash.slice(1));
+  const named = tabOf(decodeURIComponent(location.hash.slice(1)));
   if (named.startsWith('seller-')) {
     dash.setParams({ seller: named.slice('seller-'.length) });
     place('lenders');
@@ -2316,7 +2163,7 @@
     place('overview');
   }
   window.addEventListener('hashchange', () => {
-    const h = decodeURIComponent(location.hash.slice(1));
+    const h = tabOf(decodeURIComponent(location.hash.slice(1)));
     if (h.startsWith('seller-') && !(current === 'lenders' && params().seller === h.slice('seller-'.length))) openSeller(h.slice('seller-'.length));
     else if (TABS.includes(h) && h !== current) { place(h); draw(); }
   });

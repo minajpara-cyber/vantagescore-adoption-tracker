@@ -7,13 +7,18 @@ source runs as a plain static site too. Only aggregate datasets are copied.
 The public site is pinned to its own copy of the page (site/public/) and dataset list: new analysis
 goes to the private claude.ai dashboard first and reaches the public site only once the dashboard
 page is copied there and its datasets added below (last done Oct 30, 2026, with every tab and
-dataset). `build_preview()` builds the full dashboard page as a static site under build/preview/
-(git-ignored) for checking it locally.
+dataset). The public page differs from the dashboard since Oct 31, 2026, when the old rate section and
+the rate figures left it. `build_preview()` builds the full dashboard page as a static site under
+build/preview/ (git-ignored) for checking it locally.
+
+reference/public_contract.json lists each public file's fields and views, names only. A test holds the
+builders to it on planted data, and `contract_warnings()` reads the real docs/data for the weekly report.
 """
 import hashlib
 import json
 import re
 import shutil
+from datetime import date, timedelta
 from pathlib import Path
 
 from . import paths
@@ -21,14 +26,19 @@ from . import paths
 # What the public page reads; keep it to datasets cleared for the public site.
 PUBLIC_DATASETS = ["monthly", "weekly", "summary", "events", "sellers", "seller_monthly", "seller_weekly",
                    "seller_splits", "adoption", "adopters", "series", "asof", "borrowers", "borrower_profile",
-                   "pricing", "choice", "ceiling", "outlook", "rules", "score_mix", "lender_stage", "statements", "fees",
+                   "choice", "ceiling", "outlook", "rules", "score_mix", "lender_stage", "statements", "fees",
                    "week_note", "assumptions", "lender_mix", "closing", "whole_market", "private_label", "ginnie_va"]
 # What the claude.ai dashboard page reads; data/dashboard_uploads.json records the version of each it has.
 DASHBOARD_DATASETS = ["monthly", "weekly", "summary", "events", "sellers", "seller_monthly", "seller_weekly",
-                      "seller_splits", "adoption", "adopters", "series", "asof", "borrowers", "borrower_profile",
-                      "pricing", "choice", "ceiling", "outlook", "rules", "score_mix", "lender_stage", "statements", "fees",
+                      "seller_splits", "adoption", "adopters", "series", "borrowers", "borrower_profile",
+                      "rate_readout", "choice", "ceiling", "outlook", "rules", "score_mix", "lender_stage", "statements", "fees",
                       "week_note", "assumptions", "lender_mix", "closing", "whole_market", "private_label", "ginnie_va"]
+# Fields the public copy of a dataset leaves out: "field" on every row, "view.field" on that view's rows. fees: the yearly figure "if every lender
+# took the lower fee", withdrawn Oct 31, 2026, and what reads or scales to it. The public table still reads a lender's option_bp and est_usd.
+PUBLIC_DROP = {"fees": ["option_annual_usd", "option_usd", "annual_upb", "upb", "market.option_bp", "market.est_usd", "market.one_loans"]}
+RATE_READ_DAYS = 14  # the weekly report warns once the dated rate read is older than this
 UPLOADS = paths.DATA / "dashboard_uploads.json"
+CONTRACT = paths.REPO / "reference" / "public_contract.json"
 DOCS = paths.ROOT / "docs"
 PREVIEW = paths.ROOT / "build" / "preview"
 STANDALONE = paths.ROOT / "site" / "standalone"
@@ -36,7 +46,15 @@ PUBLIC_PAGE = paths.ROOT / "site" / "public" / "index.html"
 DASHBOARD_PAGE = paths.ROOT / "site" / "dashboard" / "index.html"
 
 
-def _build(out: Path, page: Path, datasets: list[str]) -> list[str]:
+def public_rows(name: str, rows: list[dict]) -> list[dict]:
+    """A dataset's rows as the public site carries them, without its fields in PUBLIC_DROP."""
+    drop = PUBLIC_DROP.get(name, [])
+    everywhere = {d for d in drop if "." not in d}
+    in_view = {tuple(d.split(".")) for d in drop if "." in d}
+    return [{k: v for k, v in r.items() if k not in everywhere and (r.get("view"), k) not in in_view} for r in rows]
+
+
+def _build(out: Path, page: Path, datasets: list[str], public: bool = False) -> list[str]:
     template = (STANDALONE / "template.html").read_text()
     assert template.count("<!--PAGE-->") == 1
     (out / "data").mkdir(parents=True, exist_ok=True)
@@ -46,7 +64,11 @@ def _build(out: Path, page: Path, datasets: list[str]) -> list[str]:
         shutil.copyfile(extra, out / extra.name)
     (out / ".nojekyll").write_text("")
     for name in datasets:
-        shutil.copyfile(paths.SITE_DATA / f"{name}.json", out / "data" / f"{name}.json")
+        if public and name in PUBLIC_DROP:
+            rows = public_rows(name, json.loads((paths.SITE_DATA / f"{name}.json").read_text())["rows"])
+            (out / "data" / f"{name}.json").write_text(json.dumps({"rows": rows}, separators=(",", ":")))
+        else:
+            shutil.copyfile(paths.SITE_DATA / f"{name}.json", out / "data" / f"{name}.json")
     for old in (out / "data").glob("*.json"):  # a dataset the page no longer reads
         if old.stem not in datasets:
             old.unlink()
@@ -54,7 +76,7 @@ def _build(out: Path, page: Path, datasets: list[str]) -> list[str]:
 
 
 def build_site() -> list[str]:
-    return _build(DOCS, PUBLIC_PAGE, PUBLIC_DATASETS)
+    return _build(DOCS, PUBLIC_PAGE, PUBLIC_DATASETS, public=True)
 
 
 def build_preview() -> list[str]:
@@ -73,6 +95,8 @@ def dashboard_changes() -> list[dict]:
     out = []
     for name in DASHBOARD_DATASETS:
         path = paths.SITE_DATA / f"{name}.json"
+        if not path.exists():  # rate_readout alone is written by hand; rate_read_status warns, and the dashboard keeps its last upload
+            continue
         sha = _sha256(path)
         if done.get(name, {}).get("sha256") != sha:
             out.append({"id": name, "path": str(path), "sha256": sha, "uploaded_url": done.get(name, {}).get("url")})
@@ -88,3 +112,57 @@ def dashboard_record(urls: dict[str, str]) -> dict:
         done[name] = {"sha256": _sha256(paths.SITE_DATA / f"{name}.json"), "url": url}
     UPLOADS.write_text(json.dumps(done, indent=1, sort_keys=True))
     return done
+
+
+def _contract_gaps(name: str, want: dict, rows: list[dict]) -> list[str]:
+    if not rows:
+        return [f"{name}: the public file has no rows"]
+    out = []
+    missing = [k for k in want["fields"] if not any(k in r for r in rows)]
+    if missing:
+        out.append(f"{name}: fields missing: {', '.join(missing)}")
+    extra = sorted({k for r in rows for k in r} - set(want["fields"]))
+    if extra:
+        out.append(f"{name}: fields outside the contract: {', '.join(extra)}")
+    other = sorted({r["view"] for r in rows if r.get("view") is not None} - set(want["views"])) if want["views"] else []
+    if other:
+        out.append(f"{name}: views outside the contract: {', '.join(other)}")
+    if any(r.get("kind") == "rate" for r in rows):
+        out.append(f"{name}: has a rate line, withdrawn Oct 31, 2026")
+    for view, keys in want["views"].items():
+        mine = [r for r in rows if r.get("view") == view]
+        if not mine:
+            out.append(f"{name}: view missing: {view}")
+            continue
+        empty = [k for k in keys if k not in missing and all(r.get(k) is None for r in mine)]
+        if empty:
+            out.append(f"{name}: view {view} has nothing in: {', '.join(empty)}")
+    return out
+
+
+def contract_warnings() -> list[str]:
+    """Plain-text warnings for a view or field of the public contract missing from docs/data, one outside it, or a withdrawn rate line. Never raises: a thin view dropping out must not stop a weekly run."""
+    try:
+        contract = list(json.loads(CONTRACT.read_text()).items())
+    except Exception as e:
+        return [f"public contract: could not read {CONTRACT.name}: {e}"]
+    out = []
+    for name, want in contract:
+        try:
+            out += _contract_gaps(name, want, json.loads((DOCS / "data" / f"{name}.json").read_text())["rows"])
+        except Exception as e:
+            out.append(f"{name}: could not read the public file: {e}")
+    return out
+
+
+def rate_read_status(today: date | None = None) -> tuple[str | None, list[str]]:
+    """The date of the rate read (rate_readout.json's meta row) and a warning if it is old, missing or unreadable. Never raises."""
+    try:
+        rows = json.loads((paths.SITE_DATA / "rate_readout.json").read_text())["rows"]
+        as_of = next(r["as_of"] for r in rows if r.get("view") == "meta")
+        age = (today or date.today()) - date.fromisoformat(as_of)
+    except Exception as e:
+        return None, [f"rate read: could not read the date in site/data/rate_readout.json: {e!r}"]
+    if age > timedelta(days=RATE_READ_DAYS):
+        return as_of, [f"rate read: data through {as_of} is {age.days} days old, past the {RATE_READ_DAYS}-day limit"]
+    return as_of, []

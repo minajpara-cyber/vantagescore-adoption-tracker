@@ -1,9 +1,12 @@
 """What the GSEs' upfront fee grid is worth to a lender that can pick a score.
 
 The grid is reference/llpa.csv: Freddie Mac Guide Exhibit 19 (Bulletin 2026-K, settlement dates from Oct 1, 2026), base grids by
-purpose, credit score bucket and LTV bucket, in percent of balance. It applies to Classic FICO and VS4 alike. Fannie Mae's LLPA
-matrix is taken to match it. Loans in HFA, HomeReady / Home Possible and RefiNow / Refi Possible programs (FEE_WAIVED) are counted
-as paying no base fee, since credit fee caps generally cover them; first-time buyers' income caps cannot be seen in these files.
+purpose, credit score bucket and LTV bucket, in percent of balance. It applies to Classic FICO and VS4 alike. Checked cell by cell on
+Oct 31, 2026, against Fannie Mae's LLPA Matrix dated Sep 30, 2026 (https://singlefamily.fanniemae.com/media/9391/display): all 207 cells
+match. That matrix waives the fee for HomeReady, first-time buyers under the income limits and duty-to-serve loans; this repo counts those
+only through special_program, because income is not disclosed, so first-time buyers' income caps cannot be seen in these files. Loans in HFA,
+HomeReady / Home Possible and RefiNow / Refi Possible programs (FEE_WAIVED) are counted as paying no base fee, since credit fee caps
+generally cover them. RefiNow is not named on Fannie Mae's waiver list and HFA loans aren't either, but FEE_WAIVED counts them.
 
 From records that carry the Pricing Indicator with loan terms over 15 years, issued in the latest month with HEADLINE_MIN+ such loans.
 For a loan with both scores: saved is the fee at its Classic FICO less the fee at its VS4 score. For a loan with only a Classic FICO:
@@ -15,7 +18,7 @@ coarser, MIN_CELL+ loans).
         scores priced on FICO though VS4 was better, and estimated on loans with only a Classic FICO; the whole as bp of balance.
         view market: the same over all sellers, with the month's balance. Taken counts VS4-priced loans with both scores only,
         grossed up for VS4-priced loans that show one score in taken_all_usd. annual_upb is the GSE's balance a year at the pace of
-        its final months, and taken_annual_usd and option_annual_usd scale the month's figures to it.
+        its final months, and taken_annual_usd and option_annual_usd scale the month's figures to it. The public copy leaves out what reads or scales to option_annual_usd (PUBLIC_DROP, site.py).
         view gse: the GSE's own score (Fannie Score, Freddie Score), VS4-priced minus FICO-priced, within the same seller, GSE and fee
         bucket, by bucket band, all lenders and each of the two largest VS4 sellers.
         view lift: the GSE's own score, VS4 in a better bucket minus VS4 in the same bucket, within the same GSE and FICO bucket.
@@ -85,7 +88,7 @@ def _choice(con, names) -> list[dict]:
     return out
 
 
-def build_datasets(con) -> dict[str, list[dict]]:
+def build_datasets(con, last_month) -> dict[str, list[dict]]:
     """Needs seller_map and entity_names (lenders.py)."""
     con.execute("CREATE OR REPLACE TEMP TABLE llpa (grid VARCHAR, sb INT, lb INT, fee DOUBLE)")
     con.executemany("INSERT INTO llpa VALUES (?, ?, ?, ?)", [(g, s, l, v) for (g, s, l), v in load_grid().items()])
@@ -100,7 +103,7 @@ def build_datasets(con) -> dict[str, list[dict]]:
                {_bucket('l.ltv', LTV_CUTS, True)} AS lb, coalesce(l.fannie_score, l.freddie_score) AS gse
         FROM loans l JOIN seller_map m ON m.key = seller_key(l.seller)
         WHERE l.score_model IN ('V', 'C') AND l.pricing_indicator IS NOT NULL AND l.ltv IS NOT NULL AND coalesce(l.loan_term, 360) > 180""")
-    con.execute("CREATE OR REPLACE TEMP TABLE fw AS SELECT * FROM fa WHERE month <= date_trunc('month', current_date)")
+    con.execute(f"CREATE OR REPLACE TEMP TABLE fw AS SELECT * FROM fa WHERE month <= DATE '{last_month}'")
     months = con.execute("SELECT month, count(*) FROM fw GROUP BY 1 ORDER BY 1").fetchall()
     if not months:
         return {"fees": []}
@@ -142,9 +145,9 @@ def build_datasets(con) -> dict[str, list[dict]]:
         m = row("market", r, key=agency, agency=agency)
         annual = con.execute(f"SELECT sum(scored_upb) / nullif(count(*), 0) * 12 FROM monthly WHERE agency = '{agency}' AND final").fetchone()[0]
         m["annual_upb"] = float(annual) if annual else None
-        if annual and m["upb"]:
-            m["taken_annual_usd"] = m["taken_all_usd"] / m["upb"] * float(annual)
-            m["option_annual_usd"] = m["option_usd"] / m["upb"] * float(annual)
+        scales = annual and m["upb"]  # every market row has these fields, empty until the GSE has a final month
+        m["taken_annual_usd"] = m["taken_all_usd"] / m["upb"] * float(annual) if scales else None
+        m["option_annual_usd"] = m["option_usd"] / m["upb"] * float(annual) if scales else None
         return m
 
     out = [market(con.execute(f"SELECT {measures} FROM fp").fetchone(), "All")]

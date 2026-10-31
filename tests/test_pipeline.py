@@ -1,6 +1,6 @@
 """End-to-end check on synthetic files: ingest -> views -> score_model -> aggregates -> seller datasets -> as-of
 -> score groups and borrower mix -> score choice and ceiling -> outlook, plus the outlook and the rate engine on
-planted data.
+planted data, the public contract, the public build, the weekly report's warnings and what the page sources must not say.
 
 Run: .venv/bin/python -I tests/test_pipeline.py
 """
@@ -333,6 +333,20 @@ assert {(r["key"], r["scope_loans"]) for r in gsescore.scores.build_datasets(c2,
 # Fees on planted loans: $100,000 purchases at 80 LTV, FICO 700 (fee 1.375%), VS4 720 (1.25%) or 705 (same bucket). R has 20 priced
 # on VS4 a bucket better, which save $125 each, 20 priced on VS4 in the same bucket, and 20 priced on FICO though VS4 was better. N has
 # 80 with only a Classic FICO and 20 in a waived program, M has 20 with only VS4, and one FICO-priced 15-year loan is left out.
+# A new month joins the series once the files reach the 15th of it or its month-end file is in, whatever the calendar says.
+from gsescore.aggregate import series_end  # noqa: E402
+
+c4 = duckdb.connect()
+c4.execute("CREATE TABLE loans (first_intraday_date DATE)")
+c4.execute("CREATE TABLE loan_records (kind VARCHAR, file_date DATE)")
+for through, monthend, want in (("2026-10-14", None, "2026-09-01"), ("2026-10-15", None, "2026-10-01"), ("2026-10-27", "2026-09-01", "2026-10-01"), ("2026-10-03", "2026-08-01", "2026-09-01"), ("2026-10-03", "2026-10-01", "2026-10-01")):
+    c4.execute("DELETE FROM loans")
+    c4.execute("DELETE FROM loan_records")
+    c4.execute("INSERT INTO loans VALUES (?)", [through])
+    if monthend:
+        c4.execute("INSERT INTO loan_records VALUES ('monthend', ?)", [monthend])
+    assert series_end(c4).isoformat() == want, (through, monthend, series_end(c4))
+
 from gsescore import fees  # noqa: E402
 
 c3 = duckdb.connect()
@@ -348,7 +362,7 @@ planted_fees = [("R", "V", 700, 720, 360, "7", 730, 20), ("R", "V", 700, 705, 36
                 ("N", "C", 700, 720, 180, "7", None, 1)]
 c3.executemany("INSERT INTO loans VALUES ('FHLMC', '2026-10-01', 100000, ?, ?, 'P', ?, ?, ?, 80, ?, ?, NULL, ?, '2026-10-20')",
                [(model, seller, fico, vs, model, term, program, gse) for seller, model, fico, vs, term, program, gse, k in planted_fees for _ in range(k)])
-fee = fees.build_datasets(c3)["fees"]
+fee = fees.build_datasets(c3, "2026-10-01")["fees"]
 fm = next(r for r in fee if r["view"] == "market" and r["key"] == "All")
 assert (fm["loans"], fm["vs4_loans"], fm["priced_loans"], fm["saving_share"], fm["saved_bp"], fm["saving_avg_usd"]) == (180, 60, 40, 0.5, 6.25, 125.0), fm
 assert (fm["taken_usd"], fm["taken_all_usd"], fm["left_loans"], fm["left_usd"], fm["one_loans"]) == (2500.0, 3750.0, 20, 2500.0, 80), fm
@@ -450,8 +464,7 @@ for wk, v in (("2026-10-05", 10), ("2026-10-12", 30)):
     c4.executemany("INSERT INTO scw (agency, week, is_v, seller_id, has_fico, has_vs4, gap) VALUES ('FNMA', ?, ?, 'r', true, true, 5)", [(wk, i < v) for i in range(100)])
 c4.executemany("INSERT INTO scw (agency, week, is_v, seller_id, has_fico, has_vs4, gap) VALUES ('FNMA', ?, false, 'n', true, ?, ?)", [("2026-10-05", False, None)] * 50 + [("2026-10-12", True, 0)] * 50)
 said = [{"date": "2026-10-13", "who": "Z", "statement": "Said something.", "source": "Paper", "url": "https://example.com/z"}, {"date": "2026-01-01", "who": "Y", "statement": "Too old.", "source": None, "url": None}]
-rate_rows = [{"view": "week", "cover": "all", "basis": "headline", "key": "2026-10-05", "n": 200, "net_bp": 1.0}, {"view": "week", "cover": "all", "basis": "headline", "key": "2026-10-12", "n": 300, "net_bp": -2.5}]
-wn = notes.build_datasets(c4, said, rate_rows)["week_note"]
+wn = notes.build_datasets(c4, said)["week_note"]
 wk = {r["week"]: r for r in wn if r["view"] == "week"}
 assert (wk["2026-10-05"]["partial"], wk["2026-10-05"]["latest"], wk["2026-10-12"]["partial"], wk["2026-10-12"]["latest"], wk["2026-10-12"]["label"]) == (False, True, True, False, "Oct 12 to Oct 14"), wk
 lines = {r["kind"]: r for r in wn if r["view"] == "line" and r["week"] == "2026-10-12"}
@@ -460,17 +473,19 @@ assert mix_text == "150 loans first disclosed Oct 12 to Oct 14, so far: priced o
 assert lines["movers"]["text"] == "VS4 share moved most at R 10.0% to 30.0%.", lines
 assert lines["both"]["text"] == "Both scores at Fannie Mae moved most at N 0.0% to 100.0%.", lines
 assert lines["rule"]["text"] == "Use of VS4 with its score 1 to 19 points above FICO moved at R 10.0% to 30.0%.", lines
-assert lines["rate"]["text"] == "VS4 note rates against the FICO model: -2.5 bp on 300 loans (+1.0 bp the week before).", lines
+assert not any(r["kind"] == "rate" for r in wn if r["view"] == "line"), wn  # the note's rate line is withdrawn
 assert (lines["said"]["text"], lines["said"]["url"]) == ("Z: Said something.", "https://example.com/z") and "start" not in lines, lines
 assert any(r["kind"] == "start" and r["text"] == "First VS4 loan: R." for r in wn if r["view"] == "line" and r["week"] == "2026-10-05"), wn
 assert not any("Too old" in (r["text"] or "") for r in wn if r["view"] == "line"), wn
 # Each lender's split of its loans, overall and at each GSE.
 from gsescore import why  # noqa: E402
 
-ls4 = {r["id"]: r for r in why.build_datasets(c4)["lender_stage"] if r["view"] == "lender"}
+ls4 = {r["id"]: r for r in why.build_datasets(c4, "2026-12-01")["lender_stage"] if r["view"] == "lender"}
 assert (ls4["r"]["mix_fico_only"], ls4["r"]["mix_both_fico"], ls4["r"]["mix_both_vs"], ls4["r"]["mix_vs_only"], ls4["r"]["fnma_both_vs"], ls4["r"]["fhlmc_both_vs"]) == (0.0, 0.8, 0.2, 0.0, 0.2, None), ls4["r"]
 assert (ls4["n"]["mix_fico_only"], ls4["n"]["mix_both_fico"], ls4["n"]["fnma_fico_only"], ls4["n"]["fhlmc_loans"]) == (0.5, 0.5, 0.5, 0), ls4["n"]
-split4 = {(r["id"], r["agency"], r["start"]): r for r in why.build_datasets(c4)["lender_mix"] if r["view"] == "week"}
+split4_rows = why.build_datasets(c4, "2026-12-01")["lender_mix"]
+assert split4_rows and not [r for r in why.build_datasets(c4, "2026-01-01")["lender_mix"] if r["view"] == "month"]  # months past the series end stay out
+split4 = {(r["id"], r["agency"], r["start"]): r for r in split4_rows if r["view"] == "week"}
 assert (split4[("r", "All", "2026-10-12")]["n"], split4[("r", "All", "2026-10-12")]["bv"], split4[("r", "FNMA", "2026-10-12")]["bf"], split4[("n", "All", "2026-10-05")]["fo"], split4[("n", "All", "2026-10-12")]["bf"]) == (100, 30, 70, 50, 50), split4
 
 # The exposure inputs and the workbook, on the pipeline's own build. Every formula's stored value is what the formula gives.
@@ -522,6 +537,24 @@ with zipfile.ZipFile(build_workbook()) as z:
 # 3 bureaus x 1.5 borrowers x (4 pulls x $10): $180 a funded loan, on a million loans less the 1% with no Classic FICO.
 assert abs(by_label["FICO's revenue per funded loan, today ($)"] - 180) < 1e-6 and abs(by_label["FICO's revenue on GSE loans, today ($m)"] - 178.2) < 1e-6, by_label
 assert abs(by_label["A lender's saving per funded loan if it drops FICO ($)"] - 162) < 1e-6 and abs(by_label["Each point of GSE loans with no FICO ($m a year)"] - 1.8) < 1e-6, by_label
+# The withdrawn labels stay out of the workbook, and the calculator reads the total of the column its name says. A statement is someone's own words, so it may say anything.
+from gsescore.export import SCENARIO_NO_FICO  # noqa: E402
+
+STATEMENTS = [r["statement"] for r in rows("statements")]
+WORKBOOK_GONE = ("eaches the rate", "No FICO today", "Your no FICO", "Missed", "Potential", "Left", "Estimated", "Fees left", "Fees estimated", "saves a fee", "Saves a fee", "Standard error", "model's miss", "against the FICO model", "taken to match", "unchecked")
+
+
+def workbook_says(found):
+    return [(label, t[:80]) for t in found if not any(said in t for said in STATEMENTS) for label in WORKBOOK_GONE if label in t]
+
+
+assert not workbook_says(strings), workbook_says(strings)
+assert {"Shows no FICO, at most", "Lender drops FICO (your assumption)", "By week: same LLPA tier, being rebuilt", "By lender: same LLPA tier, being rebuilt", "Rate vs model, same LLPA tier, being rebuilt (bp)", "Same fee, vs own FICO loans, being rebuilt (bp)", "Lower LLPA on VS4"} <= set(strings), strings[:40]
+with zipfile.ZipFile(build_workbook()) as z:
+    scenario_at = {strings[int(c.find("m:v", ns).text)]: c.get("r") for c in ET.fromstring(z.read("xl/worksheets/sheet3.xml")).iter(f"{{{ns['m']}}}c") if c.get("t") == "s"}
+assert SCENARIO_NO_FICO == f"'Your scenario'!{scenario_at['Lender drops FICO (your assumption)'][0]}4", (SCENARIO_NO_FICO, scenario_at)
+assert any(text == SCENARIO_NO_FICO for (sheet, _), (text, *_) in formulas.items() if sheet == "FICO exposure"), formulas
+assert "SUMPRODUCT" in formulas[("Your scenario", SCENARIO_NO_FICO.split("!")[1])][0] and ",J" in formulas[("Your scenario", SCENARIO_NO_FICO.split("!")[1])][0], formulas
 
 # Rate engine on planted data: rates are the sum of two factors' effects plus noise, and VS4 loans carry +25 bp.
 import numpy as np  # noqa: E402
@@ -796,12 +829,144 @@ assert {"lead_retail", "lead_own", "second", "all"} == set(g_range) and g_range[
 with zipfile.ZipFile(build_workbook()) as z:
     assert 'name="VA loans at 830+"' in z.read("xl/workbook.xml").decode()
 
-# A copy of the dashboard page must read only datasets the public site carries, or its charts stay blank.
-from gsescore.site import PUBLIC_DATASETS  # noqa: E402
-public_page = Path(__file__).resolve().parents[1] / "site" / "public"  # the repo's, not the planted home's
-public_reads = set(re.findall(r'data-source="(\w+)"', (public_page / "index.html").read_text()))
-for js in public_page.glob("*.js"):
-    public_reads |=set(re.findall(r"(?:dash\.data|statusOf|rowsOf)\('(\w+)'\)", js.read_text()))
+# A page must read only datasets its site carries, or its charts stay blank.
+from gsescore import site  # noqa: E402
+from gsescore.site import DASHBOARD_DATASETS, PUBLIC_DATASETS, PUBLIC_DROP, public_rows  # noqa: E402
+
+public_page = gse_paths.REPO / "site" / "public"  # the repo's, not the planted home's
+dashboard_page = gse_paths.REPO / "site" / "dashboard"
+
+
+def page_reads(folder):
+    reads = {d for attr in re.findall(r'data-source="([\w ]+)"', (folder / "index.html").read_text()) for d in attr.split()}
+    for js in folder.glob("*.js"):
+        text = js.read_text()
+        reads |= set(re.findall(r"""(?:dash\.data|rowsOf)\(['"](\w+)['"]\)""", text))
+        reads |= {d for args in re.findall(r"statusOf\(([^)]*)\)", text) for d in re.findall(r"""['"](\w+)['"]""", args)}
+    return reads
+
+
+public_reads, dashboard_reads = page_reads(public_page), page_reads(dashboard_page)
 assert public_reads and public_reads <= set(PUBLIC_DATASETS), public_reads - set(PUBLIC_DATASETS)
+assert dashboard_reads and dashboard_reads <= set(DASHBOARD_DATASETS), dashboard_reads - set(DASHBOARD_DATASETS)
+assert "rate_readout" in DASHBOARD_DATASETS and "rate_readout" not in PUBLIC_DATASETS and "pricing" not in PUBLIC_DATASETS and "pricing" not in DASHBOARD_DATASETS
+assert "rate_readout" in dashboard_reads and "pricing" not in public_reads | dashboard_reads, (public_reads, dashboard_reads)
+
+# What is withdrawn stays off the page sources. The public page only loses figures; the private page loses more and takes its rate figures from rate_readout.
+RATE_LABELS_GONE = ("net_bp", "premium_bp", "reaches_fee", "option_annual_usd", "Shows in the rate", "None visible", "against the FICO model", "Before that check", "VS4 loans compared", "typical miss", "Where does the fee saving go?", "About all",
+                    "How spread out", "By type of loan", "A lower fee showing in the rate", "Same fee, rate against its own FICO loans", "of a lower fee shows in its note rate", "investors charging", "if every lender took the lower fee")
+PUBLIC_GONE = RATE_LABELS_GONE + ("rate_readout", "m.option_bp")
+DASHBOARD_GONE = RATE_LABELS_GONE + ("rowsOf('pricing')", 'rowsOf("pricing")', "Missed (est.)", "Missed, both scores", "All three", "Same fee tier", "Likely to finish", "f it moves as", "No FICO today", "Your no FICO", "if others keep starting", "Taken to match", "unchecked", "no worse",
+                                     "saves a fee", "Credit score used for pricing", "±", "r.left_usd", "r.est_usd", "fee.option_bp", "r.on_better", "where the fee often does not change", "on the one fee grid")
+for folder, gone in ((public_page, PUBLIC_GONE), (dashboard_page, DASHBOARD_GONE)):
+    sources = [f for f in folder.iterdir() if f.suffix in (".html", ".js", ".css")]
+    assert len(sources) >= 5, sources
+    for f in sources:
+        text = f.read_text()
+        for label in gone:
+            assert label not in text, (str(f.relative_to(gse_paths.REPO)), label)
+
+# The public contract: on the planted files, every public dataset keeps to the fields and views reference/public_contract.json lists, and a row of a listed view has that view's fields.
+contract = json.loads(site.CONTRACT.read_text())
+assert set(contract) == set(PUBLIC_DATASETS), set(contract) ^ set(PUBLIC_DATASETS)
+assert all(re.fullmatch(r"\w+", k) for want in contract.values() for k in [*want["fields"], *want["views"], *(x for keys in want["views"].values() for x in keys)]), "names only, so no findings"
+assert not {d for d in PUBLIC_DROP["fees"] if "." not in d} & set(contract["fees"]["fields"]) and not {"option_bp", "est_usd", "one_loans"} & set(contract["fees"]["views"]["market"]) and "option_bp" in contract["fees"]["views"]["lender"], contract["fees"]
+planted_rows = {name: public_rows(name, json.loads((gse_paths.SITE_DATA / f"{name}.json").read_text())["rows"]) for name in PUBLIC_DATASETS}
+reached = set()
+
+
+def holds_contract(name, got):
+    want = contract[name]
+    outside = {k for r in got for k in r} - set(want["fields"])
+    assert not outside, (name, "fields outside the contract", outside)
+    for r in got:
+        if want["views"]:
+            assert "view" in r and r["view"] in want["views"], (name, "view outside the contract", r.get("view"))
+            lacks = set(want["views"][r["view"]]) - set(r)
+            assert not lacks, (name, r["view"], "lacks", lacks)
+            reached.add((name, r["view"]))
+        else:
+            assert "view" not in r, (name, "a view field the contract does not list", r["view"])
+
+
+for name, got in planted_rows.items():
+    holds_contract(name, got)
+assert [name for name, got in planted_rows.items() if not got] == ["seller_weekly"], [name for name, got in planted_rows.items() if not got]  # no lender here has enough VS4 loans for a row
+assert not any(r["kind"] == "rate" for r in planted_rows["week_note"] if r["view"] == "line"), planted_rows["week_note"]
+for name, got in (("fees", fee), ("outlook", res), ("week_note", wn), ("closing", cl7), ("lender_stage", why.build_datasets(c4, "2026-12-01")["lender_stage"]), ("lender_mix", split4_rows),
+                  ("ceiling", built2["ceiling"]), ("rules", built2["rules"]), ("score_mix", built2["score_mix"]), ("choice", built2["choice"])):
+    holds_contract(name, public_rows(name, got))  # the views these builders reach only on the planted tables above
+assert {(name, view) for name, want in contract.items() for view in want["views"]} - reached == {("score_mix", "vs_only")}, reached  # no VS4-only loans in records with the indicator here
+
+# The public build: the fees file loses the withdrawn figure and what scales to it, a lender keeps option_bp, a dashboard-only file missing from site/data does not matter, and a file the page no longer reads goes.
+site.STANDALONE, site.PUBLIC_PAGE, site.DASHBOARD_PAGE = gse_paths.REPO / "site" / "standalone", public_page / "index.html", dashboard_page / "index.html"
+assert site.DOCS == home / "docs" and site.PREVIEW == home / "build" / "preview" and not (gse_paths.SITE_DATA / "rate_readout.json").exists()
+(site.DOCS / "data").mkdir(parents=True)
+(site.DOCS / "data" / "pricing.json").write_text('{"rows":[]}')
+assert "data/fees.json" in site.build_site() and not (site.DOCS / "data" / "pricing.json").exists() and not (site.DOCS / "data" / "rate_readout.json").exists()
+pub_fees = json.loads((site.DOCS / "data" / "fees.json").read_text())["rows"]
+pub_market, pub_lender = [r for r in pub_fees if r["view"] == "market"], [r for r in pub_fees if r["view"] == "lender"]
+assert pub_market and pub_lender and pub_market == public_rows("fees", [r for r in json.loads((gse_paths.SITE_DATA / "fees.json").read_text())["rows"] if r["view"] == "market"]), pub_market
+assert not {"option_annual_usd", "option_usd", "annual_upb", "upb"} & {k for r in pub_fees for k in r}, pub_fees[0]
+assert not {"option_bp", "est_usd"} & {k for r in pub_market for k in r} and all("option_bp" in r and "est_usd" in r for r in pub_lender), pub_market[0]
+assert {"taken_annual_usd", "taken_all_usd", "left_usd", "left_loans"} <= set(pub_market[0]), pub_market[0]  # the fee tiles that stay
+assert (site.DOCS / "data" / "fees.json").read_text().startswith('{"rows":[{') and set(PUBLIC_DROP) == {"fees"}
+for name in PUBLIC_DATASETS:
+    assert (site.DOCS / "data" / f"{name}.json").read_text() == (gse_paths.SITE_DATA / f"{name}.json").read_text() or name in PUBLIC_DROP, name
+# The private preview keeps the whole fees file and reads the dated rate read, which the planted build does not make.
+(gse_paths.SITE_DATA / "rate_readout.json").write_text(json.dumps({"rows": [{"view": "meta", "as_of": "2026-10-27"}]}))
+preview = site.build_preview()
+assert "data/rate_readout.json" in preview and "data/pricing.json" not in preview and "option_annual_usd" in json.loads((site.PREVIEW / "data" / "fees.json").read_text())["rows"][0], preview
+
+# The weekly report's warnings: a contract view or field missing from docs/data, or a file that cannot be read, is a warning and never a stop. Nothing here reads real data or today's date.
+docs_data = site.DOCS / "data"
+assert isinstance(site.contract_warnings(), list) and all(isinstance(w, str) for w in site.contract_warnings())
+(docs_data / "monthly.json").unlink()
+(docs_data / "weekly.json").write_text("{not json")
+(docs_data / "summary.json").write_text('{"rows":[1,2]}')
+(docs_data / "events.json").write_text('{"rows":[]}')
+(docs_data / "choice.json").write_text('{"rows":[{"view":"rule","key":"1","loans":null}]}')
+warned = site.contract_warnings()
+for name, words in (("monthly", "could not read"), ("weekly", "could not read"), ("summary", "could not read"), ("events", "no rows"), ("choice", "view missing: pull"), ("choice", "fields missing:"), ("choice", "view rule has nothing in:")):
+    assert any(w.startswith(f"{name}:") and words in w for w in warned), (name, words, warned)
+(docs_data / "week_note.json").write_text('{"rows":[{"view":"not_listed","kind":"rate","not_a_field":1}]}')
+warned = [w for w in site.contract_warnings() if w.startswith("week_note:")]
+for words in ("fields outside the contract: not_a_field", "views outside the contract: not_listed", "has a rate line"):
+    assert any(words in w for w in warned), (words, warned)
+real_contract, site.CONTRACT = site.CONTRACT, home / "no_contract.json"
+assert len(site.contract_warnings()) == 1 and "could not read" in site.contract_warnings()[0]
+site.CONTRACT = real_contract
+assert site.rate_read_status(date(2026, 11, 10)) == ("2026-10-27", [])
+as_of, old = site.rate_read_status(date(2026, 11, 11))
+assert as_of == "2026-10-27" and len(old) == 1 and "15 days old" in old[0], old
+for planted_read in ('{"rows":[{"view":"meta","as_of":"not a date"}]}', '{"rows":[{"view":"row"}]}', '{"rows":[{"view":"meta"}]}', "{not json"):
+    (gse_paths.SITE_DATA / "rate_readout.json").write_text(planted_read)
+    as_of, old = site.rate_read_status(date(2026, 11, 11))
+    assert as_of is None and len(old) == 1 and old[0].startswith("rate read:"), (planted_read, old)
+(gse_paths.SITE_DATA / "rate_readout.json").unlink()
+as_of, old = site.rate_read_status(date(2026, 11, 11))
+assert as_of is None and len(old) == 1 and old[0].startswith("rate read:"), old
+assert "rate_readout" not in {c["id"] for c in site.dashboard_changes()}  # a missing read is a warning, never a stop at the upload step
+
+# And all of it on the weekly command itself: no new bundles, then ingest, build, the public site and the workbook on the planted files, with no rate read to find.
+import contextlib  # noqa: E402
+from types import SimpleNamespace  # noqa: E402
+
+from gsescore import cli  # noqa: E402
+
+said_out = io.StringIO()
+with contextlib.redirect_stdout(said_out):
+    cli.cmd_refresh(SimpleNamespace(downloads=home / "no_downloads"))
+weekly_report = json.loads(said_out.getvalue())
+assert weekly_report["rate_read_as_of"] is None and isinstance(weekly_report["warnings"], list) and any(w.startswith("rate read:") for w in weekly_report["warnings"]), weekly_report
+assert "option_annual_usd" not in (site.DOCS / "data" / "fees.json").read_text(), weekly_report
+with zipfile.ZipFile(home / weekly_report["workbook"]) as z:
+    last_strings = ["".join(t.text or "" for t in si.iter(f"{{{ns['m']}}}t")) for si in ET.fromstring(z.read("xl/sharedStrings.xml"))]
+assert len(last_strings) > len(strings) and not workbook_says(last_strings), workbook_says(last_strings)  # every sheet this time, with the whole market's
+(gse_paths.SITE_DATA / "rate_readout.json").write_text(json.dumps({"rows": [{"view": "meta", "as_of": "2026-10-27"}]}))
+said_out = io.StringIO()
+with contextlib.redirect_stdout(said_out):
+    cli.cmd_refresh(SimpleNamespace(downloads=home / "no_downloads"))
+assert json.loads(said_out.getvalue())["rate_read_as_of"] == "2026-10-27", said_out.getvalue()
 
 print("ok:", home)

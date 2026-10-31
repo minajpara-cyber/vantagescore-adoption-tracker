@@ -7,7 +7,7 @@ Friday.
 
   week_note  view week: one row per week: its label, the last day seen, partial, latest (the note to open with: the last full week),
              loans and shares for both GSEs and Fannie Mae.
-             view line: the week's sentences in order: kind (mix, movers, both, rule, rate, start, said), text, and for a statement
+             view line: the week's sentences in order: kind (mix, movers, both, rule, start, said), text, and for a statement
              its source and link.
 """
 from datetime import date, timedelta
@@ -32,15 +32,11 @@ def _day(d: date) -> str:
     return f"{d:%b} {d.day}"
 
 
-def _signed(x: float) -> str:
-    return f"{x:+.1f}"
-
-
 def _r(v):
     return round(v, 6) if isinstance(v, float) else v
 
 
-def build_datasets(con, statements: list[dict], pricing: list[dict], score_mix: list[dict] = ()) -> dict[str, list[dict]]:
+def build_datasets(con, statements: list[dict], score_mix: list[dict] = ()) -> dict[str, list[dict]]:
     """Needs scw (scores.py) and seller_map and entity_names (lenders.py)."""
     through = con.execute("SELECT max(first_intraday_date) FROM loans").fetchone()[0]
     weeks: dict[date, dict] = {}
@@ -62,7 +58,6 @@ def build_datasets(con, statements: list[dict], pricing: list[dict], score_mix: 
     firsts = con.execute("""
         SELECT m.id, min(coalesce(l.first_intraday_date, l.issue_month)) FROM loans l JOIN seller_map m ON m.key = seller_key(l.seller)
         WHERE l.score_model = 'V' GROUP BY 1""").fetchall()
-    rates = {r["key"]: r for r in pricing if r.get("view") == "week" and r.get("cover") == "all" and r.get("basis") == "headline"}
     steady = {r["start"]: r for r in score_mix if r.get("view") == "week" and r.get("agency") == "All" and r.get("steady_carrying") is not None}
 
     def moved(cur, prev, top, bottom, least, far):
@@ -109,10 +104,6 @@ def build_datasets(con, statements: list[dict], pricing: list[dict], score_mix: 
                 lines.append(("both", f"Both scores at Fannie Mae moved most at {', '.join(m)}."))
             if m := moved(sc, sp, "rv", "rn", MIN_RULE, RULE_MOVE):
                 lines.append(("rule", f"Use of VS4 with its score 1 to 19 points above FICO moved at {', '.join(m)}."))
-        rate, was = rates.get(week.isoformat()), rates.get(ordered[i - 1].isoformat()) if i else None
-        if rate and rate.get("net_bp") is not None:
-            lines.append(("rate", f"VS4 note rates against the FICO model: {_signed(rate['net_bp'])} bp on {rate['n']:,} loans"
-                                  + (f" ({_signed(was['net_bp'])} bp the week before)." if was and was.get("net_bp") is not None else ".")))
         started = sorted(names.get(sid, sid) for sid, first in firsts if week <= first <= end)
         if started:
             shown = ", ".join(started[:START_NAMES]) + (f" and {len(started) - START_NAMES} more" if len(started) > START_NAMES else "")

@@ -23,7 +23,7 @@ def cmd_refresh(args):
     from .bundle import unpack_bundle
     from .export import build_workbook
     from .ingest import ingest_paths
-    from .site import build_site
+    from .site import build_site, contract_warnings, rate_read_status
     from .warehouse import refresh_db
     report = {"bundles": [], "kept_in_inbox": []}
     for b in sorted(p for p in args.downloads.glob("*.zip") if BUNDLE.match(p.name)):
@@ -49,6 +49,8 @@ def cmd_refresh(args):
     build_site()
     report.update({k: meta[k] for k in ("loans", "last_issue_month", "last_disclosed")})
     report["workbook"] = str(build_workbook().relative_to(paths.ROOT))
+    report["rate_read_as_of"], rate_warnings = rate_read_status()
+    report["warnings"] = contract_warnings() + rate_warnings
     print(json.dumps(report, indent=1))
 
 
@@ -79,12 +81,12 @@ def cmd_publish(args):
     def git(*a, check=True):
         return subprocess.run(["git", "-C", str(paths.ROOT), *a], check=check, capture_output=True, text=True)
     git("add", "docs")
-    if git("diff", "--cached", "--quiet", check=False).returncode == 0:
+    if git("diff", "--cached", "--quiet", "--", "docs", check=False).returncode == 0:
         print("nothing to publish")
         return
     summary = json.loads((paths.ROOT / "docs" / "data" / "summary.json").read_text())["rows"]
     through = next((r["data_through"] for r in summary if r["agency"] == "All"), "unknown")
-    git("commit", "-m", f"Refresh data through {through}\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>")
+    git("commit", "-m", f"Refresh data through {through}\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>", "--", "docs")
     print(git("push", "origin", "HEAD").stderr.strip() or "pushed")
 
 

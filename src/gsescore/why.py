@@ -69,7 +69,7 @@ def _r(v):
     return round(v, 6) if isinstance(v, float) else v
 
 
-def build_datasets(con) -> dict[str, list[dict]]:
+def build_datasets(con, last_month) -> dict[str, list[dict]]:
     """Needs scw (scores.py) and seller_map and entity_names (lenders.py)."""
     last = con.execute("SELECT max(week) FROM scw").fetchone()[0]
     statements = []
@@ -192,7 +192,7 @@ def build_datasets(con) -> dict[str, list[dict]]:
     keys = sorted({k for r in out for k in r})
     listed_ids = [r["id"] for r in out if r["view"] == "lender"]
     mix_rows = [{"view": view, "id": sid, "agency": agency, "start": start.isoformat(), "n": n, "fo": fo, "bf": bf, "bv": bv, "vo": vo}
-                for view, col, when in (("week", "week", f"week >= DATE '{WEEK_FROM}'"), ("month", "month", "true"))
+                for view, col, when in (("week", "week", f"week >= DATE '{WEEK_FROM}'"), ("month", "month", f"month <= DATE '{last_month}'"))
                 for sid, agency, start, n, fo, bf, bv, vo in con.execute(f"""
                     SELECT seller_id, coalesce(agency, 'All'), {col}, count(*), count(*) FILTER (WHERE has_fico AND NOT has_vs4), count(*) FILTER (WHERE has_fico AND has_vs4 AND NOT is_v),
                            count(*) FILTER (WHERE has_fico AND has_vs4 AND is_v), count(*) FILTER (WHERE has_vs4 AND NOT has_fico)

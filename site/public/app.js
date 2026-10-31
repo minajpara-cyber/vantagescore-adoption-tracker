@@ -10,7 +10,7 @@
   const ADOPT_FROM = '2026-04-01';
   const CHANGE_FROM = '2026-05-01';
   const RECENT_FROM = '2026-05-01';
-  const DEFAULTS = { agency: 'All', measure: 'loans', dim: 'pricing_score', seller: 'rocket-mortgage', adopt: 'any', period: 'month', top: 25, mapmonth: '', cover: 'all', basis: 'headline', pdim: 'purpose', cscope: 'All', orule: 'higher', cperiod: 'week', lsort: 'share', ccohort: 'all' };
+  const DEFAULTS = { agency: 'All', measure: 'loans', dim: 'pricing_score', seller: 'rocket-mortgage', adopt: 'any', period: 'month', top: 25, mapmonth: '', cover: 'all', cscope: 'All', orule: 'higher', cperiod: 'week', lsort: 'share', ccohort: 'all' };
   const DAY = 864e5;
   const pct1 = d3.format('.1%');
   const ptsSigned = (v) => (Math.abs(v) < 0.05 ? '0.0' : d3.format('+.1f')(v));
@@ -65,7 +65,6 @@
     if (!DEF_FIRST[p.adopt]) p.adopt = 'any';
     if (p.period !== 'week') p.period = 'month';
     if (!['all', 'both', 'vs4only'].includes(p.cover)) p.cover = 'all';
-    if (p.cover !== 'both' || p.basis !== 'own_fico') p.basis = 'headline';
     if (p.orule !== 'better') p.orule = 'higher';
     if (!['month', 'close'].includes(p.cperiod)) p.cperiod = 'week';
     if (!['carrying', 'rising'].includes(p.lsort)) p.lsort = 'share';
@@ -164,7 +163,6 @@
     if (event.target.id === 'why-stage') return drawWhyTable(params());
     if (event.target.id === 'seller-pick') openSeller(event.target.value);
     else if (event.target.id === 'mix-dim') dash.setParams({ dim: event.target.value });
-    else if (event.target.id === 'pricing-dim') dash.setParams({ pdim: event.target.value });
     else if (event.target.id === 'choice-scope') dash.setParams({ cscope: event.target.value });
     else if (event.target.id === 'market-month') dash.setParams({ mapmonth: event.target.value });
   });
@@ -207,6 +205,9 @@
     put('h-cur-month', 'current_month', monthYear, both, 'All');
     put('h-final-share', 'final_vs4_share', pct1, both, 'All');
     put('h-cur-share', 'current_vs4_share', pct1, both, 'All');
+    // Between a month's final file and the next month joining the series, the latest month is the final one: nothing is "so far".
+    root.querySelectorAll('.h-so-far').forEach((el) => { el.hidden = !!both.final_month && both.current_month === both.final_month; });
+    root.querySelectorAll('.s-so-far').forEach((el) => { el.hidden = !!mine.final_month && mine.current_month === mine.final_month; });
   }
 
   function drawTiles(p) {
@@ -1809,13 +1810,10 @@
       const using = d3.sum(whyRows('stage').filter((d) => d.key === 'pricing' || d.key === 'some'), (d) => d.lenders);
       return `${pr.users == null ? '—' : int(pr.users)} lenders have delivered a VS4 loan to the GSEs since September, and ${int(using)} price on it regularly. At most ${head.vs_only_share == null ? '—' : pct1(head.vs_only_share)} of loans have only VS4. This covers GSE loans only.`;
     }
-    if (r.check === 'pricing') {
-      const o = rowsOf('pricing').find((d) => d.view === 'overall' && d.cover === 'all' && d.basis === 'headline');
-      return o ? `${bpSigned(o.net_bp)} bp in the same fee tier, on loans first disclosed from July 20, net of the model's miss.` : '—';
-    }
+    if (r.check === 'pricing') return 'Rate comparison withdrawn while it is rebuilt.';
     if (r.check === 'fees') {
       const fm = rowsOf('fees').find((d) => d.view === 'market' && d.key === 'All') || {};
-      return fm.option_annual_usd == null ? '—' : `On the grid, ${usdM(fm.taken_annual_usd)} a year in fees not paid at today's use, ${usdM(fm.option_annual_usd)} if every lender took the lower fee.`;
+      return fm.taken_annual_usd == null ? '—' : `On the grid, ${usdM(fm.taken_annual_usd)} a year in fees not paid at today's use.`;
     }
     if (r.check === 'august') {
       const a = rowsOf('monthly').find((d) => d.agency === 'All' && d.month === '2026-08-01');
@@ -1904,8 +1902,6 @@
     vs4only: 'VS4-priced loans that show no Classic FICO among loans disclosed with every score (records since Oct 19, 2026), against every FICO-priced loan disclosed that way. Read with care: a loan can have a FICO that does not show, so this group mixes loans with one score and loans with a hidden FICO. Fannie Mae\'s few such loans are the cleaner read.',
   };
   const keyPart = (v) => encodeURIComponent(String(v));
-  const bpSigned = ptsSigned;
-  const bpTick = (v) => (v === 0 ? '0' : d3.format('+')(v));
 
   function drawMix(p) {
     const box = document.getElementById('mix-chart');
@@ -1989,50 +1985,7 @@
   }
 
   // ---- Pricing ----
-  const PDIMS = { purpose: 'Loan purpose', score: 'Fee tier', ltv: 'Loan-to-value', channel: 'Origination channel', size: 'Loan size' };
-  const BASIS_TEXT = { headline: 'in the same fee tier', own_fico: 'at the borrower’s own Classic FICO' };
-
-  function drawPricing(p) {
-    drawFees();
-    const st = dash.data('pricing').status;
-    const rows = rowsOf('pricing');
-    const mine = (r) => r.cover === p.cover && r.basis === p.basis;
-    const o = rows.find((r) => r.view === 'overall' && mine(r)) || {};
-    const fit = rows.find((r) => r.view === 'fit') || {};
-    const where = `view=overall&cover=${p.cover}&basis=${p.basis}`;
-    const one = d3.format('.1f');
-    mark('.pr-net', 'net_bp', where, st, o.net_bp == null ? null : bpSigned(o.net_bp));
-    mark('.pr-check', 'check_bp', where, st, o.check_bp == null ? null : bpSigned(o.check_bp));
-    mark('.pr-premium', 'premium_bp', where, st, o.premium_bp == null ? null : bpSigned(o.premium_bp));
-    mark('.pr-se', 'se_bp', where, st, o.se_bp == null ? null : one(o.se_bp));
-    mark('.pr-median', 'median_bp', where, st, o.median_bp == null ? null : bpSigned(o.median_bp));
-    mark('.pr-n', 'n', where, st, o.n == null ? null : int(o.n));
-    mark('.pr-since', 'since', where, st, o.since ? longDay(o.since) : null);
-    mark('.pr-rmse', null, null, st, fit.rmse_bp == null ? null : one(fit.rmse_bp));
-    mark('.pr-r2', null, null, st, fit.r2 == null ? null : d3.format('.2f')(fit.r2));
-    mark('.pr-held', null, null, st, fit.n == null ? null : int(fit.n));
-    mark('.pr-trained', null, null, st, fit.n_train == null ? null : int(fit.n_train));
-    document.getElementById('basis-seg').hidden = p.cover !== 'both';
-    root.querySelectorAll('.pr-window').forEach((el) => { el.textContent = p.cover === 'all' ? 'first disclosed' : 'disclosed with every score'; });
-    root.querySelectorAll('.pricing-basis').forEach((el) => { el.textContent = BASIS_TEXT[p.basis]; });
-    const weeks = rows.filter((r) => r.view === 'week' && mine(r)).sort((a, b) => a.order - b.order);
-    root.querySelectorAll('.pr-first').forEach((el) => { el.textContent = p.cover === 'all' || !weeks.length ? '' : `; first disclosed from ${shortDay(weeks[0].key)}`; });
-    drawValue(st, rows);
-    legend(document.getElementById('pricing-seller-legend'), BP_KEY);
-    legend(document.getElementById('pricing-segment-legend'), BP_KEY);
-    drawPricingWeeks(st, weeks);
-    hbarsBp(document.getElementById('pricing-seller-chart'), st, rows.filter((r) => r.view === 'seller' && mine(r)).sort((a, b) => a.order - b.order).slice(0, 12),
-      'VS4 rate against the model by lender');
-    const sel = document.getElementById('pricing-dim');
-    if (sel.options.length !== Object.keys(PDIMS).length) sel.replaceChildren(...Object.entries(PDIMS).map(([v, l]) => new Option(l, v)));
-    sel.value = PDIMS[p.pdim] ? p.pdim : 'purpose';
-    hbarsBp(document.getElementById('pricing-segment-chart'), st,
-      rows.filter((r) => r.view === 'segment' && mine(r) && r.dim === sel.value).sort((a, b) => a.order - b.order),
-      'VS4 rate against the model by type of loan');
-    drawPricingHist(st, rows.filter((r) => r.view === 'hist' && mine(r)).sort((a, b) => a.order - b.order));
-  }
-
-  // Dollars at any size: $0, $420, $48k, $2.1m, $1.0bn, $2.1tn. Under $100k it reads in thousands, so a small amount never shows as $0.0m.
+  // Dollars at any size: $0, $420, $48k, $2.1m, $3.4bn, $2.1tn. Under $100k it reads in thousands, so a small amount never shows as $0.0m.
   const usdM = (v) => {
     const a = Math.abs(v), one = d3.format('.1f');
     const text = a >= 999.95e9 ? `$${one(a / 1e12)}tn` : a >= 999.95e6 ? `$${one(a / 1e9)}bn` : a >= 1e5 ? `$${one(a / 1e6)}m` : a >= 1e3 ? `$${d3.format('.0f')(a / 1e3)}k` : money(a);
@@ -2051,8 +2004,6 @@
     mark('.fe-share', 'saving_share', mw, st, val('saving_share', pct1));
     mark('.fe-taken', 'taken_annual_usd', mw, st, val('taken_annual_usd', usdM));
     mark('.fe-taken-m', 'taken_all_usd', mw, st, val('taken_all_usd', usdM));
-    mark('.fe-option', 'option_annual_usd', mw, st, val('option_annual_usd', usdM));
-    mark('.fe-option-bp', 'option_bp', mw, st, val('option_bp', d3.format('.1f')));
     mark('.fe-left', 'left_usd', mw, st, val('left_usd', usdM));
     mark('.fe-left-n', 'left_loans', mw, st, val('left_loans', int));
     const lenders = rows.filter((r) => r.view === 'lender').sort((a, b) => a.rank - b.rank);
@@ -2104,151 +2055,6 @@
     }
   }
 
-  // The fall in rate over the fee at 5 to 1. Sampling noise can put it past either end.
-  const reachText = (v) => (v == null ? '—' : v >= 0.95 ? 'About all' : v <= 0.05 ? 'None visible' : d3.format('.0%')(v));
-
-  function drawValue(st, rows) {
-    const table = document.getElementById('value-table');
-    const all = rows.filter((r) => r.view === 'value');
-    table.closest('.vx-tablebox').classList.toggle('dash-skeleton', st === 'loading');
-    const one = d3.format('.1f');
-    const body = table.tBodies[0];
-    body.replaceChildren();
-    const addRow = (label, r, same) => {
-      const tr = body.insertRow();
-      tr.dataset.key = ['value', r.scope, r.key].map(keyPart).join(',');
-      [[label, 'vx-l'], [int(r.n)], [r.fee_bp == null ? '—' : one(r.fee_bp), 'vx-opt'], [r.fee_rate_bp == null ? '—' : one(r.fee_rate_bp), 'vx-opt'], [bpSigned(r.net_bp)], [r.n < 50 ? '—' : reachText(r.reaches_fee)],
-        [same ? int(same.n) : '—', 'vx-opt'], [same ? bpSigned(same.net_bp) : '—', 'vx-opt']].forEach(([text, cls]) => {
-        const td = tr.insertCell();
-        td.textContent = text;
-        if (cls) td.className = cls;
-      });
-    };
-    const scopes = all.filter((r) => r.key === 'better' && r.n >= 100).sort((a, b) => a.scope_rank - b.scope_rank);
-    for (const r of scopes) addRow(r.label, r, all.find((d) => d.scope === r.scope && d.key === 'same'));
-    const bands = { to25: 'fee saved up to 25 bp', to50: 'fee saved 25 to 50 bp', to100: 'fee saved 50 to 100 bp', over100: 'fee saved over 100 bp' };
-    const first = all.filter((r) => r.channel).sort((a, b) => a.scope_rank - b.scope_rank).find((r) => r.channel === 'R' && r.key === 'better' && r.n >= 100);
-    const uwm = all.filter((r) => r.channel === 'B' && r.key === 'better' && r.n >= 100).map((r) => r.scope);
-    for (const scope of [...new Set([first && first.scope, ...uwm].filter(Boolean))]) {
-      for (const [key, label] of Object.entries(bands)) {
-        const r = all.find((d) => d.scope === scope && d.key === key);
-        if (r && r.n >= 50) addRow(`${r.label}, ${label}`, r);
-      }
-    }
-    const left = all.find((d) => d.scope === 'All' && d.key === 'fico_better');
-    document.getElementById('value-left').textContent = left ? `For comparison: ${int(left.n)} 30-year fixed loans priced on FICO though VS4 had the lower fee. Rate against the lender's own FICO loans: ${bpSigned(left.net_bp)} bp. Fee they could have saved: ${one(left.fee_bp)} bp (${one(left.fee_rate_bp)} bp in rate terms).` : '';
-  }
-
-  function pricingTip(r) {
-    return [
-      [C_VS4, 'VS4 loans', `${bpSigned(r.premium_bp)} bp (± ${d3.format('.1f')(2 * (r.se_bp || 0))}) on ${int(r.n)}`],
-      ['var(--color-fg)', 'FICO loans the model did not see', r.check_bp == null ? 'too few to show' : `${bpSigned(r.check_bp)} bp on ${int(r.check_n)}`],
-      [null, 'Net', r.net_bp == null ? '—' : `${bpSigned(r.net_bp)} bp`],
-    ];
-  }
-
-  const BP_KEY = [[C_VS4, 'VS4 loans', 'box'], ['var(--color-fg)', 'FICO loans the model did not see', 'diamond'], ['var(--color-fg)', 'Margin of error', 'line']];
-
-  function drawPricingWeeks(st, data) {
-    const box = document.getElementById('pricing-week-chart');
-    legend(document.getElementById('pricing-week-legend'), BP_KEY);
-    if (!prep(box, st) || !data.length) return;
-    const W = box.clientWidth, H = 240, m = { top: 12, right: 10, bottom: 26, left: 0 };
-    const svg = svgFor(box, W, H, 'VS4 rate against the model by week of first disclosure');
-    const lo = Math.min(0, d3.min(data, (r) => r.premium_bp - 2 * (r.se_bp || 0)), d3.min(data, (r) => r.check_bp ?? 0));
-    const hi = Math.max(0, d3.max(data, (r) => r.premium_bp + 2 * (r.se_bp || 0)), d3.max(data, (r) => r.check_bp ?? 0));
-    const y = d3.scaleLinear([lo, hi], [H - m.bottom, m.top]).nice(5);
-    const keys = data.map((r) => r.key);
-    const { x, widest } = bandFrame(svg, keys, shortDay, y, bpTick, 5, W, m);
-    yAxis(svg, y, bpTick, m.left, W - m.right);
-    bandAxis(svg, x, keys, shortDay, widest, H - m.bottom + 8);
-    const bw = Math.min(28, x.bandwidth()), off = (x.bandwidth() - bw) / 2;
-    const cx = (r) => x(r.key) + x.bandwidth() / 2;
-    svg.append('g').selectAll('rect').data(data).join('rect')
-      .attr('x', (r) => x(r.key) + off).attr('width', bw).attr('y', (r) => y(Math.max(0, r.premium_bp)))
-      .attr('height', (r) => Math.abs(y(r.premium_bp) - y(0))).attr('rx', 3).attr('fill', C_VS4).attr('fill-opacity', 0.85);
-    svg.append('g').selectAll('line').data(data.filter((r) => r.se_bp != null)).join('line')
-      .attr('x1', cx).attr('x2', cx).attr('y1', (r) => y(r.premium_bp - 2 * r.se_bp)).attr('y2', (r) => y(r.premium_bp + 2 * r.se_bp))
-      .attr('stroke', 'var(--color-fg)').attr('stroke-width', 1.5);
-    svg.append('g').selectAll('path').data(data.filter((r) => r.check_bp != null)).join('path')
-      .attr('d', d3.symbol(d3.symbolDiamond, 40)).attr('transform', (r) => `translate(${cx(r)},${y(r.check_bp)})`)
-      .attr('fill', 'var(--color-panel)').attr('stroke', 'var(--color-fg)');
-    bandHover(svg, box, x, data, 'key', m, H, (r) => [`Week of ${shortDay(r.key)}`, pricingTip(r)]);
-  }
-
-  function hbarsBp(box, st, items, label) {
-    if (!prep(box, st)) return;
-    if (!items.length) return;
-    const W = box.clientWidth, rowH = W > 360 ? Math.max(26, 208 / items.length) : 26;  // on a wide card a short list fills the height of the charts around it
-    const m = { top: 6, right: 12, bottom: 26, left: 0 };
-    const H = m.top + m.bottom + items.length * rowH;
-    box.style.minHeight = `${H}px`;
-    const svg = svgFor(box, W, H, label);
-    const text = (r) => `${rangeDash(r.label).replace(/ \([A-Z]+\)$/, '').replace(/ refinance$/, ' refi')} · ${int(r.n)}`;  // short names, so the count always fits; the tooltip has the full one
-    m.left = Math.min(Math.ceil(textWidth(svg, items.map(text))) + 14, Math.max(160, Math.floor(W * 0.5)));
-    const lo = Math.min(0, d3.min(items, (r) => r.premium_bp - 2 * (r.se_bp || 0)), d3.min(items, (r) => r.check_bp ?? 0));
-    const hi = Math.max(0, d3.max(items, (r) => r.premium_bp + 2 * (r.se_bp || 0)), d3.max(items, (r) => r.check_bp ?? 0));
-    const x = d3.scaleLinear([lo, hi], [m.left, W - m.right]).nice(5);
-    const ticks = x.ticks(5);
-    svg.append('g').selectAll('line').data(ticks).join('line')
-      .attr('x1', (v) => x(v)).attr('x2', (v) => x(v)).attr('y1', m.top).attr('y2', H - m.bottom)
-      .attr('stroke', (v) => (v === 0 ? 'var(--cds-chart-axis)' : 'var(--cds-chart-grid)'));
-    svg.append('g').attr('transform', `translate(0,${H - m.bottom + 8})`)
-      .call(d3.axisBottom(x).tickValues(ticks).tickFormat(bpTick).tickSize(0)).call(styleAxis);
-    const idx = new Map(items.map((r, i) => [r, i]));
-    const yb = d3.scaleBand(d3.range(items.length), [m.top, H - m.bottom]).paddingInner(0.35);
-    const cy = (r) => yb(idx.get(r)) + yb.bandwidth() / 2;
-    const bh = Math.min(28, yb.bandwidth());
-    const g = svg.append('g').selectAll('g').data(items).join('g');
-    g.append('text').attr('x', m.left - 10).attr('y', cy).attr('dy', '0.35em').attr('text-anchor', 'end')
-      .style('fill', 'var(--color-fg)').text(text).each(function () { clip(this, m.left - 14); });
-    g.append('rect').attr('x', (r) => x(Math.min(0, r.premium_bp))).attr('width', (r) => Math.abs(x(r.premium_bp) - x(0)))
-      .attr('y', (r) => cy(r) - bh / 2).attr('height', bh).attr('rx', 3).attr('fill', C_VS4).attr('fill-opacity', 0.85);
-    g.filter((r) => r.se_bp != null).append('line')
-      .attr('x1', (r) => x(r.premium_bp - 2 * r.se_bp)).attr('x2', (r) => x(r.premium_bp + 2 * r.se_bp))
-      .attr('y1', cy).attr('y2', cy).attr('stroke', 'var(--color-fg)').attr('stroke-width', 1.5);
-    g.filter((r) => r.check_bp != null).append('path').attr('d', d3.symbol(d3.symbolDiamond, 40))
-      .attr('transform', (r) => `translate(${x(r.check_bp)},${cy(r)})`).attr('fill', 'var(--color-panel)').attr('stroke', 'var(--color-fg)');
-    const tip = tooltip(box);
-    g.append('rect').attr('x', 0).attr('width', W).attr('y', (r) => yb(idx.get(r)) - 3).attr('height', yb.bandwidth() + 6)
-      .attr('fill', 'transparent')
-      .on('pointermove', (event, r) => tip.show(event, rangeDash(r.label), pricingTip(r)))
-      .on('pointerleave', () => tip.hide());
-  }
-
-  function drawPricingHist(st, data) {
-    const box = document.getElementById('pricing-hist-chart');
-    legend(document.getElementById('pricing-hist-legend'), [[C_VS4, 'VS4 loans', 'box'], ['var(--color-fg-muted)', 'FICO loans the model did not see', 'line']]);
-    if (!prep(box, st) || !data.length) return;
-    const W = box.clientWidth, H = 220, m = { top: 10, right: 10, bottom: 26, left: 0 };
-    const svg = svgFor(box, W, H, 'Spread of VS4 and held-out FICO loans’ rates against the model');
-    const width = data.find((r) => r.bin_lo != null && r.bin_hi != null);
-    const step = width ? width.bin_hi - width.bin_lo : 1;
-    const lo = (r) => (r.bin_lo == null ? r.bin_hi - step : r.bin_lo);
-    const hi = (r) => (r.bin_hi == null ? r.bin_lo + step : r.bin_hi);
-    const y = d3.scaleLinear([0, (d3.max(data, (r) => Math.max(r.share, r.check_share)) || 0.01) * 1.1], [H - m.bottom, m.top]).nice(4);
-    const yf = d3.format('.0%');
-    m.left = Math.ceil(textWidth(svg, y.ticks(4).map(yf))) + 10;
-    const x = d3.scaleLinear([d3.min(data, lo), d3.max(data, hi)], [m.left, W - m.right]);
-    yAxis(svg, y, yf, m.left, W - m.right, 4);
-    svg.append('g').attr('transform', `translate(0,${H - m.bottom + 8})`)
-      .call(d3.axisBottom(x).ticks(6).tickFormat(bpTick).tickSize(0)).call(styleAxis);
-    svg.append('g').selectAll('rect').data(data).join('rect')
-      .attr('x', (r) => x(lo(r)) + 1).attr('width', (r) => Math.max(0, x(hi(r)) - x(lo(r)) - 2))
-      .attr('y', (r) => y(r.share)).attr('height', (r) => Math.max(0, y(0) - y(r.share))).attr('fill', C_VS4).attr('fill-opacity', 0.8);
-    const last = data[data.length - 1];
-    svg.append('path').attr('d', d3.line().curve(d3.curveStepAfter)(data.map((r) => [x(lo(r)), y(r.check_share)]).concat([[x(hi(last)), y(last.check_share)]])))
-      .attr('fill', 'none').attr('stroke', 'var(--color-fg-muted)').attr('stroke-width', 2);
-    const tip = tooltip(box);
-    svg.append('g').selectAll('rect').data(data).join('rect')
-      .attr('x', (r) => x(lo(r))).attr('width', (r) => Math.max(0, x(hi(r)) - x(lo(r)))).attr('y', m.top)
-      .attr('height', H - m.top - m.bottom).attr('fill', 'transparent')
-      .on('pointermove', (event, r) => tip.show(event,
-        r.bin_lo == null ? `Below ${bpSigned(r.bin_hi)} bp` : r.bin_hi == null ? `${bpSigned(r.bin_lo)} bp and above` : `${bpSigned(r.bin_lo)} to ${bpSigned(r.bin_hi)} bp`,
-        [[C_VS4, 'VS4 loans', `${pct1(r.share)} of ${int(r.n)}`], ['var(--color-fg-muted)', 'FICO loans the model did not see', `${pct1(r.check_share)} of ${int(r.check_n)}`]]))
-      .on('pointerleave', () => tip.hide());
-  }
-
   function draw() {
     const p = params();
     root.querySelectorAll('.vx-seg[data-param]').forEach((seg) => {
@@ -2296,13 +2102,12 @@
       drawMix(p);
       drawProfile(p);
     } else if (current === 'pricing') {
-      root.querySelectorAll('.cover-note').forEach((el) => { el.textContent = p.cover === 'all' ? 'Every VS4-priced and Classic FICO-priced 30-year fixed loan first disclosed since July 20, 2026.' : COVER_NOTE[p.cover]; });
-      drawPricing(p);
+      drawFees();
     }
     (window.vx.hooks[current] || []).forEach((fn) => fn(p));
     window.vx.after.forEach((fn) => fn());
   }
-  window.vx = { root, rowsOf, statusOf, int, pct1, money, usdM, ptsSigned, inkOn, olName, olPct, openSeller, entityOf, monthShort, monthYear, monthLabel, shortDay, reachText, prep, svgFor, bandFrame, yAxis, bandAxis, bandHover, legend, tooltip, textWidth,
+  window.vx = { root, rowsOf, statusOf, int, pct1, money, usdM, ptsSigned, inkOn, olName, olPct, openSeller, entityOf, monthShort, monthYear, monthLabel, shortDay, prep, svgFor, bandFrame, yAxis, bandAxis, bandHover, legend, tooltip, textWidth,
     MIX_GROUPS, ADOPT_FROM, AG_NAME, show, col, mark, redraw: draw, after: [], hooks: { overview: [], outlook: [], lenders: [], scores: [], borrowers: [], pricing: [], market: [], method: [] } };
 
   // A link names a page (#lenders) or a seller (#seller-rocket-mortgage); the page opens it as it loads.

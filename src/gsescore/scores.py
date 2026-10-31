@@ -278,12 +278,12 @@ def _every_score(con, names: dict, rows) -> dict[str, list[dict]]:
         f"count(*) FILTER (WHERE {c}) / count(*) AS {k}_share, coalesce(sum(upb) FILTER (WHERE {c}), 0) / nullif(sum(upb), 0) AS {k}_upb_share"
         for k, c in {**MIX_GROUPS, "fico": "has_fico", "vs": "has_vs4", "vs4_priced": "is_v"}.items())
     start = {"month": "month", "week": "week", "recent": f"DATE '{latest_from}'", "all": f"DATE '{BOTH_START}'"}
-    where = {"month": "true", "week": f"week >= DATE '{WEEK_FROM}'", "recent": f"week >= DATE '{latest_from}'", "all": "true"}
+    current = con.execute("SELECT max(month) FROM monthly").fetchone()[0]
+    where = {"month": f"month <= DATE '{current}'", "week": f"week >= DATE '{WEEK_FROM}'", "recent": f"week >= DATE '{latest_from}'", "all": "true"}
     mix = rows(con, " UNION ALL BY NAME ".join(
         f"""SELECT '{view}' AS view, {st} AS start, COALESCE(agency, 'All') AS agency, {measures} FROM scw WHERE {where[view]}
             GROUP BY GROUPING SETS (({st}, agency), ({st}))""" for view, st in start.items()) + """
         ORDER BY view, start, CASE agency WHEN 'All' THEN 0 WHEN 'FNMA' THEN 1 ELSE 2 END""")
-    current = con.execute("SELECT max(month) FROM monthly").fetchone()[0]
     months = [r for r in mix if r["view"] == "month" and r["agency"] == "All" and r["start"] <= current.isoformat()]
     enough = [r["start"] for r in months if r["loans"] >= HEADLINE_MIN] or [r["start"] for r in months]
     headline = max(enough) if enough else None

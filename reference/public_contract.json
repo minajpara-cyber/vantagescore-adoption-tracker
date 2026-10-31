@@ -1,0 +1,187 @@
+{
+  "monthly": {
+    "fields": ["agency", "fico_loans", "fico_share", "fico_upb", "fico_upb_share", "final", "loans", "month", "no_score_loans", "scored_loans", "scored_upb", "unresolved_loans", "vs4_loans", "vs4_share", "vs4_upb", "vs4_upb_share"],
+    "views": {}
+  },
+  "weekly": {
+    "fields": ["agency", "complete", "fico_loans", "fico_share", "fico_upb", "fico_upb_share", "last_day", "loans", "no_score_loans", "scored_loans", "scored_upb", "unresolved_loans", "vs4_loans", "vs4_share", "vs4_share_4wk", "vs4_upb", "vs4_upb_share", "vs4_upb_share_4wk", "week"],
+    "views": {}
+  },
+  "summary": {
+    "fields": ["agency", "current_month", "current_scored_loans", "current_vs4_share", "current_vs4_upb_share", "data_through", "final_fico_share", "final_fico_upb_share", "final_month", "final_scored_loans", "final_vs4_share", "final_vs4_upb_share", "prior_month", "prior_vs4_share", "prior_vs4_upb_share", "sellers", "sellers_since", "sellers_with_vs4", "top2_sellers", "top2_share_of_vs4", "vs4_share_change", "vs4_share_change_pts", "vs4_upb_share_change", "vs4_upb_share_change_pts"],
+    "views": {}
+  },
+  "events": {
+    "fields": ["date", "label"],
+    "views": {}
+  },
+  "sellers": {
+    "fields": ["broker_share_recent", "corr_share_recent", "first_10_month", "first_5pct_month", "first_vs4_date", "first_vs4_month", "id", "level", "members", "mkt_share_recent", "mkt_share_upb_recent", "name", "parent", "rank", "recent_from", "recent_to", "retail_share_recent", "scored_recent", "share_of_all_vs4", "short", "ticker", "vs4_loans", "vs4_recent", "vs4_share_recent", "vs4_upb_share_recent"],
+    "views": {}
+  },
+  "seller_monthly": {
+    "fields": ["agency", "id", "level", "mkt_share", "mkt_share_upb", "month", "scored", "vs4", "vs4_share", "vs4_upb_share"],
+    "views": {}
+  },
+  "seller_weekly": {
+    "fields": ["complete", "id", "level", "scored", "vs4", "vs4_share", "vs4_share_4wk", "vs4_upb_share", "vs4_upb_share_4wk", "week"],
+    "views": {}
+  },
+  "seller_splits": {
+    "fields": ["bucket", "bucket_order", "dim", "id", "level", "month", "scored", "vs4", "vs4_share"],
+    "views": {}
+  },
+  "adoption": {
+    "fields": ["active_sellers", "active_share", "active_upb_share", "adopters_any", "adopters_pct5", "adopters_share_any", "adopters_share_pct5", "adopters_share_ten", "adopters_ten", "adopters_upb_share_any", "adopters_upb_share_pct5", "adopters_upb_share_ten", "agency", "d_mix", "d_mix_upb", "d_new", "d_new_upb", "d_total", "d_total_upb", "d_within", "d_within_upb", "final", "month", "new_any", "new_pct5", "new_share_any", "new_share_pct5", "new_share_ten", "new_ten", "new_upb_share_any", "new_upb_share_pct5", "new_upb_share_ten", "nonadopters_share_any", "nonadopters_share_pct5", "nonadopters_share_ten", "nonadopters_upb_share_any", "nonadopters_upb_share_pct5", "nonadopters_upb_share_ten", "rest_sellers", "rest_share", "rest_upb_share", "scored_loans", "vs4_share", "vs4_upb_share", "vs4_within_any", "vs4_within_pct5", "vs4_within_ten", "vs4_within_upb_any", "vs4_within_upb_pct5", "vs4_within_upb_ten"],
+    "views": {}
+  },
+  "adopters": {
+    "fields": ["agency", "first_any", "first_pct5", "first_ten", "id"],
+    "views": {}
+  },
+  "series": {
+    "fields": ["actual", "actual_upb", "agency", "complete", "ex_top2", "ex_top2_upb", "excluded", "fixed", "fixed_upb", "period", "scored", "start"],
+    "views": {}
+  },
+  "asof": {
+    "fields": ["agency", "as_of", "day", "final_seen_share", "final_vs4_share", "final_vs4_upb_share", "first_month", "gap", "gap_upb", "kind", "last_month", "month", "months", "scored_loans", "vs4_share", "vs4_share_hi", "vs4_share_lo", "vs4_upb_share", "vs4_upb_share_hi", "vs4_upb_share_lo"],
+    "views": {}
+  },
+  "borrowers": {
+    "fields": ["bucket", "bucket_order", "cover", "dim", "dim_label", "expected", "group_loans", "grp", "loans", "share"],
+    "views": {}
+  },
+  "borrower_profile": {
+    "fields": ["avg_gap", "avg_loan", "broker_share", "cashout_share", "cover", "fixed30_share", "fthb_share", "grp", "investor_share", "loans", "mi_share", "purchase_share", "since", "wa_dti", "wa_fico", "wa_ltv", "wa_rate_30", "wa_score", "wa_vs4"],
+    "views": {}
+  },
+  "choice": {
+    "fields": ["agency", "both_share", "key", "label", "loans", "order", "scope", "scope_label", "scope_loans", "view", "vs4_loans", "vs4_share"],
+    "views": {
+      "pull": ["agency", "both_share", "loans", "scope", "scope_label", "view"],
+      "rule": ["agency", "key", "label", "loans", "order", "scope", "scope_label", "scope_loans", "view", "vs4_loans", "vs4_share"]
+    }
+  },
+  "ceiling": {
+    "fields": ["actual", "actual_upb", "adds_better", "adds_higher", "adds_not_worse", "agency", "better", "better_upb", "estimated", "final", "higher", "higher_upb", "key", "label", "loan_share", "loans", "measured", "not_worse", "not_worse_upb", "observed_share", "order", "start", "view"],
+    "views": {
+      "band": ["adds_better", "adds_higher", "adds_not_worse", "agency", "better", "higher", "key", "label", "loan_share", "loans", "measured", "not_worse", "order", "start", "view"],
+      "both": ["actual", "actual_upb", "agency", "better", "better_upb", "estimated", "higher", "higher_upb", "loans", "not_worse", "not_worse_upb", "observed_share", "start", "view"],
+      "month": ["actual", "actual_upb", "agency", "better", "better_upb", "estimated", "final", "higher", "higher_upb", "loans", "not_worse", "not_worse_upb", "observed_share", "start", "view"]
+    }
+  },
+  "outlook": {
+    "fields": ["adds_better", "adds_better_upb", "adds_higher", "adds_higher_upb", "better_loans", "better_share", "better_upb_share", "better_vs4", "both_share", "case", "end_month", "final", "first_vs4", "heavy_count", "heavy_names", "higher_loans", "higher_share", "higher_upb_share", "higher_vs4", "horizon", "id", "key", "label", "lenders", "loans", "m", "month", "new_sellers", "new_share", "new_share_upb", "next", "next_n", "on_better", "on_better_upb", "on_higher", "on_higher_upb", "order", "pace", "pace_upb", "pool_share", "pool_share_upb", "q", "q_upb", "r", "r_upb", "rank", "rate", "rate_upb", "recent_from", "recent_loans", "recent_share", "recent_to", "recent_upb_share", "rule", "sellers", "share", "share_upb", "short", "status", "ticker", "user_share", "user_share_upb", "users", "value", "value_upb", "view", "vs4_share", "vs4_upb_share", "window_from", "window_to"],
+    "views": {
+      "ladder": ["key", "label", "lenders", "order", "rule", "value", "value_upb", "view"],
+      "lender": ["adds_better", "adds_better_upb", "adds_higher", "adds_higher_upb", "better_loans", "better_share", "better_upb_share", "better_vs4", "both_share", "first_vs4", "higher_loans", "higher_share", "higher_upb_share", "higher_vs4", "id", "lenders", "loans", "next", "on_better", "on_better_upb", "on_higher", "on_higher_upb", "rank", "recent_loans", "recent_share", "recent_upb_share", "sellers", "share", "share_upb", "short", "status", "ticker", "view", "vs4_share", "vs4_upb_share"],
+      "pace": ["key", "month", "new_sellers", "new_share", "new_share_upb", "pool_share", "pool_share_upb", "rate", "rate_upb", "view"],
+      "params": ["end_month", "heavy_count", "heavy_names", "horizon", "loans", "next_n", "pace", "pace_upb", "recent_from", "recent_to", "user_share", "user_share_upb", "users", "view", "window_from", "window_to"],
+      "path": ["case", "final", "month", "rule", "value", "value_upb", "view"],
+      "ramp": ["id", "lenders", "m", "q", "q_upb", "r", "r_upb", "short", "view"]
+    }
+  },
+  "rules": {
+    "fields": ["agency", "both_share", "cohort", "key", "label", "latest_from", "loans", "order", "over20_loans", "over20_share", "scope", "scope_label", "under20_loans", "under20_share", "view", "vs4_share", "week"],
+    "views": {
+      "curve": ["agency", "cohort", "key", "label", "latest_from", "loans", "order", "scope", "scope_label", "view", "vs4_share"],
+      "week": ["agency", "both_share", "loans", "over20_loans", "over20_share", "scope", "scope_label", "under20_loans", "under20_share", "view", "vs4_share", "week"]
+    }
+  },
+  "score_mix": {
+    "fields": ["agency", "both_fico_share", "both_fico_upb_share", "both_vs_share", "both_vs_upb_share", "complete", "fico_only_share", "fico_only_upb_share", "fico_share", "fico_upb_share", "headline", "loans", "months", "of_vs_only", "scope_label", "seller_id", "start", "steady_carrying", "steady_priced", "through", "upb", "view", "vs4_priced_share", "vs4_priced_upb_share", "vs_only_share", "vs_only_upb_share", "vs_share", "vs_upb_share"],
+    "views": {
+      "all": ["agency", "both_fico_share", "both_fico_upb_share", "both_vs_share", "both_vs_upb_share", "fico_only_share", "fico_only_upb_share", "fico_share", "fico_upb_share", "headline", "loans", "start", "through", "upb", "view", "vs4_priced_share", "vs4_priced_upb_share", "vs_only_share", "vs_only_upb_share", "vs_share", "vs_upb_share"],
+      "month": ["agency", "both_fico_share", "both_fico_upb_share", "both_vs_share", "both_vs_upb_share", "fico_only_share", "fico_only_upb_share", "fico_share", "fico_upb_share", "headline", "loans", "start", "through", "upb", "view", "vs4_priced_share", "vs4_priced_upb_share", "vs_only_share", "vs_only_upb_share", "vs_share", "vs_upb_share"],
+      "quarter": ["agency", "complete", "loans", "months", "start", "upb", "view", "vs4_priced_share", "vs4_priced_upb_share"],
+      "recent": ["agency", "both_fico_share", "both_fico_upb_share", "both_vs_share", "both_vs_upb_share", "fico_only_share", "fico_only_upb_share", "fico_share", "fico_upb_share", "headline", "loans", "start", "through", "upb", "view", "vs4_priced_share", "vs4_priced_upb_share", "vs_only_share", "vs_only_upb_share", "vs_share", "vs_upb_share"],
+      "vs_only": ["agency", "loans", "of_vs_only", "scope_label", "seller_id", "view", "vs_only_share"],
+      "week": ["agency", "both_fico_share", "both_fico_upb_share", "both_vs_share", "both_vs_upb_share", "fico_only_share", "fico_only_upb_share", "fico_share", "fico_upb_share", "headline", "loans", "start", "steady_carrying", "steady_priced", "through", "upb", "view", "vs4_priced_share", "vs4_priced_upb_share", "vs_only_share", "vs_only_upb_share", "vs_share", "vs_upb_share"]
+    }
+  },
+  "lender_stage": {
+    "fields": ["above", "avg_fico", "below_early", "below_late", "both_at", "both_early", "both_late", "both_share", "broker_share", "corr_share", "dim", "fhlmc_both_fico", "fhlmc_both_vs", "fhlmc_fico_only", "fhlmc_loans", "fhlmc_vs_only", "fnma_both_fico", "fnma_both_vs", "fnma_fico_only", "fnma_loans", "fnma_vs_only", "higher_loans", "id", "key", "kind", "label", "lead", "lenders", "loans", "mix_both_fico", "mix_both_vs", "mix_fico_only", "mix_vs_only", "order", "purchase_share", "rank", "recent_share", "retail_share", "rule", "scope", "share", "share_upb", "short", "stage", "ticker", "uses_higher", "using", "view", "vs4_early", "vs4_share", "vs4_upb_share", "vs_only_share"],
+    "views": {
+      "channel": ["both_share", "key", "label", "loans", "order", "scope", "share", "view", "vs4_share"],
+      "kind": ["both_share", "key", "label", "lenders", "loans", "order", "share", "share_upb", "using", "view", "vs4_share", "vs4_upb_share"],
+      "lead": ["both_share", "key", "label", "lenders", "loans", "order", "share", "share_upb", "using", "view", "vs4_share", "vs4_upb_share"],
+      "lender": ["above", "avg_fico", "below_early", "below_late", "both_at", "both_early", "both_late", "both_share", "broker_share", "corr_share", "fhlmc_both_fico", "fhlmc_both_vs", "fhlmc_fico_only", "fhlmc_loans", "fhlmc_vs_only", "fnma_both_fico", "fnma_both_vs", "fnma_fico_only", "fnma_loans", "fnma_vs_only", "higher_loans", "id", "kind", "lead", "loans", "mix_both_fico", "mix_both_vs", "mix_fico_only", "mix_vs_only", "order", "purchase_share", "rank", "recent_share", "retail_share", "rule", "share", "share_upb", "short", "stage", "ticker", "uses_higher", "view", "vs4_early", "vs4_share", "vs4_upb_share", "vs_only_share"],
+      "stage": ["both_share", "key", "label", "lenders", "loans", "order", "share", "share_upb", "using", "view", "vs4_share", "vs4_upb_share"],
+      "trait": ["dim", "key", "label", "loans", "scope", "view", "vs4_share"]
+    }
+  },
+  "statements": {
+    "fields": ["check", "date", "order", "seller_id", "source", "statement", "url", "who"],
+    "views": {}
+  },
+  "fees": {
+    "fields": ["agency", "avg_upb", "cohort", "diff", "est_usd", "fee_actual_bp", "fee_best_bp", "fee_fico_bp", "fee_vs_bp", "higher_share", "id", "key", "label", "left_loans", "left_usd", "loans", "lower_share", "month", "one_loans", "option_bp", "priced_loans", "rank", "same_share", "saved_bp", "saving_avg_usd", "saving_share", "scope", "scope_label", "scope_rank", "short", "taken_all_usd", "taken_annual_usd", "taken_usd", "ticker", "view", "vs4_loans", "vs4_share"],
+    "views": {
+      "choice": ["cohort", "key", "loans", "scope", "scope_label", "scope_rank", "view", "vs4_share"],
+      "gse": ["diff", "key", "label", "loans", "scope", "scope_label", "view"],
+      "lender": ["est_usd", "id", "left_loans", "left_usd", "loans", "month", "one_loans", "option_bp", "priced_loans", "rank", "saved_bp", "saving_avg_usd", "saving_share", "short", "taken_all_usd", "taken_usd", "ticker", "view", "vs4_loans"],
+      "lift": ["diff", "key", "label", "loans", "scope", "view"],
+      "market": ["agency", "key", "left_loans", "left_usd", "loans", "month", "priced_loans", "saved_bp", "saving_avg_usd", "saving_share", "taken_all_usd", "taken_annual_usd", "taken_usd", "view", "vs4_loans"],
+      "option": ["avg_upb", "fee_actual_bp", "fee_best_bp", "fee_fico_bp", "fee_vs_bp", "higher_share", "key", "loans", "lower_share", "same_share", "scope", "scope_label", "scope_rank", "view"]
+    }
+  },
+  "week_note": {
+    "fields": ["both_share", "fico_only_share", "fnma_both_share", "fnma_loans", "fnma_vs4_share", "kind", "label", "latest", "loans", "no_fico_share", "order", "partial", "source", "text", "through", "url", "view", "vs4_share", "week"],
+    "views": {
+      "line": ["kind", "order", "source", "text", "url", "view", "week"],
+      "week": ["both_share", "fico_only_share", "fnma_both_share", "fnma_loans", "fnma_vs4_share", "label", "latest", "loans", "no_fico_share", "partial", "through", "view", "vs4_share", "week"]
+    }
+  },
+  "assumptions": {
+    "fields": ["date", "key", "kind", "label", "note", "source", "unit", "url", "value"],
+    "views": {}
+  },
+  "lender_mix": {
+    "fields": ["agency", "bf", "bv", "fo", "id", "n", "start", "view", "vo"],
+    "views": {
+      "month": ["agency", "bf", "bv", "fo", "id", "n", "start", "view", "vo"],
+      "week": ["agency", "bf", "bv", "fo", "id", "n", "start", "view", "vo"]
+    }
+  },
+  "closing": {
+    "fields": ["agency", "arrived", "bf", "both_fico", "both_vs", "bv", "delivered", "every", "every_share", "fico_only", "fo", "id", "n", "priced", "start", "through", "v", "view", "vo", "vs_only"],
+    "views": {
+      "lender": ["agency", "arrived", "bf", "bv", "every", "fo", "id", "n", "start", "v", "view", "vo"],
+      "market": ["agency", "arrived", "both_fico", "both_vs", "delivered", "every_share", "fico_only", "n", "priced", "start", "through", "view", "vs_only"]
+    }
+  },
+  "whole_market": {
+    "fields": ["apps", "classic", "code", "equity_share", "family", "fico", "fico_new", "file_date", "first_lien", "first_year", "key", "label", "lenders", "multi", "n", "name", "none", "order", "other", "per_loan", "rank", "records", "scope", "share", "unknown", "unnamed", "usd_bn", "users", "view", "vs", "vs4", "vs_old", "year"],
+    "views": {
+      "apps": ["apps", "key", "label", "n", "per_loan", "view"],
+      "lender": ["classic", "equity_share", "fico", "fico_new", "multi", "n", "name", "none", "other", "rank", "scope", "unknown", "unnamed", "usd_bn", "view", "vs", "vs4", "vs_old"],
+      "lender_year": ["classic", "fico", "fico_new", "multi", "n", "name", "none", "other", "rank", "scope", "unknown", "unnamed", "view", "vs", "vs4", "vs_old", "year"],
+      "meta": ["file_date", "first_year", "lenders", "n", "records", "view", "year"],
+      "model": ["code", "equity_share", "family", "n", "name", "users", "view"],
+      "model_year": ["code", "family", "n", "name", "share", "view", "year"],
+      "segment": ["classic", "fico", "fico_new", "first_lien", "key", "label", "multi", "n", "none", "order", "other", "unknown", "unnamed", "usd_bn", "view", "vs", "vs4", "vs_old"],
+      "trend": ["classic", "fico", "fico_new", "key", "label", "multi", "n", "none", "order", "other", "unknown", "unnamed", "usd_bn", "view", "vs", "vs4", "vs_old", "year"]
+    }
+  },
+  "private_label": {
+    "fields": ["basis", "blank", "blank_n", "classic", "classic_n", "count", "dated", "deals", "exhibits", "fico", "fico_new", "fico_new_n", "filed", "filer", "filings", "from", "key", "kind", "label", "lag_months", "n", "named", "none", "order", "period", "rank", "recent_from", "recent_n", "recent_vs", "recent_vs_n", "through", "unclear", "unclear_n", "unnamed", "url", "view", "vs", "vs4", "vs4_n", "vs_no_fico_n", "vs_old", "vs_old_n", "with_model"],
+    "views": {
+      "deal": ["blank", "blank_n", "classic", "classic_n", "fico", "fico_new", "fico_new_n", "filed", "filer", "key", "kind", "label", "n", "named", "none", "unclear", "unclear_n", "unnamed", "url", "view", "vs", "vs4", "vs4_n", "vs_old", "vs_old_n"],
+      "filer": ["blank", "blank_n", "classic", "classic_n", "fico", "fico_new", "fico_new_n", "filings", "key", "label", "n", "named", "none", "rank", "unclear", "unclear_n", "unnamed", "view", "vs", "vs4", "vs4_n", "vs_old", "vs_old_n", "with_model"],
+      "kind": ["blank", "blank_n", "classic", "classic_n", "deals", "fico", "fico_new", "fico_new_n", "key", "label", "n", "named", "none", "order", "unclear", "unclear_n", "unnamed", "view", "vs", "vs4", "vs4_n", "vs_old", "vs_old_n"],
+      "mention": ["count", "filed", "filer", "key", "kind", "label", "url", "view"],
+      "meta": ["blank", "blank_n", "classic", "classic_n", "dated", "deals", "exhibits", "fico", "fico_new", "fico_new_n", "filings", "from", "lag_months", "n", "named", "none", "recent_from", "recent_n", "recent_vs", "recent_vs_n", "through", "unclear", "unclear_n", "unnamed", "view", "vs", "vs4", "vs4_n", "vs_no_fico_n", "vs_old", "vs_old_n", "with_model"],
+      "period": ["basis", "blank", "blank_n", "classic", "classic_n", "fico", "fico_new", "fico_new_n", "filings", "label", "n", "named", "none", "order", "period", "unclear", "unclear_n", "unnamed", "view", "vs", "vs4", "vs4_n", "vs_old", "vs_old_n", "with_model"]
+    }
+  },
+  "ginnie_va": {
+    "fields": ["before_lead_k", "before_lead_n", "before_second_k", "before_second_n", "channel", "factor", "fha_k", "fha_n", "files", "first", "first_issue", "full", "gap", "high", "high_elsewhere", "issuer", "k", "k_high", "key", "kind", "label", "last", "last_issue", "lead", "lead_high_of_top", "leaders_share", "low", "m1", "m2", "month", "n", "name", "rank", "ref_classic", "ref_far_all", "ref_far_at_top", "ref_high_of_top", "ref_n", "ref_vs4", "second", "second_high_of_top", "share", "signal", "since", "too_few", "top", "upper", "va_n", "view", "window_k"],
+    "views": {
+      "channel": ["channel", "full", "issuer", "k", "kind", "month", "n", "name", "share", "signal", "view"],
+      "lender": ["full", "issuer", "k", "k_high", "n", "name", "rank", "share", "signal", "too_few", "upper", "view"],
+      "meta": ["before_lead_k", "before_lead_n", "before_second_k", "before_second_n", "factor", "fha_k", "fha_n", "files", "first", "first_issue", "gap", "high", "high_elsewhere", "last", "last_issue", "lead", "lead_high_of_top", "leaders_share", "m1", "m2", "ref_classic", "ref_far_all", "ref_far_at_top", "ref_high_of_top", "ref_n", "ref_vs4", "second", "second_high_of_top", "since", "top", "va_n", "view", "window_k"],
+      "month": ["full", "k", "key", "label", "month", "n", "share", "signal", "view"],
+      "range": ["full", "high", "k", "key", "label", "low", "n", "share", "signal", "view"]
+    }
+  }
+}

@@ -2,7 +2,7 @@
 // Runs after the page's main script, which shares what these need on window.vx. Yours to change on the page; nothing here is saved.
 (() => {
   const vx = window.vx;
-  const { root, rowsOf, statusOf, int, pct1, money, usdM, ptsSigned: signed, inkOn, olName, olPct, openSeller, monthShort, monthYear, monthLabel, shortDay, reachText, prep, svgFor, bandFrame, yAxis, bandAxis, bandHover, legend, MIX_GROUPS, ADOPT_FROM } = vx;
+  const { root, rowsOf, statusOf, int, pct1, money, usdM, ptsSigned: signed, inkOn, olName, olPct, openSeller, monthShort, monthYear, monthLabel, shortDay, prep, svgFor, bandFrame, yAxis, bandAxis, bandHover, legend, MIX_GROUPS, ADOPT_FROM } = vx;
   const pct0 = d3.format('.0%');
   const one = d3.format('.1f');
   const num = (v) => (Number.isInteger(v) ? String(v) : String(Math.round(v * 100) / 100));
@@ -55,7 +55,7 @@
     const loans = node('div');
     loans.append(node('div', 'vx-lbl', 'Loans first seen'), node('div', 'nc-v', int(cur.loans)));
     cards.replaceChildren(...items, loans);
-    const lines = rows.filter((r) => r.view === 'line' && r.week === noteWeek && r.kind !== 'mix').sort((a, b) => a.order - b.order);
+    const lines = rows.filter((r) => r.view === 'line' && r.week === noteWeek && r.kind !== 'mix' && r.kind !== 'rate').sort((a, b) => a.order - b.order);
     list.replaceChildren(...lines.map((r) => {
       const li = node('li', null, r.text);
       if (r.url) li.append(' ', link(r.source || 'Source', r.url));
@@ -82,7 +82,7 @@
     if (!prep(box, st) || !periods.length) return;
     const W = box.clientWidth, H = 230, m = { top: hasPre || periods.some((r) => r.tag) ? 22 : 10, right: 10, bottom: 26, left: 0 };
     const svg = svgFor(box, W, H, title);
-    const y = d3.scaleLinear([0, (d3.max(periods, total) || 0.01) * 1.08], [H - m.bottom, m.top]).nice(4);
+    const y = d3.scaleLinear([0, Math.min(1, (d3.max(periods, total) || 0.01) * 1.08)], [H - m.bottom, m.top]).nice(4);
     const yf = y.tickFormat(4, '%');
     const keys = periods.map((r) => r.key);
     const { x, widest } = bandFrame(svg, keys, lab, y, yf, 4, W, m);
@@ -379,7 +379,7 @@
     }
   }
 
-  function asks(l, fee, better, same, banks) {
+  function asks(l, fee, banks) {
     const out = [];
     const month = fee && fee.month ? monthShort(fee.month) : 'this month';
     if (l.stage === 'fico' || l.stage === 'trace') {
@@ -394,8 +394,6 @@
       if (l.rule === 'line' && l.above != null && l.below_late != null) out.push(`It keeps to about a 20-point rule (${pct0(l.below_late)} under the line, ${pct0(l.above)} above it). With one fee grid since Oct 1, why?`);
       if (l.rule === 'moving' && l.below_early != null) out.push(`Its rule is moving: ${pct0(l.below_early)} to ${pct0(l.below_late)} with VS4 under 20 points higher. Where does it stop?`);
       if (l.rule === 'whenever' && l.below_late != null) out.push(`It uses VS4 on ${pct0(l.below_late)} of loans under 20 points higher, where the fee often does not change. What does it gain?`);
-      if (better && better.n >= 100 && better.reaches_fee != null && better.reaches_fee < 0.95) out.push(`${better.reaches_fee <= 0.05 ? 'None' : `About ${pct0(better.reaches_fee)}`} of a lower fee shows in its note rate. Where does the saving go: points, credits, broker pay or margin?`);
-      if (same && same.n >= 100 && same.net_bp >= 3) out.push(`Its VS4 loans with no fee benefit carry ${signed(same.net_bp)} bp against its own FICO loans. Is that mix, or investors charging for VS4?`);
     }
     if (l.fhlmc_vs_only != null && l.fnma_vs_only != null && l.fhlmc_vs_only - l.fnma_vs_only >= 0.05) {
       out.push(`Freddie Mac's files show VS4 alone on ${pct1(l.fhlmc_vs_only)} of its loans, Fannie Mae's on ${pct1(l.fnma_vs_only)}. Does it run both scores through Freddie Mac's underwriting system?`);
@@ -413,7 +411,7 @@
     const l = e ? lenderOf(e) : null;
     const line = document.getElementById('co-line');
     const body = document.getElementById('co-body');
-    card.classList.toggle('dash-skeleton', statusOf('lender_stage', 'closing', 'fees', 'pricing') === 'loading');
+    card.classList.toggle('dash-skeleton', statusOf('lender_stage', 'closing', 'fees') === 'loading');
     body.hidden = !l;
     if (!l) {
       line.textContent = e ? `${e.name} has no detailed read: it is outside the 60 largest lenders on loans disclosed with every score.` : '';
@@ -423,10 +421,6 @@
     const stage = stages.find((r) => r.view === 'stage' && r.key === l.stage);
     const banks = stages.find((r) => r.view === 'kind' && r.key === 'Bank');
     const fee = rowsOf('fees').find((r) => r.view === 'lender' && r.id === l.id);
-    const pricing = rowsOf('pricing');
-    const rate = pricing.find((r) => r.view === 'seller' && r.cover === 'all' && r.basis === 'headline' && r.key === l.id);
-    const better = pricing.find((r) => r.view === 'value' && r.scope === l.id && r.key === 'better');
-    const same = pricing.find((r) => r.view === 'value' && r.scope === l.id && r.key === 'same');
     const name = olName(l);
     drawCarryLender(e, l, p);
     line.textContent = `${name}: ${pct1(l.share)} of GSE loans disclosed with every score, number ${int(l.rank)} by loans. ${l.kind}, ${l.lead === 'Mixed' ? 'no main channel' : `${l.lead.toLowerCase()}-led`}. ${l.stage === 'fico' ? `${pct1(l.mix_fico_only)} of its loans show only Classic FICO.` : stage ? `${stage.label}.` : ''}`;
@@ -451,13 +445,10 @@
       add(`Fees on ${monthShort(fee.month)} loans: saved, missed with both scores showing, missed showing FICO only (est.)`, `${fee.priced_loans ? usdM(fee.taken_usd) : '—'}, ${fee.left_loans ? usdM(fee.left_usd) : '—'}, ${fee.one_loans ? usdM(fee.est_usd) : '—'}`);
       add('All three', fee.option_bp == null ? null : `${one(fee.option_bp)} bp of its balance`);
     }
-    add('VS4 rate against the FICO model', rate ? `${signed(rate.net_bp)} bp on ${int(rate.n)} VS4 loans since ${shortDay(rate.since)}` : null);
-    add('A lower fee showing in the rate', better && better.n >= 100 && better.reaches_fee != null ? `${reachText(better.reaches_fee)} (${signed(better.net_bp)} bp against ${one(better.fee_rate_bp)} bp of fee in rate terms)` : null);
-    add('Same fee, rate against its own FICO loans', same && same.n >= 100 ? `${signed(same.net_bp)} bp on ${int(same.n)} loans` : null);
     fillTable(document.getElementById('co-facts'), facts);
 
     const list = (id, items) => document.getElementById(id).replaceChildren(...items);
-    const q = asks(l, fee, better, same, banks);
+    const q = asks(l, fee, banks);
     list('co-ask', q.map((t) => node('li', null, t)));
     const said = rowsOf('statements').filter((r) => r.seller_id === l.id).sort((a, b) => (a.date < b.date ? 1 : -1));
     list('co-said', said.map((r) => {

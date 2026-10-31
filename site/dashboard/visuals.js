@@ -1,11 +1,10 @@
 // The visual summaries: out of every 100 loans, why the weeks jump, how far VS4 could go, where every lender stands,
-// how lenders decide, where the fee saving goes, plus plain-word definitions of the terms the page uses.
+// how lenders decide, plus plain-word definitions of the terms the page uses.
 // Runs after the main script and tools.js; what they share is on window.vx.
 (() => {
   const vx = window.vx;
-  const { root, rowsOf, statusOf, int, pct1, ptsSigned, inkOn, olName, openSeller, shortDay, prep, svgFor, bandFrame, yAxis, bandAxis, bandHover, legend, tooltip, textWidth, MIX_GROUPS, AG_NAME, show, col } = vx;
+  const { root, rowsOf, statusOf, int, pct1, inkOn, olName, openSeller, shortDay, prep, svgFor, bandFrame, yAxis, bandAxis, bandHover, legend, tooltip, textWidth, MIX_GROUPS, AG_NAME, show, col } = vx;
   const pct0 = d3.format('.0%');
-  const one = d3.format('.1f');
   const node = (tag, cls, text) => {
     const e = document.createElement(tag);
     if (cls) e.className = cls;
@@ -92,7 +91,8 @@
     const box = document.getElementById('who-chart');
     if (!box) return;
     const st = statusOf('lender_mix', 'score_mix');
-    const weeks = rowsOf('score_mix').filter((r) => r.view === 'week' && r.agency === p.agency).sort(asc('start'));
+    const covered = vx.coveredWeek(p.agency);
+    const weeks = rowsOf('score_mix').filter((r) => r.view === 'week' && r.agency === p.agency && covered(r)).sort(asc('start'));
     const top = topUsers();
     const names = new Map(rowsOf('lender_stage').filter((r) => r.view === 'lender').map((r) => [r.id, r.short]));
     const label = top.map((id) => names.get(id) || id).join(' and ');
@@ -124,7 +124,8 @@
     const ghost = 'color-mix(in srgb, var(--color-fg) 30%, transparent)';
     legend(document.getElementById('frozen-legend'), [[priced, 'Priced on VS4', 'box'], [onFico, 'Carrying VS4, priced on FICO', 'box'], [ghost, 'As delivered', 'box']]);
     if (!prep(box, st)) return;
-    const weeks = rowsOf('score_mix').filter((r) => r.view === 'week' && r.agency === p.agency && r.steady_carrying != null).sort(asc('start'));
+    const covered = vx.coveredWeek(p.agency);
+    const weeks = rowsOf('score_mix').filter((r) => r.view === 'week' && r.agency === p.agency && r.steady_carrying != null && covered(r)).sort(asc('start'));
     if (!weeks.length) return;
     const W = box.clientWidth, H = 150, m = { top: 18, right: 6, bottom: 24, left: 6 };
     const svg = svgFor(box, W, H, 'Loans carrying VS4 each week with the lender mix frozen, against the weeks as delivered');
@@ -154,8 +155,7 @@
     box.classList.toggle('dash-skeleton', statusOf('outlook') === 'loading');
     const ladder = rowsOf('outlook').filter((r) => r.view === 'ladder');
     const rung = (key, rule) => ladder.find((r) => r.key === key && (!rule || r.rule === rule));
-    const items = [['Priced on VS4 today', rung('today'), true], ['Latest two weeks, lender mix frozen', rung('recent'), true], ['If every lender used VS4 wherever it saves a fee', rung('all', 'better')],
-      ['... wherever its score is higher', rung('all', 'higher')], ['... wherever it is no worse', rung('not_worse')]].filter((d) => d[1]);
+    const items = [['Priced on VS4 today', rung('today'), true], ['Latest two weeks, lender mix frozen', rung('recent'), true], ['If every lender used VS4 wherever its score is higher', rung('all', 'higher')]].filter((d) => d[1]);
     box.replaceChildren(...items.map(([label, r, actual]) => {
       const row = node('div', 'hb');
       row.append(node('div', 'hb-l', label), node('div', 'hb-v', pct1(r.value)));
@@ -329,50 +329,6 @@
     }
   }
 
-  // ---- Where the fee saving goes ----
-  function drawSaving() {
-    const box = document.getElementById('saving-chart');
-    if (!box) return;
-    const st = dash.data('pricing').status;
-    const fee = 'var(--cds-chart-muted)', rate = col(0);
-    legend(document.getElementById('saving-legend'), [[fee, 'Fee saved, in rate terms', 'box'], [rate, 'How much lower the note rate is', 'box'], ['var(--color-fg)', 'Margin of error', 'line']]);
-    if (!prep(box, st)) return;
-    const rows = rowsOf('pricing').filter((r) => r.view === 'value' && r.key === 'better' && r.n >= 300);
-    const picks = rows.filter((r) => r.scope === 'All' || r.channel).sort((a, b) => a.scope_rank - b.scope_rank);
-    if (!picks.length) return;
-    const W = box.clientWidth, rowH = 58, m = { top: 4, right: 100, bottom: 6, left: 4 };
-    const H = m.top + m.bottom + picks.length * rowH;
-    const svg = svgFor(box, W, H, 'Fee saved, in rate terms, against how much lower the note rate is, by lender and channel');
-    const lows = d3.min(picks, (r) => -r.net_bp - 2 * (r.se_bp || 0));
-    const highs = d3.max(picks, (r) => Math.max(r.fee_rate_bp, -r.net_bp + 2 * (r.se_bp || 0)));
-    const x = d3.scaleLinear([Math.min(0, lows), highs], [m.left, W - m.right]);
-    const zero = x(0);
-    picks.forEach((r, i) => {
-      const top = m.top + i * rowH;
-      svg.append('text').attr('x', m.left).attr('y', top + 12).text(`${r.label}, ${int(r.n)} loans`).style('fill', 'var(--color-fg)');
-      const feeY = top + 18, rateY = top + 32, h = 11;
-      svg.append('line').attr('x1', zero).attr('x2', zero).attr('y1', feeY - 2).attr('y2', rateY + h + 2).attr('stroke', 'var(--cds-chart-axis)');
-      svg.append('rect').attr('x', zero).attr('y', feeY).attr('width', Math.max(0, x(r.fee_rate_bp) - zero)).attr('height', h).attr('rx', 2).attr('fill', fee);
-      svg.append('text').attr('x', x(r.fee_rate_bp) + 5).attr('y', feeY + h - 1).text(`${one(r.fee_rate_bp)} bp`);
-      const fall = -r.net_bp;
-      const x0 = Math.min(zero, x(fall)), w = Math.abs(x(fall) - zero);
-      svg.append('rect').attr('x', x0).attr('y', rateY).attr('width', Math.max(1, w)).attr('height', h).attr('rx', 2).attr('fill', rate);
-      const lo = x(fall - 2 * (r.se_bp || 0)), hi = x(fall + 2 * (r.se_bp || 0));
-      svg.append('line').attr('x1', lo).attr('x2', hi).attr('y1', rateY + h / 2).attr('y2', rateY + h / 2).attr('stroke', 'var(--color-fg)').attr('stroke-width', 1);
-      const text = Math.abs(fall) < 0.5 ? 'about the same' : fall > 0 ? `${one(fall)} bp lower` : `${one(-fall)} bp higher`;
-      svg.append('text').attr('x', Math.max(zero, x(fall), hi) + 5).attr('y', rateY + h - 1).text(text);
-    });
-    const tip = tooltip(box);
-    svg.append('rect').attr('width', W).attr('height', H).attr('fill', 'transparent')
-      .on('pointermove', (event) => {
-        const [, my] = d3.pointer(event, svg.node());
-        const r = picks[Math.floor((my - m.top) / rowH)];
-        if (!r) return tip.hide();
-        tip.show(event, r.label, [[null, 'Loans', int(r.n)], [null, 'Fee saved', `${one(r.fee_bp)} bp of balance`], [fee, 'In rate terms, at 5 to 1', `${one(r.fee_rate_bp)} bp`], [rate, 'Rate against its own FICO loans', `${ptsSigned(r.net_bp)} bp, ± ${one(2 * (r.se_bp || 0))}`]]);
-      })
-      .on('pointerleave', () => tip.hide());
-  }
-
   // ---- Words ----
   const TERMS = [
     ['gse', 'GSE', 'Fannie Mae or Freddie Mac. This site covers loans they put into mortgage-backed securities.'],
@@ -384,9 +340,8 @@
     ['floor', 'Floor, ceiling, exact', 'A score that does not show is unknown, not absent. So the share showing a score is a floor on loans that have it: the true share is at least this. The share showing only one score is a ceiling on loans that have only that one: the true share is at most this. The share priced on VS4 is exact, because the GSEs state it for every loan.'],
     ['every', 'Records that show every score', 'Since Oct 19, 2026 the GSE files show every score the GSE has on a loan and which one priced it. Before that they showed only the score that priced the loan, so older bars are a floor.'],
     ['frozen', 'Lender mix frozen', 'Each week different lenders deliver different amounts. Freezing the mix gives each lender a fixed weight, its share of all the weeks shown, so only changes in what lenders do can move the number.'],
-    ['fee', 'Upfront fee', 'The one-time fee the GSEs charge on a loan, set by its credit score, LTV and purpose. Also called an LLPA. Since Oct 1, 2026 one fee grid covers both scores.'],
-    ['rateterms', 'Fee in rate terms', 'Upfront fees and note rates are different units. The rule of thumb used here is that 5 bp of upfront fee is worth about 1 bp of rate.'],
-    ['ownfico', 'Against its own FICO loans', 'The note rate compared with what a model says the same loan would carry on FICO, less the same gap on that lender and channel\'s FICO-priced loans with both scores.'],
+    ['llpa', 'LLPA', 'The GSEs\' upfront charge on a loan, by its credit score, LTV and purpose. It has been one grid for both scores since Oct 1, 2026, and that grid matches Fannie Mae\'s matrix of Sep 30, 2026.'],
+    ['fee', 'Upfront fee', 'The same charge as the LLPA, under the name some tabs still use.'],
     ['rule', 'A lender\'s rule', 'When it chooses VS4. A 20-point rule means using VS4 only when its score beats FICO by 20 or more points, which matched the fees before Oct 1, 2026.'],
     ['stage', 'Stage', 'How far a lender has gone: FICO only, a few VS4 loans, both scores shown, using VS4 some of the time, or most of the time its score is higher.'],
     ['channel', 'Channel', 'How the lender got the loan: retail (its own), broker, or correspondent (bought from another lender).'],
@@ -525,7 +480,6 @@
 
   vx.hooks.overview.push(drawWaffles, drawWho, drawFrozen, drawReach);
   vx.hooks.scores.push(drawMap, drawDecide);
-  vx.hooks.pricing.push(drawSaving);
   vx.hooks.method.push(drawGlossary);
   vx.after.push(tidy);
   vx.redraw();

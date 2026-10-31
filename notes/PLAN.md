@@ -134,7 +134,7 @@ that day with everything else.
    checked against the loan files where it can be.
 4. Done Oct 30, 2026: pricing and economics (src/gsescore/fees.py, src/gsescore/fee_grid.py, dataset fees). How much of a lower fee reaches the rate is measured against each lender and channel's
    own FICO-priced loans with both scores (src/gsescore/pricing.py, view value). The grid in reference/llpa.csv is
-   Freddie Mac Guide Exhibit 19 (Bulletin 2026-K); Fannie Mae's matrix is taken to match it, unchecked. Fee saved per loan and in dollars by
+   Freddie Mac Guide Exhibit 19 (Bulletin 2026-K); Fannie Mae's matrix was taken to match it until Oct 31, 2026, when all 207 cells were checked against its matrix of Sep 30, 2026, and matched. Fee saved per loan and in dollars by
    lender; what lenders with both scores left; an estimate for loans with only a Classic FICO; the same scaled to a year's balance; the fee
    against what reaches the rate; the GSEs' own scores on these loans.
 5. Done Oct 30, 2026: analyst tools. On the Lenders tab, a read for each company with a row of tickers: its score split by GSE, its rule, fees, rates, questions

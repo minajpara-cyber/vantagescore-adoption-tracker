@@ -2,7 +2,7 @@
 // Runs after the page's main script, which shares what these need on window.vx. Yours to change on the page; nothing here is saved.
 (() => {
   const vx = window.vx;
-  const { root, rowsOf, statusOf, int, pct1, money, usdM, ptsSigned: signed, inkOn, olName, olPct, openSeller, monthShort, monthYear, monthLabel, shortDay, reachText, prep, svgFor, bandFrame, yAxis, bandAxis, bandHover, legend, MIX_GROUPS, ADOPT_FROM } = vx;
+  const { root, rowsOf, statusOf, int, pct1, money, usdM, ptsSigned: signed, inkOn, olName, olPct, openSeller, monthYear, monthLabel, shortDay, prep, svgFor, bandFrame, yAxis, bandAxis, bandHover, legend, MIX_GROUPS, ADOPT_FROM } = vx;
   const pct0 = d3.format('.0%');
   const one = d3.format('.1f');
   const num = (v) => (Number.isInteger(v) ? String(v) : String(Math.round(v * 100) / 100));
@@ -45,17 +45,19 @@
     document.getElementById('note-compare').hidden = !prev;
     const mix = new Map(rowsOf('score_mix').filter((r) => r.view === 'week' && r.agency === 'All').map((r) => [r.start, r]));
     const m = mix.get(noteWeek) || {}, was = (prev && mix.get(prev.week)) || {};
+    const covered = coveredWeek('All');
+    const frozen = (r, f) => (r.start && covered(r) ? r[f] : null);
     const card = (label, now, before, fmt = pct1) => {
       const c = node('div');
       c.append(node('div', 'vx-lbl', label), node('div', 'nc-v', now == null ? '—' : fmt(now)));
       if (now != null && before != null) c.append(node('div', 'nc-d', `${signed((now - before) * 100)} pts`));
       return c;
     };
-    const items = [card('Carrying VS4, mix frozen', m.steady_carrying, was.steady_carrying), card('Priced on VS4, mix frozen', m.steady_priced, was.steady_priced), card('Priced on VS4, as delivered', cur.vs4_share, prev && prev.vs4_share)];
+    const items = [card('Carrying VS4, mix frozen', frozen(m, 'steady_carrying'), frozen(was, 'steady_carrying')), card('Priced on VS4, mix frozen', frozen(m, 'steady_priced'), frozen(was, 'steady_priced')), card('Priced on VS4, as delivered', cur.vs4_share, prev && prev.vs4_share)];
     const loans = node('div');
     loans.append(node('div', 'vx-lbl', 'Loans first seen'), node('div', 'nc-v', int(cur.loans)));
     cards.replaceChildren(...items, loans);
-    const lines = rows.filter((r) => r.view === 'line' && r.week === noteWeek && r.kind !== 'mix').sort((a, b) => a.order - b.order);
+    const lines = rows.filter((r) => r.view === 'line' && r.week === noteWeek && r.kind !== 'mix' && r.kind !== 'rate').sort((a, b) => a.order - b.order);
     list.replaceChildren(...lines.map((r) => {
       const li = node('li', null, r.text);
       if (r.url) li.append(' ', link(r.source || 'Source', r.url));
@@ -82,7 +84,7 @@
     if (!prep(box, st) || !periods.length) return;
     const W = box.clientWidth, H = 230, m = { top: hasPre || periods.some((r) => r.tag) ? 22 : 10, right: 10, bottom: 26, left: 0 };
     const svg = svgFor(box, W, H, title);
-    const y = d3.scaleLinear([0, (d3.max(periods, total) || 0.01) * 1.08], [H - m.bottom, m.top]).nice(4);
+    const y = d3.scaleLinear([0, Math.min(1, (d3.max(periods, total) || 0.01) * 1.08)], [H - m.bottom, m.top]).nice(4);
     const yf = y.tickFormat(4, '%');
     const keys = periods.map((r) => r.key);
     const { x, widest } = bandFrame(svg, keys, lab, y, yf, 4, W, m);
@@ -95,6 +97,7 @@
     };
     for (const r of periods) {
       const bx = x(r.key) + off;
+      if (r.gap) continue;
       if (r.tag) svg.append('text').attr('x', bx + bw / 2).attr('y', y(total(r)) - 4).attr('text-anchor', 'middle').style('font-size', W < 420 ? (W < 300 ? '9px' : '10px') : null).text(r.tag);
       if (r.pre != null) {
         svg.append('path').attr('d', cap(bx, y(r.pre), Math.max(0, y(0) - y(r.pre)))).attr('fill', earlier());
@@ -110,7 +113,7 @@
         base += v;
       });
     }
-    const firstSplit = periods.findIndex((r) => r.pre == null);
+    const firstSplit = periods.findIndex((r) => r.pre == null && !r.gap);
     if (hasPre && firstSplit > 0) {
       const at = x(periods[firstSplit].key) - (x.step() - x.bandwidth()) / 2;
       svg.append('line').attr('x1', at).attr('x2', at).attr('y1', 6).attr('y2', H - m.bottom).attr('stroke', 'var(--cds-chart-reference)').attr('stroke-dasharray', '3 3');
@@ -118,12 +121,18 @@
       const roomy = at - m.left > label.node().getComputedTextLength() + 8;
       label.attr('x', roomy ? at - 4 : at + 4).attr('text-anchor', roomy ? 'end' : 'start');
     }
-    bandHover(svg, box, x, periods, 'key', m, H, (r) => [r.title, [...(r.pre != null ? [[earlier(), 'Priced on VS4', pct1(r.pre)]]
+    bandHover(svg, box, x, periods, 'key', m, H, (r) => [r.title, r.gap ? [[null, 'Too few of its loans show every score']] : [...(r.pre != null ? [[earlier(), 'Priced on VS4', pct1(r.pre)]]
       : [...groups.map(([g, l, c]) => [c, l, pct1(r[g] || 0)]), [null, 'Carrying VS4', pct1(total(r))]]), ...(r.more || [])]]);
   }
 
   // By closing month. Bars split into scores once at least half of a month's loans are in records that show every score.
-  const SPLIT_MIN = 0.5, IN_MIN = 0.9;
+  const SPLIT_MIN = 0.5, IN_MIN = 0.9, COVER_MIN = 0.9;
+  // A week with under COVER_MIN of its loans in records that show every score cannot be split by score, so its charts leave it out and keep its place.
+  const coveredWeek = (agency) => {
+    const scored = new Map(rowsOf('weekly').filter((r) => r.agency === agency).map((r) => [r.week, r.scored_loans]));
+    return (r) => !scored.get(r.start) || r.loans / scored.get(r.start) >= COVER_MIN;
+  };
+  vx.coveredWeek = coveredWeek;
   const inLabel = (a) => (a != null && a < IN_MIN ? `${Math.round(a * 20) * 5}% in` : null);
   const closeBar = (r, n, split, priced, more) => {
     const tag = inLabel(r.arrived);
@@ -166,7 +175,9 @@
     const first = weeks.length ? weeks[0].start : null;
     const pre = rowsOf('weekly').filter((r) => r.agency === p.agency && (!first || r.week < first)).sort(asc('week'))
       .map((r) => ({ key: r.week, pre: r[`vs4${k}_share`], title: `Week of ${shortDay(r.week)}, ${int(r.scored_loans)} loans` }));
-    const post = weeks.map((r) => ({ key: r.start, ...split(r), title: `Week of ${shortDay(r.start)}, ${int(r.loans)} loans` }));
+    const covered = coveredWeek(p.agency);
+    const post = weeks.map((r) => ({ key: r.start, ...(covered(r) ? split(r) : {}), title: `Week of ${shortDay(r.start)}${covered(r) ? `, ${int(r.loans)} loans` : ': left out'}`, gap: !covered(r) }));
+    if (post.some((r) => r.gap)) note.textContent = `A week with too few loans showing every score is left out. ${note.textContent}`;
     drawCarry(box, document.getElementById('score-mix-legend'), st, [...pre, ...post], shortDay, 'Share of loans carrying VS4 by week first disclosed');
   }
 
@@ -379,23 +390,18 @@
     }
   }
 
-  function asks(l, fee, better, same, banks) {
+  function asks(l, banks) {
     const out = [];
-    const month = fee && fee.month ? monthShort(fee.month) : 'this month';
     if (l.stage === 'fico' || l.stage === 'trace') {
       out.push(`${pct1(l.mix_fico_only)} of its loans show only a Classic FICO. Is VantageScore in its systems, and what would make it switch?`);
-      if (fee && fee.option_bp != null) out.push(`The lower fee could be worth about ${one(fee.option_bp)} bp of its balance on the grid. Who would keep it, the borrower or the lender?`);
     }
     if (l.stage === 'both') {
       out.push(`It shows both scores on ${pct1(l.both_share)} of its loans but prices on VS4 on ${pct1(l.vs4_share)}. What holds it back: investors, mortgage insurers, buyback risk?`);
-      if (fee && fee.left_usd >= 1e5) out.push(`It left about ${usdM(fee.left_usd)} of fees on ${month} loans with both scores. Is that a choice or a systems gap?`);
     }
     if (l.stage === 'pricing' || l.stage === 'some') {
       if (l.rule === 'line' && l.above != null && l.below_late != null) out.push(`It keeps to about a 20-point rule (${pct0(l.below_late)} under the line, ${pct0(l.above)} above it). With one fee grid since Oct 1, why?`);
       if (l.rule === 'moving' && l.below_early != null) out.push(`Its rule is moving: ${pct0(l.below_early)} to ${pct0(l.below_late)} with VS4 under 20 points higher. Where does it stop?`);
-      if (l.rule === 'whenever' && l.below_late != null) out.push(`It uses VS4 on ${pct0(l.below_late)} of loans under 20 points higher, where the fee often does not change. What does it gain?`);
-      if (better && better.n >= 100 && better.reaches_fee != null && better.reaches_fee < 0.95) out.push(`${better.reaches_fee <= 0.05 ? 'None' : `About ${pct0(better.reaches_fee)}`} of a lower fee shows in its note rate. Where does the saving go: points, credits, broker pay or margin?`);
-      if (same && same.n >= 100 && same.net_bp >= 3) out.push(`Its VS4 loans with no fee benefit carry ${signed(same.net_bp)} bp against its own FICO loans. Is that mix, or investors charging for VS4?`);
+      if (l.rule === 'whenever' && l.below_late != null) out.push(`It uses VS4 on ${pct0(l.below_late)} of loans under 20 points higher. What does it gain?`);
     }
     if (l.fhlmc_vs_only != null && l.fnma_vs_only != null && l.fhlmc_vs_only - l.fnma_vs_only >= 0.05) {
       out.push(`Freddie Mac's files show VS4 alone on ${pct1(l.fhlmc_vs_only)} of its loans, Fannie Mae's on ${pct1(l.fnma_vs_only)}. Does it run both scores through Freddie Mac's underwriting system?`);
@@ -413,7 +419,7 @@
     const l = e ? lenderOf(e) : null;
     const line = document.getElementById('co-line');
     const body = document.getElementById('co-body');
-    card.classList.toggle('dash-skeleton', statusOf('lender_stage', 'closing', 'fees', 'pricing') === 'loading');
+    card.classList.toggle('dash-skeleton', statusOf('lender_stage', 'closing') === 'loading');
     body.hidden = !l;
     if (!l) {
       line.textContent = e ? `${e.name} has no detailed read: it is outside the 60 largest lenders on loans disclosed with every score.` : '';
@@ -422,11 +428,6 @@
     const stages = rowsOf('lender_stage');
     const stage = stages.find((r) => r.view === 'stage' && r.key === l.stage);
     const banks = stages.find((r) => r.view === 'kind' && r.key === 'Bank');
-    const fee = rowsOf('fees').find((r) => r.view === 'lender' && r.id === l.id);
-    const pricing = rowsOf('pricing');
-    const rate = pricing.find((r) => r.view === 'seller' && r.cover === 'all' && r.basis === 'headline' && r.key === l.id);
-    const better = pricing.find((r) => r.view === 'value' && r.scope === l.id && r.key === 'better');
-    const same = pricing.find((r) => r.view === 'value' && r.scope === l.id && r.key === 'same');
     const name = olName(l);
     drawCarryLender(e, l, p);
     line.textContent = `${name}: ${pct1(l.share)} of GSE loans disclosed with every score, number ${int(l.rank)} by loans. ${l.kind}, ${l.lead === 'Mixed' ? 'no main channel' : `${l.lead.toLowerCase()}-led`}. ${l.stage === 'fico' ? `${pct1(l.mix_fico_only)} of its loans show only Classic FICO.` : stage ? `${stage.label}.` : ''}`;
@@ -446,18 +447,10 @@
     add('Under 20 points higher, earlier to latest weeks', l.below_early == null || l.below_late == null ? null : fromTo(l.below_early, l.below_late));
     add('20 or more points higher', l.above == null ? null : pct0(l.above));
     add(`Both scores${l.both_at === 'FNMA' ? ' at Fannie Mae' : ''}, earlier to latest weeks`, l.both_early == null || l.both_late == null ? null : fromTo(l.both_early, l.both_late));
-    if (fee) {
-      add('Fee saved on a VS4 loan that saves one', fee.saving_avg_usd == null || fee.priced_loans < 20 ? null : `${money(fee.saving_avg_usd)}, on ${pct0(fee.saving_share)} of its VS4 loans with both scores`);
-      add(`Fees on ${monthShort(fee.month)} loans: saved, missed with both scores showing, missed showing FICO only (est.)`, `${fee.priced_loans ? usdM(fee.taken_usd) : '—'}, ${fee.left_loans ? usdM(fee.left_usd) : '—'}, ${fee.one_loans ? usdM(fee.est_usd) : '—'}`);
-      add('All three', fee.option_bp == null ? null : `${one(fee.option_bp)} bp of its balance`);
-    }
-    add('VS4 rate against the FICO model', rate ? `${signed(rate.net_bp)} bp on ${int(rate.n)} VS4 loans since ${shortDay(rate.since)}` : null);
-    add('A lower fee showing in the rate', better && better.n >= 100 && better.reaches_fee != null ? `${reachText(better.reaches_fee)} (${signed(better.net_bp)} bp against ${one(better.fee_rate_bp)} bp of fee in rate terms)` : null);
-    add('Same fee, rate against its own FICO loans', same && same.n >= 100 ? `${signed(same.net_bp)} bp on ${int(same.n)} loans` : null);
     fillTable(document.getElementById('co-facts'), facts);
 
     const list = (id, items) => document.getElementById(id).replaceChildren(...items);
-    const q = asks(l, fee, better, same, banks);
+    const q = asks(l, banks);
     list('co-ask', q.map((t) => node('li', null, t)));
     const said = rowsOf('statements').filter((r) => r.seller_id === l.id).sort((a, b) => (a.date < b.date ? 1 : -1));
     list('co-said', said.map((r) => {
@@ -502,7 +495,7 @@
   }
 
   function preset(r, v) {
-    const pick = { today: r.vs4_share, recent: r.recent_share, higher: r.on_higher, better: r.on_better }[v];
+    const pick = { today: r.vs4_share, recent: r.recent_share, higher: r.on_higher }[v];
     return pick == null ? r.vs4_share : pick;
   }
   const valueOf = (r) => {
@@ -535,7 +528,7 @@
       i.value = (Math.round(value * 1000) / 10).toFixed(1);
       i.dataset.id = r.id;
       i.dataset.field = field;
-      i.setAttribute('aria-label', `${field === 'v' ? 'VS4-priced share' : 'Share with no Classic FICO'}, ${r.short || 'everyone else'}`);
+      i.setAttribute('aria-label', `${field === 'v' ? 'VS4-priced share' : 'Lender drops FICO, your assumption'}, ${r.short || 'everyone else'}`);
       return i;
     };
     for (const r of rows) {
