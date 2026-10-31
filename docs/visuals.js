@@ -3,7 +3,7 @@
 // Runs after the main script and tools.js; what they share is on window.vx.
 (() => {
   const vx = window.vx;
-  const { root, rowsOf, statusOf, int, pct1, olName, openSeller, shortDay, prep, svgFor, bandFrame, yAxis, bandAxis, bandHover, legend, tooltip, textWidth, MIX_GROUPS, AG_NAME, show, col } = vx;
+  const { root, rowsOf, statusOf, int, pct1, ptsSigned, inkOn, olName, openSeller, shortDay, prep, svgFor, bandFrame, yAxis, bandAxis, bandHover, legend, tooltip, textWidth, MIX_GROUPS, AG_NAME, show, col } = vx;
   const pct0 = d3.format('.0%');
   const one = d3.format('.1f');
   const node = (tag, cls, text) => {
@@ -44,6 +44,7 @@
     const head = rows.find((r) => r.view === 'month' && r.agency === 'All' && r.headline);
     const title = document.getElementById('score-mix-h');
     title.textContent = k ? 'Out of every $100 of loans, which scores does the file show?' : 'Out of every 100 loans, which scores does the file show?';
+    document.getElementById('score-mix-square').textContent = k ? 'Each square is $1 in every $100 of balance.' : 'Each square is one loan in 100.';
     if (!head) return box.replaceChildren();
     box.replaceChildren(...['All', 'FNMA', 'FHLMC'].map((a) => {
       const r = rows.find((d) => d.view === 'month' && d.agency === a && d.start === head.start);
@@ -75,7 +76,7 @@
         li.append(node('b', null, pct1(v)), label);
         return li;
       };
-      list.append(sum('show Classic FICO, a floor', r[`fico${k}_share`] || 0), sum('show VS4, a floor', r[`vs${k}_share`] || 0), sum('are priced on VS4, exact', r[`vs4_priced${k}_share`] || 0));
+      list.append(sum('Shows Classic FICO, a floor', r[`fico${k}_share`] || 0), sum('Shows VS4, a floor', r[`vs${k}_share`] || 0), sum('Priced on VS4, exact', r[`vs4_priced${k}_share`] || 0));
       wrap.append(grid, list);
       return wrap;
     }));
@@ -120,7 +121,7 @@
     if (!box) return;
     const st = dash.data('score_mix').status;
     const priced = col(0), onFico = group('both_fico')[2];
-    const ghost = 'color-mix(in srgb, var(--color-fg) 13%, transparent)';
+    const ghost = 'color-mix(in srgb, var(--color-fg) 30%, transparent)';
     legend(document.getElementById('frozen-legend'), [[priced, 'Priced on VS4', 'box'], [onFico, 'Carrying VS4, priced on FICO', 'box'], [ghost, 'As delivered', 'box']]);
     if (!prep(box, st)) return;
     const weeks = rowsOf('score_mix').filter((r) => r.view === 'week' && r.agency === p.agency && r.steady_carrying != null).sort(asc('start'));
@@ -182,7 +183,7 @@
       id: r.id, name: olName(r), short: r.short, kind: r.kind, n: r[nf], priced: r[`${pre}_both_vs`] + r[`${pre}_vs_only`], carrying: r[`${pre}_both_fico`] + r[`${pre}_both_vs`] + r[`${pre}_vs_only`], only: r[`${pre}_vs_only`],
     })).sort((a, b) => b.n - a.n);
     if (!data.length) return;
-    const W = box.clientWidth, H = Math.max(320, Math.min(480, W * 0.55)), m = { top: 14, right: 18, bottom: 40, left: 46 };
+    const W = box.clientWidth, H = Math.max(320, Math.min(480, W * 0.55)), m = { top: 14, right: 18, bottom: 40, left: 50 };
     const svg = svgFor(box, W, H, 'Every lender by the share of its loans carrying VS4 and the share priced on VS4');
     const topY = Math.min(1, Math.max(0.5, (d3.max(data, (d) => d.priced) || 0) + 0.14));
     const x = d3.scaleLinear([-0.035, 1.02], [m.left, W - m.right]);
@@ -206,17 +207,17 @@
       taken.push({ x: anchor === 'end' ? zx - w : zx, y: zy - 12, w, h: 16 });
     };
     if (W >= 520) {
-      zone('Priced on VS4 whenever it shows', x(topY) - 8, y(topY) + 12, 'end');
+      zone('Priced on VS4 whenever it shows', x(topY) - 34, y(topY) + 12, 'end');
       zone('Shows VS4, rarely priced on it', x(0.84), y(0.1), 'end');
-      zone('Shows FICO only', x(0.01), y(0.1), 'start');
+      zone('Shows FICO only', x(0.01), y(0.01 + 110 / (x(1) - x(0))), 'start');
     }
     const drawn = data.slice().reverse();
     svg.append('g').selectAll('circle').data(drawn).join('circle').attr('cx', (d) => x(d.carrying)).attr('cy', (d) => y(d.priced)).attr('r', (d) => r(d.n))
       .attr('fill', (d) => (kinds.find((k) => k[0] === d.kind) || kinds[2])[1]).attr('fill-opacity', 0.8).attr('stroke', 'var(--color-panel)').attr('stroke-width', 1.5);
-    // Name the lenders away from the crowd at the origin, largest first, wherever the name fits and clears the larger bubbles.
+    // Name the lenders away from the crowd at the origin, largest first, wherever the name fits and clears every bubble.
     for (const d of data) {
       const rad = r(d.n);
-      if (rad >= 5) taken.push({ x: x(d.carrying) - rad, y: y(d.priced) - rad, w: 2 * rad, h: 2 * rad });
+      taken.push({ x: x(d.carrying) - rad, y: y(d.priced) - rad, w: 2 * rad, h: 2 * rad });
     }
     const clears = (b, self) => !taken.some((t) => t !== self && b.x < t.x + t.w && b.x + b.w > t.x && b.y < t.y + t.h && b.y + b.h > t.y);
     const named = data.filter((d) => d.carrying >= 0.12 || d.priced >= 0.03);
@@ -229,33 +230,35 @@
       const spot = spots.find(([sx, sy]) => sx >= m.left && sx + w <= W - 2 && sy - 12 >= 0 && sy <= H - m.bottom - 2 && clears({ x: sx, y: sy - 11, w, h: 14 }, self));
       if (spot) {
         probe.attr('x', spot[0]).attr('y', spot[1]).style('fill', 'var(--color-fg)');
-        taken.push({ x: spot[0], y: spot[1] - 11, w, h: 14 });
+        taken.push({ x: spot[0] - 6, y: spot[1] - 11, w: w + 12, h: 14 });
       } else {
         probe.remove();
       }
     }
     const tip = tooltip(box);
+    const openable = new Set(rowsOf('sellers').map((s) => s.id));
     const near = d3.Delaunay.from(data, (d) => x(d.carrying), (d) => y(d.priced));
     const pick = (event) => {
       const [mx, my] = d3.pointer(event, svg.node());
       const d = data[near.find(mx, my)];
       return Math.hypot(x(d.carrying) - mx, y(d.priced) - my) <= Math.max(24, r(d.n) + 6) ? d : null;
     };
-    svg.append('rect').attr('x', m.left).attr('y', m.top).attr('width', W - m.left - m.right).attr('height', H - m.top - m.bottom).attr('fill', 'transparent').style('cursor', 'pointer')
+    svg.append('rect').attr('x', m.left).attr('y', m.top).attr('width', W - m.left - m.right).attr('height', H - m.top - m.bottom).attr('fill', 'transparent')
       .on('pointermove', (event) => {
         const d = pick(event);
+        event.currentTarget.style.cursor = d && openable.has(d.id) ? 'pointer' : null;
         if (!d) return tip.hide();
         tip.show(event, d.name, [[null, 'Carrying VS4', pct1(d.carrying)], [null, 'Priced on VS4', pct1(d.priced)], [null, 'Shows VS4 only', pct1(d.only)], [null, 'Loans', int(d.n)]]);
       })
       .on('pointerleave', () => tip.hide())
       .on('click', (event) => {
         const d = pick(event);
-        if (d) openSeller(d.id);
+        if (d && openable.has(d.id)) openSeller(d.id);
       });
   }
 
   // ---- How lenders decide ----
-  const SCORE_BANDS = [['down20', '20+ lower'], ['down1', '1-19 lower'], ['equal', 'Same'], ['up1', '1-19 higher'], ['up20', '20+ higher']];
+  const SCORE_BANDS = [['down20', '20+ lower'], ['down1', '1–19 lower'], ['equal', 'Same'], ['up1', '1–19 higher'], ['up20', '20+ higher']];
   const FEES = [['higher', 'Higher'], ['same', 'Same'], ['lower', 'Lower']];
   // Shading only, to show what each motive would look like: share of the darkest shade by column, score bands then fee.
   const PATTERNS = [['Wanted the cheapest score', [1, 1, 1, 1, 1, 1, 1, 1]], ['Wanted the lowest fee', [0, 0, 0, 0.5, 0.5, 0, 0, 1]], ['Wanted the higher score', [0, 0, 0.3, 1, 1, 0, 0.5, 1]]];
@@ -265,8 +268,9 @@
     td.className = 'dc-cell';
     td.textContent = text;
     if (v != null) {
-      td.style.background = `color-mix(in srgb, ${col(0)} ${Math.round(v * 100)}%, transparent)`;
-      if (v >= 0.6) td.style.color = '#fff';
+      const fill = `color-mix(in srgb, ${col(0)} ${Math.round(v * 100)}%, transparent)`;
+      td.style.background = fill;
+      td.style.color = inkOn(fill);
     }
   }
 
@@ -276,7 +280,8 @@
     const st = dash.data('fees').status;
     table.closest('.vx-tablebox').classList.toggle('dash-skeleton', st === 'loading');
     const rows = rowsOf('fees').filter((r) => r.view === 'choice' && r.cohort === p.ccohort);
-    const scopes = [...new Map(rows.slice().sort((a, b) => a.scope_rank - b.scope_rank).map((r) => [r.scope, r.scope_label])).entries()];
+    const scopes = [...new Map(rows.slice().sort((a, b) => a.scope_rank - b.scope_rank).map((r) => [r.scope, r.scope_label])).entries()]
+      .filter(([s]) => rows.filter((r) => r.scope === s && r.loans >= CELL_MIN).length >= 4);
     const head = table.tHead;
     head.replaceChildren();
     const h1 = head.insertRow();
@@ -330,7 +335,7 @@
     if (!box) return;
     const st = dash.data('pricing').status;
     const fee = 'var(--cds-chart-muted)', rate = col(0);
-    legend(document.getElementById('saving-legend'), [[fee, 'Fee saved, in rate terms', 'box'], [rate, 'How much lower the note rate is', 'box']]);
+    legend(document.getElementById('saving-legend'), [[fee, 'Fee saved, in rate terms', 'box'], [rate, 'How much lower the note rate is', 'box'], ['var(--color-fg)', 'Margin of error', 'line']]);
     if (!prep(box, st)) return;
     const rows = rowsOf('pricing').filter((r) => r.view === 'value' && r.key === 'better' && r.n >= 300);
     const picks = rows.filter((r) => r.scope === 'All' || r.channel).sort((a, b) => a.scope_rank - b.scope_rank);
@@ -342,11 +347,11 @@
     const highs = d3.max(picks, (r) => Math.max(r.fee_rate_bp, -r.net_bp + 2 * (r.se_bp || 0)));
     const x = d3.scaleLinear([Math.min(0, lows), highs], [m.left, W - m.right]);
     const zero = x(0);
-    svg.append('line').attr('x1', zero).attr('x2', zero).attr('y1', m.top).attr('y2', H - m.bottom).attr('stroke', 'var(--cds-chart-axis)');
     picks.forEach((r, i) => {
       const top = m.top + i * rowH;
       svg.append('text').attr('x', m.left).attr('y', top + 12).text(`${r.label}, ${int(r.n)} loans`).style('fill', 'var(--color-fg)');
       const feeY = top + 18, rateY = top + 32, h = 11;
+      svg.append('line').attr('x1', zero).attr('x2', zero).attr('y1', feeY - 2).attr('y2', rateY + h + 2).attr('stroke', 'var(--cds-chart-axis)');
       svg.append('rect').attr('x', zero).attr('y', feeY).attr('width', Math.max(0, x(r.fee_rate_bp) - zero)).attr('height', h).attr('rx', 2).attr('fill', fee);
       svg.append('text').attr('x', x(r.fee_rate_bp) + 5).attr('y', feeY + h - 1).text(`${one(r.fee_rate_bp)} bp`);
       const fall = -r.net_bp;
@@ -363,7 +368,7 @@
         const [, my] = d3.pointer(event, svg.node());
         const r = picks[Math.floor((my - m.top) / rowH)];
         if (!r) return tip.hide();
-        tip.show(event, r.label, [[null, 'Loans', int(r.n)], [null, 'Fee saved', `${one(r.fee_bp)} bp of balance`], [fee, 'In rate terms, at 5 to 1', `${one(r.fee_rate_bp)} bp`], [rate, 'Rate against its own FICO loans', `${d3.format('+.1f')(r.net_bp)} bp, ± ${one(2 * (r.se_bp || 0))}`]]);
+        tip.show(event, r.label, [[null, 'Loans', int(r.n)], [null, 'Fee saved', `${one(r.fee_bp)} bp of balance`], [fee, 'In rate terms, at 5 to 1', `${one(r.fee_rate_bp)} bp`], [rate, 'Rate against its own FICO loans', `${ptsSigned(r.net_bp)} bp, ± ${one(2 * (r.se_bp || 0))}`]]);
       })
       .on('pointerleave', () => tip.hide());
   }
@@ -377,17 +382,17 @@
     ['both', 'Both scores', 'The GSE file shows both a Classic FICO and a VS4 on the loan. One of them priced it.'],
     ['only', 'FICO only, VS4 only', 'The file shows just that one score. That does not mean the other was never pulled: lenders deliver one score, and at Freddie Mac some lenders\' loans often show only the one that priced them. So these shares are ceilings on loans with only one score.'],
     ['floor', 'Floor, ceiling, exact', 'A score that does not show is unknown, not absent. So the share showing a score is a floor on loans that have it: the true share is at least this. The share showing only one score is a ceiling on loans that have only that one: the true share is at most this. The share priced on VS4 is exact, because the GSEs state it for every loan.'],
-    ['every', 'Records that show every score', 'Since October 19, 2026 the GSE files show every score the GSE has on a loan and which one priced it. Before that they showed only the score that priced the loan, so older bars are a floor.'],
+    ['every', 'Records that show every score', 'Since Oct 19, 2026 the GSE files show every score the GSE has on a loan and which one priced it. Before that they showed only the score that priced the loan, so older bars are a floor.'],
     ['frozen', 'Lender mix frozen', 'Each week different lenders deliver different amounts. Freezing the mix gives each lender a fixed weight, its share of all the weeks shown, so only changes in what lenders do can move the number.'],
-    ['fee', 'Upfront fee', 'The one-time fee the GSEs charge on a loan, set by its credit score, LTV and purpose. Also called an LLPA. Since October 1, 2026 one fee grid covers both scores.'],
+    ['fee', 'Upfront fee', 'The one-time fee the GSEs charge on a loan, set by its credit score, LTV and purpose. Also called an LLPA. Since Oct 1, 2026 one fee grid covers both scores.'],
     ['rateterms', 'Fee in rate terms', 'Upfront fees and note rates are different units. The rule of thumb used here is that 5 bp of upfront fee is worth about 1 bp of rate.'],
     ['ownfico', 'Against its own FICO loans', 'The note rate compared with what a model says the same loan would carry on FICO, less the same gap on that lender and channel\'s FICO-priced loans with both scores.'],
-    ['rule', 'A lender\'s rule', 'When it chooses VS4. A 20-point rule means using VS4 only when its score beats FICO by 20 or more points, which matched the fees before October 1.'],
+    ['rule', 'A lender\'s rule', 'When it chooses VS4. A 20-point rule means using VS4 only when its score beats FICO by 20 or more points, which matched the fees before Oct 1, 2026.'],
     ['stage', 'Stage', 'How far a lender has gone: FICO only, a few VS4 loans, both scores shown, using VS4 some of the time, or most of the time its score is higher.'],
     ['channel', 'Channel', 'How the lender got the loan: retail (its own), broker, or correspondent (bought from another lender).'],
     ['week', 'By week', 'Loans by the week they first appeared in the GSEs\' intraday files, ahead of the month their pool is issued.'],
     ['issue', 'Issue month', 'The month the loan\'s mortgage-backed security was issued. The latest month is partial until its month-end file arrives.'],
-    ['closing', 'Closing month', 'The month the loan closed, as near as the files allow: its first payment month less two. A recent month is still arriving, so a label such as 60% in estimates how much of it has come through so far.'],
+    ['closing', 'Closing month', 'The month the loan closed, as near as the files allow: its first payment month less two. A recent month is still arriving, so a label such as "60% in" estimates how much of it has come through so far.'],
     ['lender', 'Lender', 'The company that delivered the loan to the GSE. It is not always the one that made the loan.'],
     ['bp', 'bp', 'Basis point, a hundredth of a percentage point. A pt is a full percentage point.'],
     ['hmda', 'HMDA', 'The Home Mortgage Disclosure Act record: a yearly federal filing by nearly every mortgage lender, covering each application whatever became of it. It names the score model the lender relied on for the credit decision.'],
@@ -447,32 +452,74 @@
     if (el) return showPop(el);
     if (popFor) hidePop();
     const go = event.target.closest('[data-go]');
-    if (go) show(go.dataset.go);
+    if (go) { show(go.dataset.go); window.scrollTo(0, 0); }
     const more = event.target.closest('.vx-more-note');
     if (more) {
       const note = more.previousElementSibling;
       const open = note.classList.toggle('vx-clamp');
       more.textContent = open ? 'More' : 'Less';
     }
+    const all = event.target.closest('.vx-show');
+    if (all) {
+      const box = all.previousElementSibling, showing = box.dataset.all === '1';
+      box.dataset.all = showing ? '' : '1';
+      capRows(box.querySelector('table'));
+      if (showing) all.scrollIntoView({ block: 'end' });
+    }
   });
 
-  // Long notes show two lines, with the rest a tap away.
+  // Long notes show two lines, with the rest a tap away. A More costs a line, so a note that would hide only one line shows in full.
+  // A note's text can change with a toggle, so each draw measures it again, once its numbers have arrived.
+  function clampNote(note) {
+    if (note.dataset.clamp === '0' || !note.offsetParent || [...note.querySelectorAll('[data-source]')].some((s) => s.textContent.trim() === '—')) return;
+    const next = note.nextElementSibling;
+    const more = next && next.classList.contains('vx-more-note') ? next : null;
+    const open = !!more && more.textContent === 'Less';
+    note.classList.add('vx-clamp');
+    const long = note.scrollHeight - note.clientHeight > (parseFloat(getComputedStyle(note).lineHeight) || 18) + 2;
+    note.classList.toggle('vx-clamp', long && !open);
+    if (!long && more) more.remove();
+    if (long && !more) {
+      const link = node('button', 'vx-more-note', 'More');
+      link.type = 'button';
+      note.after(link);
+    }
+  }
+
+  // A long table shows its first rows, plus any row pinned to stay, and a button for the rest, so no row is cut at the edge of a box. The choice sits on the box, so it survives a redraw.
+  const ROWS_WHOLE = 18, ROWS_FIRST = 15;
+  function capRows(table) {
+    const box = table.closest('.vx-tablebox'), rows = [...table.tBodies[0].rows];
+    const long = rows.length > ROWS_WHOLE, showing = box.dataset.all === '1';
+    rows.forEach((r, i) => { r.hidden = long && !showing && i >= ROWS_FIRST && !('pin' in r.dataset); });
+    // A table wider than its box has to scroll sideways, and on a phone says so once more than a cell's padding is cut. One that fits can let go of the scroll, so its header sticks to the page once all its rows show. A box out of sight keeps its last reading.
+    const over = box.scrollWidth - box.clientWidth;
+    if (box.clientWidth) {
+      box.classList.toggle('vx-sideways', over > 1);
+      box.classList.toggle('vx-swipe', over > 8);
+    }
+    let btn = box.nextElementSibling;
+    if (!btn || !btn.classList.contains('vx-show')) {
+      if (!long) return;
+      btn = node('button', 'vx-show');
+      btn.type = 'button';
+      box.after(btn);
+    }
+    btn.hidden = !long;
+    btn.textContent = showing ? 'Show fewer' : `Show all ${int(rows.length)}`;
+  }
+  // A sort, a filter or a preset redraws one table without a full draw.
+  const rowWatch = new MutationObserver((changes) => new Set(changes.map((c) => c.target.closest('table'))).forEach((table) => capRows(table)));
+
   function tidy() {
     root.querySelectorAll('[data-term]:not([tabindex])').forEach((el) => {
       el.tabIndex = 0;
       el.classList.add('vx-term');
     });
-    root.querySelectorAll('.vx-panel:not([hidden]) .vx-note:not([data-clamp]), .vx-panel:not([hidden]) .vx-sec-h > p:not([data-clamp])').forEach((note) => {
-      if (!note.offsetParent || note.hidden) return;
-      note.dataset.clamp = '1';
-      note.classList.add('vx-clamp');
-      if (note.scrollHeight <= note.clientHeight + 2) {
-        note.classList.remove('vx-clamp');
-        return;
-      }
-      const more = node('button', 'vx-more-note', 'More');
-      more.type = 'button';
-      note.after(more);
+    root.querySelectorAll('.vx-panel:not([hidden]) .vx-note, .vx-panel:not([hidden]) .vx-sec-h > p').forEach((note) => clampNote(note));
+    root.querySelectorAll('.vx-table').forEach((table) => {
+      capRows(table);
+      rowWatch.observe(table.tBodies[0], { childList: true });
     });
   }
 

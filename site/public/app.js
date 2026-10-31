@@ -13,7 +13,7 @@
   const DEFAULTS = { agency: 'All', measure: 'loans', dim: 'pricing_score', seller: 'rocket-mortgage', adopt: 'any', period: 'month', top: 25, mapmonth: '', cover: 'all', basis: 'headline', pdim: 'purpose', cscope: 'All', orule: 'higher', cperiod: 'week', lsort: 'share', ccohort: 'all' };
   const DAY = 864e5;
   const pct1 = d3.format('.1%');
-  const ptsSigned = d3.format('+.1f');
+  const ptsSigned = (v) => (Math.abs(v) < 0.05 ? '0.0' : d3.format('+.1f')(v));
   const int = d3.format(',');
   const money = d3.format('$,.0f');
   const fixed = (n) => d3.format(`.${n}f`);
@@ -24,11 +24,40 @@
   const longDay = (s) => d3.utcFormat('%b %-d, %Y')(parse(s));
   const shortDay = (s) => d3.utcFormat('%b %-d')(parse(s));
   const pts = (v) => `${ptsSigned(v * 100)} pts`;
+  const rangeDash = (s) => String(s).replace(/(\d[kKmM]?)-(\$?\d)/g, '$1–$2');  // the data files write ranges with a hyphen
   const enc = (s) => String(s).replace(/%/g, '%25').replace(/&/g, '%26').replace(/=/g, '%3D');
   const col = (i) => dash.colors[i % dash.colors.length];
   const agencyColor = (a) => col(Math.max(0, AGENCIES.indexOf(a)));
   const shade = (a) => `color-mix(in srgb, ${agencyColor(a)} 30%, transparent)`;
   const C_VS4 = col(0), C_WITHIN = col(2), C_FIXED = col(1), C_EX = col(3), C_NEW = col(2), C_DEEP = col(0), C_MIX = col(1);
+  const PARTIAL = 0.6;  // how strongly a part-month or part-week bar is drawn
+
+  // A color as the browser works it out, vars and mixes included.
+  const probe = document.createElement('span');
+  probe.hidden = true;
+  root.append(probe);
+  const cssColor = (value) => {
+    probe.style.color = value;
+    return getComputedStyle(probe).color;
+  };
+  // Whichever of the page's two text colors reads better on a fill, by measured contrast. The fill is painted over the panel and read back.
+  const paint = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
+  const luminance = (fill) => {
+    for (const c of ['var(--color-panel)', fill]) {
+      paint.fillStyle = cssColor(c);
+      paint.fillRect(0, 0, 1, 1);
+    }
+    const [r, g, b] = [...paint.getImageData(0, 0, 1, 1).data].map((c) => (c / 255 <= 0.03928 ? c / 255 / 12.92 : ((c / 255 + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const inkOn = (fill) => {
+    const l = luminance(fill);
+    const contrast = (ink) => {
+      const k = luminance(ink);
+      return (Math.max(l, k) + 0.05) / (Math.min(l, k) + 0.05);
+    };
+    return contrast('var(--color-fg)') >= contrast('var(--color-panel)') ? 'var(--color-fg)' : 'var(--color-panel)';
+  };
   const params = () => {
     const set = Object.fromEntries(Object.entries(dash.params() || {}).filter(([, v]) => v != null && v !== ''));
     const p = Object.assign({}, DEFAULTS, set);
@@ -173,6 +202,11 @@
     put('s-fico', upb ? 'final_fico_upb_share' : 'final_fico_share', pct1, mine, p.agency);
     put('s-through', 'data_through', longDay, both, 'All');
     put('s-top2', 'top2_share_of_vs4', pct1, both, 'All');
+    // The page header always reads both GSEs and share of loans; the filters move the tiles, not this sentence.
+    put('h-final-month', 'final_month', monthYear, both, 'All');
+    put('h-cur-month', 'current_month', monthYear, both, 'All');
+    put('h-final-share', 'final_vs4_share', pct1, both, 'All');
+    put('h-cur-share', 'current_vs4_share', pct1, both, 'All');
   }
 
   function drawTiles(p) {
@@ -184,6 +218,7 @@
     const af = upb ? 'active_upb_share' : 'active_share';
     mark('.a-active', 'active_sellers', where, as, ad.active_sellers == null ? null : int(ad.active_sellers));
     mark('.a-active-share', af, where, as, ad[af] == null ? null : pct1(ad[af]));
+    root.querySelectorAll('.a-active-unit').forEach((el) => { el.textContent = upb ? 'balance' : 'loans'; });
     // Where the current month would end if it moved as past months did from the same day.
     const rg = rowsOf('asof').find((r) => r.kind === 'open' && r.agency === p.agency && r.month === sum.current_month);
     const rs = statusOf('asof', 'summary');
@@ -243,8 +278,9 @@
     el.replaceChildren(...items.map(([color, label, kind, strong]) => {
       const item = document.createElement('span');
       const sw = document.createElement('span');
-      sw.className = kind === 'line' ? 'vx-sw vx-sw-line' : 'vx-sw';
-      sw.style.background = color;
+      sw.className = kind === 'line' ? 'vx-sw vx-sw-line' : kind === 'diamond' ? 'vx-sw vx-sw-diamond' : 'vx-sw';
+      if (kind === 'diamond') sw.style.borderColor = color;
+      else sw.style.background = color;
       item.append(sw, label);
       if (strong) item.style.color = 'var(--color-fg)';
       return item;
@@ -416,7 +452,7 @@
         const rs = AGENCIES.map((a) => data.find((r) => r.agency === a && r.month === near.mo)).filter(Boolean);
         const rg = shown.find((r) => r.month === near.mo);
         tip.show(event, `${monthYear(near.mo)}${rs.every((r) => r.final) ? '' : ' (partial)'}`,
-          rs.map((r) => [agencyColor(r.agency), AG_NAME[r.agency], `${pct1(r[f])} of ${int(r[countKey])} loans`])
+          rs.map((r) => [agencyColor(r.agency), AG_NAME[r.agency], `${pct1(r[f])}${f.includes('upb') ? '' : ` of ${int(r[countKey])} loans`}`])
             .concat(rg ? [[shade(p.agency), `${AG_NAME[p.agency]} if it moves as ${rg.label} did`, `${pct1(rg.lo)} to ${pct1(rg.hi)}`]] : []));
       })
       .on('pointerleave', () => { rule.attr('opacity', 0); tip.hide(); });
@@ -439,7 +475,7 @@
     svg.append('g').selectAll('rect').data(data).join('rect')
       .attr('x', (r) => x(r.week) + off).attr('width', bw)
       .attr('y', (r) => y(r[f])).attr('height', (r) => Math.max(0, y(0) - y(r[f]))).attr('rx', 3)
-      .attr('fill', 'var(--cds-chart-muted)').attr('fill-opacity', (r) => (r.complete ? 1 : 0.45));
+      .attr('fill', 'var(--cds-chart-muted)').attr('fill-opacity', (r) => (r.complete ? 1 : PARTIAL));
     const cx = (r) => x(r.week) + x.bandwidth() / 2;
     svg.append('path').attr('d', d3.line().defined((r) => r[f4] != null).x(cx).y((r) => y(r[f4]))(data))
       .attr('fill', 'none').attr('stroke', color).attr('stroke-width', 2).attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round');
@@ -455,7 +491,7 @@
       }, m.top, H - m.bottom);
     }
     bandHover(svg, box, x, data, 'week', m, H, (r) => [`Week of ${shortDay(r.week)}${r.complete ? '' : ' (partial)'}`, [
-      ['var(--cds-chart-muted)', 'Weekly share', `${pct1(r[f])} of ${int(r[countKey])} loans`],
+      ['var(--cds-chart-muted)', 'Weekly share', `${pct1(r[f])}${f.includes('upb') ? '' : ` of ${int(r[countKey])} loans`}`],
       [color, 'Four-week share', r[f4] == null ? 'not enough weeks' : pct1(r[f4])],
     ]]);
   }
@@ -467,6 +503,7 @@
       month: r.month, lo: r[upb ? 'vs4_upb_share_lo' : 'vs4_share_lo'], hi: r[upb ? 'vs4_upb_share_hi' : 'vs4_share_hi'],
       label: r.first_month === r.last_month ? monthShort(r.first_month) : `${monthShort(r.first_month)}–${monthShort(r.last_month)}`,
     }));
+    document.getElementById('monthly-base').textContent = upb ? 'Share of balance on loans' : 'Share of loans';
     legend(document.getElementById('monthly-legend'), AGENCIES.map((a) => [agencyColor(a), AG_NAME[a], 'line', a === p.agency])
       .concat(ranges.length ? [[shade(p.agency), 'If it moves as past months did', 'box']] : []));
     agencyLines(box, statusOf('monthly', 'events'), rowsOf('monthly'), upb ? 'vs4_upb_share' : 'vs4_share',
@@ -476,7 +513,7 @@
   function drawWeekly(p) {
     const box = document.getElementById('weekly-chart');
     const color = agencyColor(p.agency);
-    legend(document.getElementById('weekly-legend'), [['var(--cds-chart-muted)', 'Weekly share', 'box'], [color, `Four-week rolling share, ${AG_NAME[p.agency]}`, 'line', true]]);
+    legend(document.getElementById('weekly-legend'), [['var(--cds-chart-muted)', 'Weekly share', 'box'], [color, `Four-week rolling share, ${p.agency === 'All' ? 'both GSEs' : AG_NAME[p.agency]}`, 'line', true]]);
     const upb = p.measure === 'upb';
     weeklyBars(box, statusOf('weekly', 'events'), rowsOf('weekly').filter((r) => r.agency === p.agency),
       upb ? 'vs4_upb_share' : 'vs4_share', upb ? 'vs4_upb_share_4wk' : 'vs4_share_4wk', color, 'scored_loans',
@@ -484,16 +521,17 @@
   }
 
   function drawEventList() {
-    const el = document.getElementById('events-list');
-    el.classList.toggle('dash-skeleton', dash.data('events').status === 'loading');
-    el.replaceChildren(...rowsOf('events').map((e, i) => {
-      const item = document.createElement('span');
-      const badge = document.createElement('span');
-      badge.className = 'vx-badge';
-      badge.textContent = String(i + 1);
-      item.append(badge, `${longDay(e.date)}: ${e.label}`);
-      return item;
-    }));
+    root.querySelectorAll('#events-list, .sx-events').forEach((el) => {
+      el.classList.toggle('dash-skeleton', dash.data('events').status === 'loading');
+      el.replaceChildren(...rowsOf('events').map((e, i) => {
+        const item = document.createElement('span');
+        const badge = document.createElement('span');
+        badge.className = 'vx-badge';
+        badge.textContent = String(i + 1);
+        item.append(badge, `${longDay(e.date)}: ${e.label}`);
+        return item;
+      }));
+    });
   }
 
   function drawBreadth(p) {
@@ -505,7 +543,7 @@
     legend(document.getElementById('breadth-legend'), [
       ['var(--cds-chart-muted)', `Lenders using VS4, share of ${AG_NOUN[p.agency]} ${upb ? 'balance' : 'loans'}`, 'box'],
       [C_WITHIN, 'How much they use VS4', 'line'],
-      [C_VS4, 'VS4 share of all loans', 'line', true],
+      [C_VS4, `VS4 share of all ${upb ? 'balance' : 'loans'}`, 'line', true],
     ]);
     if (!prep(box, dash.data('adoption').status)) return;
     const data = rowsOf('adoption').filter((r) => r.agency === p.agency && r.month >= ADOPT_FROM);
@@ -523,14 +561,14 @@
     svg.append('g').selectAll('rect').data(data).join('rect')
       .attr('x', (r) => x(r.month) + off).attr('width', bw).attr('y', (r) => y(r[fShare] ?? 0))
       .attr('height', (r) => Math.max(0, y(0) - y(r[fShare] ?? 0))).attr('rx', 3)
-      .attr('fill', 'var(--cds-chart-muted)').attr('fill-opacity', (r) => (r.final ? 1 : 0.45));
+      .attr('fill', 'var(--cds-chart-muted)').attr('fill-opacity', (r) => (r.final ? 1 : PARTIAL));
     const xc = (r) => x(r.month) + x.bandwidth() / 2;
     partialLine(svg, data, xc, (r) => r[fWithin], y, C_WITHIN, 'final');
     partialLine(svg, data, xc, (r) => r[fAll], y, C_VS4, 'final');
     bandHover(svg, box, x, data, 'month', m, H, (r) => [`${monthYear(r.month)}${r.final ? '' : ' (partial)'}`, [
       ['var(--cds-chart-muted)', 'Lenders using VS4', `${int(r[`adopters_${d}`])} lenders, ${pct1(r[fShare] ?? 0)} of ${upb ? 'balance' : 'loans'}`],
-      [C_WITHIN, 'VS4 share of their loans', r[fWithin] == null ? '—' : pct1(r[fWithin])],
-      [C_VS4, 'VS4 share of all loans', pct1(r[fAll])],
+      [C_WITHIN, `VS4 share of their ${upb ? 'balance' : 'loans'}`, r[fWithin] == null ? '—' : pct1(r[fWithin])],
+      [C_VS4, `VS4 share of all ${upb ? 'balance' : 'loans'}`, pct1(r[fAll])],
     ]]);
   }
 
@@ -568,7 +606,7 @@
     svg.append('g').selectAll('rect').data(segs.filter((s) => s.hi - s.lo > 0)).join('rect')
       .attr('x', (s) => x(s.r.month) + off).attr('width', bw).attr('y', (s) => y(s.hi))
       .attr('height', (s) => Math.max(0, y(s.lo) - y(s.hi))).attr('fill', (s) => s.c)
-      .attr('fill-opacity', (s) => (s.r.final ? 1 : 0.5));
+      .attr('fill-opacity', (s) => (s.r.final ? 1 : PARTIAL));
     const net = svg.append('g').selectAll('g').data(data).join('g');
     net.append('line').attr('x1', (r) => x(r.month) + off - 3).attr('x2', (r) => x(r.month) + off + bw + 3)
       .attr('y1', (r) => y(r[`d_total${k}`])).attr('y2', (r) => y(r[`d_total${k}`]))
@@ -604,7 +642,7 @@
     const rows = rowsOf('series').filter((r) => r.period === p.period && r.agency === p.agency && (p.period === 'week' || r.start >= RECENT_FROM));
     const without = rows.length && rows[0].excluded ? `Without ${rows[0].excluded}` : 'Without the two largest VS4 sellers';
     const unit = p.period === 'week' ? 'week of first disclosure' : 'issue month';
-    legend(document.getElementById('clean-a-legend'), [[C_VS4, 'Actual', 'line', true], [C_FIXED, 'Lender mix held at Jan-Jun 2026', 'line', true]]);
+    legend(document.getElementById('clean-a-legend'), [[C_VS4, 'Actual', 'line', true], [C_FIXED, 'Lender mix held at Jan–Jun 2026', 'line', true]]);
     legend(document.getElementById('clean-b-legend'), [[C_EX, without, 'line', true]]);
     seriesChart(document.getElementById('clean-a-chart'), st, rows, [[`actual${k}`, 'Actual', C_VS4], [`fixed${k}`, 'Fixed lender mix', C_FIXED]],
       p.period, `VS4 share by ${unit}, actual and at a fixed lender mix`);
@@ -616,7 +654,7 @@
     const all = rowsOf('sellers');
     return all.find((r) => r.id === p.seller) || all.find((r) => r.level === 'seller') || null;
   }
-  const withTicker = (r) => (r.ticker ? `${r.name} (${r.ticker})` : r.name);
+  const withTicker = (r) => olName(r, r.name);
 
   function drawPicker(e) {
     const sel = document.getElementById('seller-pick');
@@ -655,28 +693,37 @@
     mark('#seller-card .sx-to', 'recent_to', where, st, v('recent_to', monthShortYear));
     const mf = upb ? 'mkt_share_upb_recent' : 'mkt_share_recent', vf = upb ? 'vs4_upb_share_recent' : 'vs4_share_recent';
     mark('.sx-mkt', mf, where, st, v(mf, pct1));
-    mark('.sx-vs4', vf, where, st, v(vf, pct1));
+    mark('.sx-vs4', vf, where, st, upb && e && e.vs4_share_recent === 0 ? pct1(0) : v(vf, pct1));
     mark('.sx-loans', 'vs4_loans', where, st, v('vs4_loans', int));
     mark('.sx-ofall', 'share_of_all_vs4', where, st, v('share_of_all_vs4', pct1));
-    mark('.sx-first', 'first_vs4_month', where, st, v('first_vs4_month', monthShortYear));
+    // A first loan can come before any of its issue months are counted, so its first date stands in.
+    const firstField = e && !e.first_vs4_month && e.first_vs4_date ? 'first_vs4_date' : 'first_vs4_month';
+    mark('.sx-first', firstField, where, st, e && !e[firstField] ? 'None yet' : v(firstField, monthShortYear));
     mark('.sx-corr', 'corr_share_recent', where, st, v('corr_share_recent', pct1));
     const pull = e ? rowsOf('choice').find((r) => r.view === 'pull' && r.scope === e.id) : null;
     mark('.sx-pull', 'both_share', e ? `view=pull&scope=${enc(e.id)}` : '', dash.data('choice').status, pull ? pct1(pull.both_share) : null);
+    root.querySelector('.sx-pull').parentElement.hidden = dash.data('choice').status === 'ok' && !pull;
 
     const fin = finalMap();
     const mine = e ? rowsOf('seller_monthly').filter((r) => r.id === e.id && r.level === e.level) : [];
+    const volume = mine.filter((r) => r.agency === p.agency).map((r) => ({ ...r, final: fin.get(`${r.agency}|${r.month}`) }));
+    // Blocks with nothing to show hide first, since the charts left widen and each measures its width as it draws.
+    const noVs4 = !!e && st === 'ok' && !e.vs4_loans;
+    document.getElementById('sx-share').hidden = noVs4;
+    root.querySelectorAll('.sx-events').forEach((el) => { el.hidden = noVs4; });
+    document.getElementById('sx-volume').hidden = statusOf('seller_monthly', 'monthly') === 'ok' && !volume.length;
+    drawSellerWeekly(p, e);
     const f = upb ? 'vs4_upb_share' : 'vs4_share';
     legend(document.getElementById('sx-share-legend'), AGENCIES.map((a) => [agencyColor(a), AG_NAME[a], 'line', a === p.agency]));
     agencyLines(document.getElementById('sx-share-chart'), statusOf('seller_monthly', 'monthly', 'events'), mine, f, 'scored', p,
       `VS4 share by issue month, ${e ? e.name : ''}`, (r) => fin.get(`${r.agency}|${r.month}`));
-    drawSellerVolume(p, e, mine.filter((r) => r.agency === p.agency).map((r) => ({ ...r, final: fin.get(`${r.agency}|${r.month}`) })));
-    drawSellerWeekly(p, e);
+    drawSellerVolume(p, e, volume);
     drawSplits(e);
   }
 
   function drawSellerVolume(p, e, data) {
     const box = document.getElementById('sx-volume-chart');
-    legend(document.getElementById('sx-volume-legend'), [['var(--cds-chart-muted)', `Loans with a credit score, ${AG_NAME[p.agency]}`, 'box'], [C_VS4, 'VS4 loans', 'box', true]]);
+    legend(document.getElementById('sx-volume-legend'), [['var(--cds-chart-muted)', `Loans with a credit score, ${AG_NAME[p.agency].replace('Both', 'both')}`, 'box'], [C_VS4, 'VS4 loans', 'box', true]]);
     if (!prep(box, statusOf('seller_monthly', 'monthly')) || !data.length) return;
     const W = box.clientWidth, H = 260, m = { top: 12, right: 10, bottom: 26, left: 0 };
     const svg = svgFor(box, W, H, `Loans by issue month, ${e ? e.name : ''}`);
@@ -691,7 +738,7 @@
       svg.append('g').selectAll('rect').data(data).join('rect')
         .attr('x', (r) => x(r.month) + off).attr('width', bw).attr('y', (r) => y(r[f]))
         .attr('height', (r) => Math.max(0, y(0) - y(r[f]))).attr('rx', 3).attr('fill', color)
-        .attr('fill-opacity', (r) => (r.final ? 1 : 0.5));
+        .attr('fill-opacity', (r) => (r.final ? 1 : PARTIAL));
     }
     bandHover(svg, box, x, data, 'month', m, H, (r) => [`${monthYear(r.month)}${r.final ? '' : ' (partial)'}`, [
       ['var(--cds-chart-muted)', 'Loans with a score', int(r.scored)],
@@ -706,11 +753,9 @@
     const st = dash.data('seller_weekly').status;
     const rows = e ? rowsOf('seller_weekly').filter((r) => r.id === e.id && r.level === e.level) : [];
     const none = st === 'ok' && !rows.length;
-    root.querySelector('.sx-weekly-none').hidden = !none;
-    box.hidden = none;
-    lg.hidden = none;
-    legend(lg, [['var(--cds-chart-muted)', 'Weekly share, both GSEs', 'box'], [C_VS4, 'Four-week rolling share', 'line', true]]);
+    document.getElementById('sx-weekly').hidden = none;
     if (none) return;
+    legend(lg, [['var(--cds-chart-muted)', 'Weekly share, both GSEs', 'box'], [C_VS4, 'Four-week rolling share', 'line', true]]);
     const upb = p.measure === 'upb';
     weeklyBars(box, st, rows, upb ? 'vs4_upb_share' : 'vs4_share', upb ? 'vs4_upb_share_4wk' : 'vs4_share_4wk', C_VS4, 'scored',
       `VS4 share by week of first disclosure, ${e ? e.name : ''}`, false);
@@ -720,13 +765,11 @@
     const st = dash.data('seller_splits').status;
     const fin = finalMap();
     const rows = e ? rowsOf('seller_splits').filter((r) => r.id === e.id && r.level === e.level && r.month >= RECENT_FROM) : [];
-    const none = st === 'ok' && !rows.length;
-    root.querySelector('.sx-split-none').hidden = !none;
+    const none = st === 'ok' && !rows.some((r) => r.vs4_share > 0);
+    document.getElementById('sx-splits').hidden = none;
+    if (none) return;
     for (const [dim, offset, noun] of [['channel', 0, 'channel'], ['purpose', 3, 'loan purpose']]) {
       const box = document.getElementById(`sx-${dim}-chart`), lg = document.getElementById(`sx-${dim}-legend`);
-      box.hidden = none;
-      lg.hidden = none;
-      if (none) continue;
       const data = rows.filter((r) => r.dim === dim).map((r) => ({ ...r, final: fin.get(`All|${r.month}`) }));
       const buckets = [...new Map(data.map((r) => [r.bucket, r.bucket_order])).entries()].sort((a, b) => a[1] - b[1]).map(([b]) => b);
       const color = (b) => col(offset + buckets.indexOf(b));
@@ -766,7 +809,7 @@
     const H = headH + sellers.length * rowH + 2;
     box.style.minHeight = `${H}px`;
     const svg = svgFor(box, W, H, 'VS4 share by issue month for the largest sellers');
-    const label = (r) => (r.ticker && !r.short.includes(r.ticker) ? `${r.short} · ${r.ticker}` : r.short);
+    const label = (r) => (W < 640 ? r.short : olName(r));
     const shareW = Math.ceil(textWidth(svg, sellers.map((r) => (r[mf] == null ? '—' : pct1(r[mf]))).concat(['Share']))) + 18;
     const labelW = Math.min(Math.ceil(textWidth(svg, sellers.map(label))) + 14, Math.max(96, Math.floor(W * 0.36)));
     const textW = textWidth(svg, ['00.0%']) + 10;
@@ -774,16 +817,7 @@
     const shown = months.slice(-Math.max(1, Math.floor(avail / Math.max(32, Math.min(textW, 48)))));
     const cw = avail / shown.length;
     const withText = cw >= textW;
-    const probe = (value) => {
-      const s = document.createElement('span');
-      s.style.color = value;
-      s.style.display = 'none';
-      box.append(s);
-      const c = getComputedStyle(s).color;
-      s.remove();
-      return c;
-    };
-    const ramp = d3.interpolateRgb(probe('var(--color-panel)'), probe(C_VS4));
+    const ramp = d3.interpolateRgb(cssColor('var(--color-panel)'), cssColor(C_VS4));
     const vmax = Math.max(0.05, d3.max(shown, (mo) => d3.max(sellers, (s) => (cells.get(`${s.id}|${mo}`) || {})[f] ?? 0)) || 0);
     const t = d3.scaleSqrt([0, vmax], [0, 1]).clamp(true);
     const x0 = (i) => labelW + shareW + i * cw;
@@ -809,18 +843,18 @@
         .on('pointermove', (event, r) => {
           const c = cell(r);
           tip.show(event, `${r.name}, ${monthYear(mo)}${fin.get(`${p.agency}|${mo}`) ? '' : ' (partial)'}`, c
-            ? [[null, 'VS4 share', `${c[f] == null ? '—' : pct1(c[f])} of ${int(c.scored)} loans`], [null, `Share of ${AG_NOUN[p.agency]} loans`, pct1(upb ? c.mkt_share_upb : c.mkt_share)]]
+            ? [[null, upb ? 'VS4 share of its balance' : 'VS4 share', `${c[f] == null ? '—' : pct1(c[f])}${upb ? '' : ` of ${int(c.scored)} loans`}`], [null, `Share of ${AG_NOUN[p.agency]} ${upb ? 'balance' : 'loans'}`, pct1(upb ? c.mkt_share_upb : c.mkt_share)]]
             : [[null, 'Loans', 'none this month']]);
         })
         .on('pointerleave', () => tip.hide());
       if (withText) {
         rows.append('text').attr('x', x0(i) + cw / 2).attr('y', rowH / 2).attr('dy', '0.35em').attr('text-anchor', 'middle')
           .style('pointer-events', 'none')
-          .style('fill', (r) => (cell(r) && t(cell(r)[f] ?? 0) > 0.6 ? 'var(--color-panel)' : 'var(--color-fg)'))
+          .style('fill', (r) => inkOn(ramp(t((cell(r) || {})[f] ?? 0))))
           .text((r) => {
             const c = cell(r);
             if (!c || c[f] == null) return '';
-            return c[f] === 0 ? '·' : c[f] >= 0.1 ? d3.format('.0%')(c[f]) : c[f] < 0.0005 ? '<0.1%' : pct1(c[f]);
+            return c[f] === 0 ? '·' : c[f] < 0.0005 ? '<0.1%' : pct1(c[f]);
           });
       }
     });
@@ -833,7 +867,10 @@
     const data = rowsOf('adoption').filter((r) => r.agency === p.agency && r.month >= ADOPT_FROM);
     if (!data.length) return;
     const fNew = `new_${d}`, fShare = upb ? `new_upb_share_${d}` : `new_share_${d}`;
-    const W = box.clientWidth, H = 240, m = { top: 22, right: 10, bottom: 26, left: 0 };
+    const beside = document.getElementById('runway-table').closest('.vx-tablebox');
+    const sideBySide = beside.getBoundingClientRect().left >= box.getBoundingClientRect().right;
+    const W = box.clientWidth, H = sideBySide ? Math.max(240, Math.min(480, beside.offsetHeight)) : 240, m = { top: 22, right: 10, bottom: 26, left: 0 };
+    box.style.minHeight = `${H}px`;
     const svg = svgFor(box, W, H, 'Lenders starting to use VS4, by issue month');
     const y = d3.scaleLinear([0, Math.max(4, d3.max(data, (r) => r[fNew]) || 0)], [H - m.bottom, m.top]).nice(4);
     const ticks = y.ticks(4).filter(Number.isInteger);
@@ -846,7 +883,7 @@
     svg.append('g').selectAll('rect').data(data).join('rect')
       .attr('x', (r) => x(r.month) + off).attr('width', bw).attr('y', (r) => y(r[fNew]))
       .attr('height', (r) => Math.max(0, y(0) - y(r[fNew]))).attr('rx', 3).attr('fill', C_NEW)
-      .attr('fill-opacity', (r) => (r.final ? 1 : 0.5));
+      .attr('fill-opacity', (r) => (r.final ? 1 : PARTIAL));
     svg.append('g').selectAll('text').data(data.filter((r) => r[fNew] > 0)).join('text')
       .attr('x', (r) => x(r.month) + x.bandwidth() / 2).attr('y', (r) => y(r[fNew]) - 6).attr('text-anchor', 'middle')
       .style('fill', 'var(--color-fg)').text((r) => int(r[fNew]));
@@ -856,7 +893,7 @@
         .sort((a, b) => (b.mkt_share_recent ?? 0) - (a.mkt_share_recent ?? 0)).map((s) => s.short) : [];
       const who = names.slice(0, 3).join(', ') + (names.length > 3 ? ` and ${names.length - 3} more` : '');
       return [`${monthYear(r.month)}${r.final ? '' : ' (partial)'}`, [
-        [C_NEW, 'Sellers', int(r[fNew])],
+        [C_NEW, 'Lenders', int(r[fNew])],
         [null, `Their share of ${AG_NOUN[p.agency]} ${upb ? 'balance' : 'loans'}`, pct1(r[fShare])],
       ].concat(names.length ? [[null, 'Largest', who]] : [])];
     });
@@ -876,14 +913,14 @@
     return new Map(top.map((r, i) => [r.id, col(i)]));
   }
   const sellerIndex = () => new Map(rowsOf('sellers').filter((r) => r.level === 'seller').map((r) => [r.id, r]));
-  const fullName = (s) => (s.ticker && !s.name.includes(s.ticker) ? `${s.name} · ${s.ticker}` : s.name);
+  const fullName = (s) => olName(s, s.name);
 
   function drawCoverage(p) {
     const box = document.getElementById('coverage-chart');
     const upb = p.measure === 'upb', d = p.adopt;
     const firsts = firstMonths(p), colors = adopterColors(p, firsts), names = sellerIndex();
     legend(document.getElementById('coverage-legend'), [...colors].map(([id, c]) => [c, (names.get(id) || {}).short || id, 'box'])
-      .concat([[C_REST, 'Other lenders using VS4', 'box'], ['var(--color-fg)', 'VS4 share of all loans', 'line']]));
+      .concat([[C_REST, 'Other lenders using VS4', 'box'], ['var(--color-fg)', `VS4 share of all ${upb ? 'balance' : 'loans'}`, 'line']]));
     if (!prep(box, statusOf('adopters', 'seller_monthly', 'adoption', 'sellers'))) return;
     const months = rowsOf('adoption').filter((r) => r.agency === p.agency && r.month >= ADOPT_FROM).sort((a, b) => d3.ascending(a.month, b.month));
     if (!months.length) return;
@@ -916,13 +953,13 @@
     const tip = tooltip(box);
     svg.append('g').selectAll('rect').data(segs).join('rect')
       .attr('x', (r) => x(r.month) + off).attr('width', bw).attr('y', (r) => y(r.y1)).attr('height', (r) => Math.max(0, y(r.y0) - y(r.y1)))
-      .attr('fill', (r) => colors.get(r.id) || C_REST).attr('fill-opacity', (r) => (r.final ? 1 : 0.6))
+      .attr('fill', (r) => colors.get(r.id) || C_REST).attr('fill-opacity', (r) => (r.final ? 1 : PARTIAL))
       .attr('stroke', 'var(--color-panel)').attr('stroke-width', 0.5).style('cursor', 'pointer')
       .on('pointermove', (event, r) => {
         const s = names.get(r.id) || { name: r.id };
         tip.show(event, `${fullName(s)}, ${monthYear(r.month)}${r.final ? '' : ' (partial)'}`, [
           [colors.get(r.id) || C_REST, `Share of ${AG_NOUN[p.agency]} ${upb ? 'balance' : 'loans'}`, pct1(r[mf])],
-          [null, 'VS4 share of its loans', r[vf] == null ? '—' : pct1(r[vf])],
+          [null, `VS4 share of its ${upb ? 'balance' : 'loans'}`, r[vf] == null ? '—' : pct1(r[vf])],
           [null, 'Using VS4 since', monthShortYear(firsts.get(r.id))],
         ]);
       })
@@ -969,7 +1006,7 @@
     const rest = t[upb ? 'rest_upb_share' : 'rest_share'] || 0, depth = t[df];
     let at = 0;
     const blocks = cols.map((r) => ({ ...r, x0: at, x1: (at += r[wf]) })).concat(rest > 0 ? [{ rest: true, x0: at, x1: at + rest }] : []);
-    const W = box.clientWidth, H = 340, m = { top: 14, right: 10, bottom: 96, left: 0 };
+    const W = box.clientWidth, H = 360, m = { top: 14, right: 10, bottom: 116, left: 0 };
     const svg = svgFor(box, W, H, `Lenders by share of ${AG_NOUN[p.agency]} loans and VS4 share of their loans, ${monthYear(t.month)}`);
     // The scale follows sellers with at least 0.25% of loans; a narrower, taller column is cut at the top.
     const wide = cols.filter((r) => r[wf] >= 0.0025);
@@ -989,7 +1026,7 @@
         const s = names.get(b.id) || { name: b.id };
         tip.show(event, `${fullName(s)}, ${monthYear(b.month)}${t.final ? '' : ' (partial)'}`, [
           [null, `Share of ${AG_NOUN[p.agency]} ${upb ? 'balance' : 'loans'}`, pct1(b[wf])],
-          [colors.get(b.id) || C_REST, 'VS4 share of its loans', `${pct1(b[hf] ?? 0)} of ${int(b.scored)} loans`],
+          [colors.get(b.id) || C_REST, `VS4 share of its ${upb ? 'balance' : 'loans'}`, `${pct1(b[hf] ?? 0)}${upb ? '' : ` of ${int(b.scored)} loans`}`],
           [null, 'Threshold', over(b) ? `met in ${monthShortYear(firsts.get(b.id))}` : 'not met'],
         ]);
       })
@@ -1000,15 +1037,15 @@
     g.filter((b) => !b.rest && b[hf] > 0).append('rect').attr('x', bx).attr('width', bwd)
       .attr('y', (b) => y(b[hf])).attr('height', (b) => Math.max(0, y(0) - y(b[hf])))
       .attr('fill', (b) => colors.get(b.id) || C_REST).attr('fill-opacity', (b) => (over(b) ? 1 : 0.4));
-    g.filter((b) => x(b.x1) - x(b.x0) >= 11).append('text')
+    g.filter((b) => x(b.x1) - x(b.x0) >= 16).append('text')
       .attr('transform', (b) => `translate(${(x(b.x0) + x(b.x1)) / 2},${H - m.bottom + 6}) rotate(-90)`)
       .attr('dy', '0.35em').attr('text-anchor', 'end').style('pointer-events', 'none')
-      .text((b) => (b.rest ? 'Other sellers' : (names.get(b.id) || {}).short || b.id)).each(function () { clip(this, m.bottom - 10); });
+      .text((b) => (b.rest ? 'Other lenders' : (names.get(b.id) || {}).short || b.id)).each(function () { clip(this, m.bottom - 10); });
     if (depth != null) {
       svg.append('line').attr('x1', m.left).attr('x2', W - m.right).attr('y1', y(depth)).attr('y2', y(depth))
         .attr('stroke', 'var(--color-fg)').attr('stroke-dasharray', '4 3').style('pointer-events', 'none');
       svg.append('text').attr('x', W - m.right).attr('y', y(depth) - 6).attr('text-anchor', 'end').style('fill', 'var(--color-fg)')
-        .style('pointer-events', 'none').text(`VS4 share of their loans: ${pct1(depth)}`);
+        .style('pointer-events', 'none').text(`VS4 share of their ${upb ? 'balance' : 'loans'}: ${pct1(depth)}`);
     }
   }
 
@@ -1067,11 +1104,19 @@
     const d = p.adopt, upb = p.measure === 'upb', first = DEF_FIRST[d];
     const q = (document.getElementById('adopters-q').value || '').trim().toLowerCase();
     const rows = rowsOf('sellers').filter((r) => r.level === 'seller' && r[first]
-      && (!q || `${r.name} ${r.short} ${r.ticker || ''} ${r.parent || ''}`.toLowerCase().includes(q)));
+      && (!q || `${r.name} ${r.short} ${r.ticker || ''} ${r.parent || ''}`.toLowerCase().includes(q)))
+      .map((r) => (r.vs4_upb_share_recent == null && r.vs4_share_recent === 0 ? { ...r, vs4_upb_share_recent: 0 } : r));
+    const small = (v) => (v > 0 && v < 0.0005 ? '<0.1%' : pct1(v));
     renderTable(table, rows, [['name', 'name', String], ['ticker', 'ticker', String], ['first', 'first_vs4_month', monthShortYear],
       ['ten', 'first_10_month', monthShortYear], ['pct5', 'first_5pct_month', monthShortYear],
-      ['vs4', upb ? 'vs4_upb_share_recent' : 'vs4_share_recent', pct1], ['share', upb ? 'mkt_share_upb_recent' : 'mkt_share_recent', pct1],
-      ['loans', 'vs4_loans', int], ['ofall', 'share_of_all_vs4', pct1]], dash.data('sellers').status);
+      ['vs4', upb ? 'vs4_upb_share_recent' : 'vs4_share_recent', small], ['share', upb ? 'mkt_share_upb_recent' : 'mkt_share_recent', small],
+      ['loans', 'vs4_loans', int], ['ofall', 'share_of_all_vs4', small]], dash.data('sellers').status);
+    if (!rows.length && dash.data('sellers').status === 'ok') {
+      const td = table.tBodies[0].insertRow().insertCell();
+      td.colSpan = table.tHead.rows[0].cells.length;
+      td.className = 'vx-l';
+      td.textContent = 'No lender matches.';
+    }
     const ad = rowsOf('adoption').filter((r) => r.agency === 'All');
     const last = ad.length ? ad.reduce((a, b) => (a.month > b.month ? a : b)) : null;
     const where = last ? `agency=All&month=${enc(last.month)}` : '';
@@ -1103,11 +1148,13 @@
     const rule = rowsOf('choice').filter((r) => r.view === 'rule');
     const sel = document.getElementById('choice-scope');
     const totals = new Map(rule.filter((r) => r.agency === 'All').map((r) => [r.scope, r.scope_loans]));
-    const scopes = [...new Map(rule.filter((r) => r.agency === 'All').map((r) => [r.scope, r.scope_label])).entries()]
+    // A lender with too few loans for three bars would only draw empty charts, so it stays off the picker.
+    const bars = d3.rollup(rule.filter((r) => r.agency === 'All'), (v) => v.length, (r) => r.scope);
+    const scopes = [...new Map(rule.filter((r) => r.agency === 'All' && (r.scope === 'All' || bars.get(r.scope) >= 3)).map((r) => [r.scope, r.scope_label])).entries()]
       .sort((a, b) => (a[0] === 'All' ? -1 : b[0] === 'All' ? 1 : totals.get(b[0]) - totals.get(a[0])));
     const sig = scopes.map(([v]) => v).join(',');
     if (sel.dataset.sig !== sig) {
-      sel.replaceChildren(...scopes.map(([v, l]) => new Option(v === 'All' ? l : `${l} (${int(totals.get(v))} loans)`, v)));
+      sel.replaceChildren(...scopes.map(([v, l]) => new Option(v === 'All' ? l : `${l}: ${int(totals.get(v))} loans`, v)));
       sel.dataset.sig = sig;
     }
     const scope = scopes.some(([v]) => v === p.cscope) ? p.cscope : 'All';
@@ -1117,7 +1164,7 @@
     const ref = new Map(scope === 'All' ? [] : rule.filter((r) => r.scope === 'All' && r.agency === 'All').map((r) => [r.key, r]));
     const name = scope === 'All' ? (agency === 'All' ? 'All lenders' : `All lenders, ${AG_NAME[agency]}`) : (data[0] ? data[0].scope_label : '');
     legend(document.getElementById('choice-legend'), [[C_VS4, `Share priced on VS4: ${name}`, 'box']]
-      .concat(ref.size ? [['var(--color-fg)', 'All lenders', 'line']] : []));
+      .concat(ref.size ? [['var(--color-fg)', 'All lenders', 'diamond']] : []));
     const box = document.getElementById('choice-chart');
     if (!prep(box, st) || !data.length) return;
     const W = box.clientWidth, H = 270, m = { top: 22, right: 10, bottom: 46, left: 0 };
@@ -1137,7 +1184,7 @@
       .attr('height', (r) => Math.max(0, y(0) - y(r.vs4_share))).attr('rx', 3).attr('fill', C_VS4);
     if (bw >= textWidth(svg, ['100%']) + 2) {
       svg.append('g').selectAll('text').data(data).join('text').attr('x', cx)
-        .attr('y', (r) => y(Math.max(r.vs4_share, ref.has(r.key) ? ref.get(r.key).vs4_share : 0)) - 9)
+        .attr('y', (r) => { const top = y(r.vs4_share), d = ref.has(r.key) ? y(ref.get(r.key).vs4_share) : Infinity; return d < top && top - d < 16 ? d - 9 : top - 6; })
         .attr('text-anchor', 'middle').style('fill', 'var(--color-fg)').text((r) => d3.format('.0%')(r.vs4_share));
     }
     svg.append('g').selectAll('path').data(data.filter((r) => ref.has(r.key))).join('path')
@@ -1195,7 +1242,7 @@
     for (const r of rows) {
       const tr = body.insertRow();
       tr.dataset.key = [r.view, r.key].map(keyPart).join(',');
-      [[r.label, 'vx-l'], [pct1(r.loan_share)], [pct1(r.better)], [pct1(r.higher)], [pct1(r.not_worse), 'vx-opt'], [int(r.measured), 'vx-opt'], [pct1(r.adds_better)]]
+      [[rangeDash(r.label), 'vx-l'], [pct1(r.loan_share)], [pct1(r.better)], [pct1(r.higher)], [pct1(r.not_worse), 'vx-opt'], [int(r.measured), 'vx-opt'], [pct1(r.adds_better)]]
         .forEach(([text, cls]) => {
           const td = tr.insertCell();
           td.textContent = text;
@@ -1225,16 +1272,17 @@
     legend(document.getElementById('rule-curve-legend'), cohorts.map(([c, l, color]) => [color, l, 'line', c === 'latest']));
     const box = document.getElementById('rule-curve-chart');
     if (prep(box, st) && curve.length) {
-      const bins = [...new Map(curve.slice().sort((a, b) => a.order - b.order).map((r) => [r.key, r.label])).entries()];
+      const bins = [...new Map(curve.slice().sort((a, b) => a.order - b.order).map((r) => [r.key, rangeDash(r.label)])).entries()];
       const mine = curve.filter((r) => r.scope === scope);
       const W = box.clientWidth, H = 260, m = { top: 14, right: 10, bottom: 44, left: 0 };
       const svg = svgFor(box, W, H, 'Share of loans with both scores priced on VS4, by points above Classic FICO');
       const keys = bins.map(([k]) => k), name = new Map(bins), lab = (k) => name.get(k);
       const y = d3.scaleLinear([0, 1], [H - m.bottom, m.top]);
       const yf = d3.format('.0%');
-      const { x, widest } = bandFrame(svg, keys, lab, y, yf, 5, W, m);
+      const { x } = bandFrame(svg, keys, lab, y, yf, 5, W, m);
       yAxis(svg, y, yf, m.left, W - m.right);
-      bandAxis(svg, x, keys, lab, widest, H - m.bottom + 8);
+      // Thinned by the point ranges: the one wide label, Below FICO, comes first and has room.
+      bandAxis(svg, x, keys, lab, textWidth(svg, keys.slice(1).map(lab)), H - m.bottom + 8);
       svg.append('text').attr('x', (m.left + W - m.right) / 2).attr('y', H - 4).attr('text-anchor', 'middle').text('VS4 minus Classic FICO (points)');
       const xc = (r) => x(r.key) + x.bandwidth() / 2;
       if (x('20_24') != null) {
@@ -1242,7 +1290,15 @@
         svg.append('line').attr('x1', lx).attr('x2', lx).attr('y1', m.top).attr('y2', H - m.bottom).attr('stroke', 'var(--cds-chart-reference)').attr('stroke-dasharray', '3 3');
         svg.append('text').attr('x', lx + 4).attr('y', H - m.bottom - 6).text('20 points');
       }
-      for (const [c, , color] of cohorts) estimateLine(svg, mine.filter((r) => r.cohort === c).sort((a, b) => a.order - b.order), xc, (r) => r.vs4_share, y, color);
+      // A bin with too few loans breaks the line, so it never reads as a measured point.
+      for (const [c, , color] of cohorts) {
+        const line = mine.filter((r) => r.cohort === c).sort((a, b) => a.order - b.order);
+        line.reduce((runs, r, i) => {
+          if (i && r.order !== line[i - 1].order + 1) runs.push([]);
+          runs[runs.length - 1].push(r);
+          return runs;
+        }, [[]]).forEach((run) => estimateLine(svg, run, xc, (r) => r.vs4_share, y, color));
+      }
       bandHover(svg, box, x, keys.map((key) => ({ key })), 'key', m, H, (r) => [`VS4 ${lab(r.key)}${r.key === 'lt0' ? '' : ' points above Classic FICO'}`,
         cohorts.map(([c, l, color]) => {
           const d = mine.find((e) => e.cohort === c && e.key === r.key);
@@ -1275,7 +1331,8 @@
     ['users', 'Every lender using VS4 does', col(4)], ['pace', 'Other lenders start too', col(5)]];
   const olPicked = new Set();
   const olRows = (v) => rowsOf('outlook').filter((r) => r.view === v);
-  const olName = (r) => (r.ticker && !String(r.short).includes(r.ticker) ? `${r.short} (${r.ticker})` : r.short);
+  const olName = (r, name = r.short) => (r.ticker && !new RegExp(`\\b${r.ticker}\\b`).test(name) ? `${name} (${r.ticker})` : name);
+  const olPct = (v) => (v > 0 && v < 0.0005 ? '<0.1%' : pct1(v));
   const orDash = (fmt) => (v) => (v == null ? '—' : fmt(v));
   const olRung = (key, rule) => olRows('ladder').find((r) => r.key === key && (r.rule == null || r.rule === rule));
   const olWhere = (r) => `view=ladder&key=${r.key}${r.rule ? `&rule=${r.rule}` : ''}`;
@@ -1298,6 +1355,7 @@
     const pw = 'view=params';
     const val = (r, f, fmt) => (r && r[f] != null ? fmt(r[f]) : null);
     const f = `value${k}`;
+    root.querySelectorAll('.ol-unit').forEach((el) => { el.textContent = k ? 'balances' : 'loans'; });
     mark('.ol-window', 'window_from', pw, st, pr.window_from
       ? (pr.window_from === pr.window_to ? monthYear(pr.window_to) : `${monthShortYear(pr.window_from)} to ${monthShortYear(pr.window_to)}`) : null);
     mark('.ol-heavy-names', 'heavy_names', pw, st, pr.heavy_names || null);
@@ -1399,8 +1457,10 @@
       .each(function () { clip(this, narrow ? W - m.left : m.left - 14); });
     g.append('rect').attr('x', m.left).attr('width', (r) => Math.max(1, x(r[f]) - m.left)).attr('y', top)
       .attr('height', bh).attr('rx', 3).attr('fill', color).attr('fill-opacity', (r) => (r.key === 'today' ? 1 : 0.7));
+    // Each step is taken between the printed levels, so the labels add up.
+    const printed = (r) => parseFloat(pct1(r[f])) / 100;
     g.append('text').attr('x', (r) => x(r[f]) + 6).attr('y', cy).attr('dy', '0.35em').style('fill', 'var(--color-fg)')
-      .text((r, i) => (i && r.key !== 'not_worse' ? `${pct1(r[f])} (${pts(r[f] - items[i - 1][f])})` : pct1(r[f])));
+      .text((r, i) => (i && r.key !== 'not_worse' ? `${pct1(r[f])} (${pts(printed(r) - printed(items[i - 1]))})` : pct1(r[f])));
     const tip = tooltip(box);
     g.append('rect').attr('x', 0).attr('width', W).attr('y', (r) => yb(r.key) - 3).attr('height', yb.bandwidth() + 6)
       .attr('fill', 'transparent')
@@ -1422,7 +1482,7 @@
     const pathAt = (mm) => (mm < pooled.length ? pooled[mm][`r${k}`] : 1);
     const keys = d3.range(0, Math.max(d3.max(each, (r) => r.m) ?? 0, pooled.length) + 2);
     const W = box.clientWidth, H = 210, m = { top: 12, right: 10, bottom: 40, left: 0 };
-    const svg = svgFor(box, W, H, "Heavy users' VS4 share as a share of where it is now, by months since their first VS4 loan");
+    const svg = svgFor(box, W, H, "Heavy users' VS4 share as a share of their level in the latest two weeks, by months since their first VS4 loan");
     const y = d3.scaleLinear([0, Math.max(1, d3.max(each, (r) => r[qf] ?? 0) ?? 0)], [H - m.bottom, m.top]).nice(4);
     const yf = d3.format('.0%');
     const lab = (mm) => String(mm);
@@ -1450,11 +1510,12 @@
     if (!table) return;
     const st = dash.data('outlook').status;
     const upb = p.measure === 'upb', k = upb ? '_upb' : '', rule = p.orule;
-    const cols = [['name', 'short', (v, r) => olName(r)],
-      ['status', 'status', (v, r) => (v === 'other' ? `${int(r.sellers)} sellers` : OL_STATUS[v] || v)],
-      ['share', `share${k}`, pct1], ['vs4', upb ? 'vs4_upb_share' : 'vs4_share', pct1], ['recent', upb ? 'recent_upb_share' : 'recent_share', pct1],
+    const cols = [['name', 'short', (v, r) => (r.id === 'other' ? 'All other lenders' : olName(r))],
+      ['status', 'status', (v, r) => (v === 'other' ? `${int(r.sellers)} lenders` : OL_STATUS[v] || v)],
+      ['share', `share${k}`, olPct], ['vs4', upb ? 'vs4_upb_share' : 'vs4_share', pct1], ['recent', upb ? 'recent_upb_share' : 'recent_share', pct1],
       ['uses', 'higher_vs4', pct1], ['both', 'both_share', pct1], ['on', `on_${rule}${k}`, pct1],
-      ['adds', `adds_${rule}${k}`, (v) => fixed(1)(v * 100)]];
+      ['adds', `adds_${rule}${k}`, (v) => (v > 0 && v < 0.0005 ? '<0.1' : fixed(1)(v * 100))]];
+    table.querySelector('th[data-col="share"] button').textContent = upb ? 'Share of balance' : 'Share of loans';
     const s = sorts['ol-table'];
     table.querySelectorAll('th[data-col]').forEach((th) => {
       const c = cols.find((x) => x[0] === th.dataset.col);
@@ -1477,6 +1538,7 @@
     for (const r of sorted) {
       const tr = body.insertRow();
       tr.dataset.key = ['lender', r.id].map(keyPart).join(',');
+      if (r.id === 'other') tr.dataset.pin = '';
       const cell = tr.insertCell();
       cell.className = heads[0].className;
       const tick = document.createElement('input');
@@ -1492,6 +1554,7 @@
         td.className = heads[i + 1].className;
       });
     }
+    document.getElementById('ol-table-foot').textContent = rows.length ? `A dash: fewer than 20 loans show both scores with VS4 higher.${upb ? ' Both scores and Uses VS4 when higher stay on loans.' : ''}` : '';
     drawOutlookPick(p);
   }
 
@@ -1523,6 +1586,7 @@
     const rows = olRows('pace').sort((a, b) => (a.key === 'all') - (b.key === 'all') || (a.month < b.month ? -1 : 1));
     const fields = ['month', 'new_sellers', `new_share${k}`, `pool_share${k}`, `rate${k}`];
     const heads = table.tHead.rows[0].cells;
+    heads[2].textContent = k ? 'Their share of balance' : 'Their share of loans';
     fields.forEach((f, i) => heads[i].setAttribute('data-field', f));
     table.closest('.vx-tablebox').classList.toggle('dash-skeleton', st === 'loading');
     const body = table.tBodies[0];
@@ -1541,9 +1605,10 @@
 
   // ---- Why lenders choose ----
   const STAGE_COLOR = { pricing: C_VS4, some: col(2), both: col(1), trace: col(3), fico: 'var(--cds-chart-muted)' };
-  const STAGE_SHORT = { pricing: 'Prices on VS4', some: 'Sometimes', both: 'Shows both', trace: 'A few VS4', fico: 'Shows FICO only' };
+  const STAGE_SHORT = { pricing: 'Prices on VS4', some: 'Sometimes', both: 'Shows both', trace: 'A few on VS4', fico: 'None on VS4' };
   const RULE_TEXT = { whenever: 'Whenever VS4 is higher', moving: '20-point rule, moving', line: '20-point rule', some: 'Some loans', rare: 'Rarely' };
   const whyRows = (v) => rowsOf('lender_stage').filter((r) => r.view === v);
+  const shareHead = (k) => (k ? 'Share of balance' : 'Share of loans');
 
   function drawWhy(p) {
     const st = dash.data('lender_stage').status;
@@ -1553,22 +1618,23 @@
     const box = document.getElementById('stage-chart');
     if (prep(box, st) && stages.length) {
       const W = box.clientWidth, H = 36;
-      const svg = svgFor(box, W, H, 'Share of loans by stage');
+      const svg = svgFor(box, W, H, `${shareHead(k)} by stage`);
       const x = d3.scaleLinear([0, 1], [0, W]);
       let at = 0;
       const tip = tooltip(box);
       for (const r of stages) {
         const v = r[f] || 0;
         svg.append('rect').attr('x', x(at)).attr('y', 4).attr('width', Math.max(0, x(v) - 1)).attr('height', 26).attr('fill', STAGE_COLOR[r.key])
-          .on('pointermove', (event) => tip.show(event, r.label, [[STAGE_COLOR[r.key], 'Share of loans', pct1(v)], [null, 'Lenders', int(r.lenders)]]))
+          .on('pointermove', (event) => tip.show(event, r.label, [[STAGE_COLOR[r.key], shareHead(k), pct1(v)], [null, 'Lenders', int(r.lenders)]]))
           .on('pointerleave', () => tip.hide());
-        if (x(v) > 54) svg.append('text').attr('x', x(at) + 6).attr('y', 17).attr('dy', '0.35em').style('fill', r.key === 'fico' ? 'var(--color-fg)' : 'var(--color-panel)').style('pointer-events', 'none').text(pct1(v));
+        if (x(v) > 54) svg.append('text').attr('x', x(at) + 6).attr('y', 17).attr('dy', '0.35em').style('fill', inkOn(STAGE_COLOR[r.key])).style('pointer-events', 'none').text(pct1(v));
         at += v;
       }
     }
     const table = document.getElementById('stage-table');
     table.closest('.vx-tablebox').classList.toggle('dash-skeleton', st === 'loading');
     table.tHead.rows[0].cells[2].setAttribute('data-field', f);
+    table.tHead.rows[0].cells[2].textContent = shareHead(k);
     table.tHead.rows[0].cells[4].setAttribute('data-field', `vs4${k}_share`);
     const body = table.tBodies[0];
     body.replaceChildren();
@@ -1610,6 +1676,7 @@
     table.querySelectorAll('th[data-col]').forEach((th) => {
       const c = cols.find((x) => x[0] === th.dataset.col);
       if (c) th.setAttribute('data-field', c[1]);
+      if (th.dataset.col === 'share') th.querySelector('button').textContent = shareHead(k);
       if (th.dataset.col === s.col) th.setAttribute('aria-sort', s.dir);
       else th.removeAttribute('aria-sort');
     });
@@ -1629,7 +1696,7 @@
       tr.dataset.key = ['lender', r.id].map(keyPart).join(',');
       cols.forEach(([, f, fmt], i) => {
         const td = tr.insertCell();
-        td.textContent = r[f] == null ? '—' : fmt(r[f], r);
+        td.textContent = r[f] == null ? (f === 'rule' && r.uses_higher != null ? 'Too few loans' : '—') : fmt(r[f], r);
         td.className = heads[i].className;
       });
     }
@@ -1643,6 +1710,7 @@
     table.closest('.vx-tablebox').classList.toggle('dash-skeleton', st === 'loading');
     const heads = table.tHead.rows[0].cells;
     heads[1].setAttribute('data-field', `share${k}`);
+    heads[1].textContent = shareHead(k);
     heads[4].setAttribute('data-field', `vs4${k}_share`);
     const body = table.tBodies[0];
     body.replaceChildren();
@@ -1661,14 +1729,16 @@
     const table = document.getElementById('goes-table');
     const k = p.measure === 'upb' ? '_upb' : '';
     table.closest('.vx-tablebox').classList.toggle('dash-skeleton', st === 'loading');
+    table.tHead.rows[0].cells[3].textContent = shareHead(k);
     const body = table.tBodies[0];
     body.replaceChildren();
     const add = (r, label) => {
       const tr = body.insertRow();
       tr.dataset.key = [r.view, r.key].map(keyPart).join(',');
-      const shares = r.view === 'channel' ? pct1(r.share) : pct1(r[`share${k}`]);
-      const vs = r.view === 'channel' ? pct1(r.vs4_share) : pct1(r[`vs4${k}_share`]);
-      [[label, 'vx-l'], [r.lenders == null ? '—' : int(r.lenders)], [r.using == null ? '—' : int(r.using)], [shares], [pct1(r.both_share)], [vs]].forEach(([text, cls]) => {
+      // The channel rows have no balance figures.
+      const shares = r.view === 'channel' ? (k ? '—' : pct1(r.share)) : pct1(r[`share${k}`]);
+      const vs = r.view === 'channel' ? (k ? '—' : pct1(r.vs4_share)) : pct1(r[`vs4${k}_share`]);
+      [[label, 'vx-l'], [r.lenders == null ? '—' : int(r.lenders), 'vx-opt'], [r.using == null ? '—' : int(r.using)], [shares], [pct1(r.both_share)], [vs]].forEach(([text, cls]) => {
         const td = tr.insertCell();
         td.textContent = text;
         if (cls) td.className = cls;
@@ -1709,7 +1779,7 @@
       const tr = body.insertRow();
       const td0 = tr.insertCell();
       td0.className = 'vx-l';
-      td0.textContent = t.dim === 'ltv' ? `LTV ${t.key}` : t.key;
+      td0.textContent = t.dim === 'ltv' ? `LTV ${rangeDash(t.key.toLowerCase())}` : t.key;
       for (const s of order) {
         const r = rows.find((d) => d.dim === t.dim && d.key === t.key && d.scope === s);
         const td = tr.insertCell();
@@ -1732,7 +1802,7 @@
     if (r.check === 'fico') {
       if (head.fico_share == null) return '—';
       const all = rowsOf('outlook').find((d) => d.view === 'ladder' && d.key === 'all' && d.rule === 'better');
-      return `At least ${pct1(head.fico_share)} of loans have a Classic FICO (${pct1(fn.fico_share)} at Fannie Mae); at most ${pct1(head.vs_only_share)} have only VS4 (${pct1(fn.vs_only_share)}).${all ? ` Priced on VS4 wherever it saves a fee, VS4 would reach ${pct1(all.value)}.` : ''}`;
+      return `At least ${pct1(head.fico_share)} of loans have a Classic FICO (${pct1(fn.fico_share)} at Fannie Mae); at most ${pct1(head.vs_only_share)} have only VS4 (${pct1(fn.vs_only_share)}).${all ? ` Priced on VS4 wherever it saves a fee, VS4 would reach about ${d3.format('.0%')(all.value)}.` : ''}`;
     }
     if (r.check === 'lenders') {
       const pr = olRows('params')[0] || {};
@@ -1751,7 +1821,7 @@
       const a = rowsOf('monthly').find((d) => d.agency === 'All' && d.month === '2026-08-01');
       return a ? `${pct1(a.vs4_share)} in August here.` : '—';
     }
-    return '—';
+    return 'No loan-data check';
   }
 
   function drawSaid() {
@@ -1793,9 +1863,11 @@
     const month = (a) => rows.find((r) => r.view === 'month' && r.agency === a && r.start === head.start);
     const where = (a) => `view=month&start=${enc(head.start ?? '')}&agency=${a}`;
     mark('.mx-month', 'start', where('All'), st, head.start ? monthYear(head.start) : null);
-    mark('.mx-month-short', 'start', where('All'), st, head.start ? monthShortYear(head.start) : null);
     const fico = `fico${k}_share`;
-    mark('.mx-fico, .mx-fico-tile', fico, where('All'), st, head[fico] == null ? null : pct1(head[fico]));
+    root.querySelector('.mx-fico-lbl').textContent = k ? 'Balance' : 'Loans';
+    root.querySelector('.mx-fico-unit').textContent = k ? 'the balance of loans' : 'loans';
+    mark('.mx-fico-tile', fico, where('All'), st, head[fico] == null ? null : pct1(head[fico]));
+    mark('.h-fico', 'fico_share', where('All'), st, head.fico_share == null ? null : pct1(head.fico_share));
     const fn = month('FNMA') || {};
     mark('.mx-fico-fn', fico, where('FNMA'), st, fn[fico] == null ? null : pct1(fn[fico]));
     const top = rows.filter((r) => r.view === 'vs_only' && r.agency === 'FNMA').sort((a, b) => b.loans - a.loans)[0] || {};
@@ -1817,7 +1889,7 @@
     for (const r of rows) {
       const tr = body.insertRow();
       tr.dataset.key = ['quarter', r.start, r.agency].map(keyPart).join(',');
-      [[`${qName(r.start)}${r.complete && r.months === 3 ? '' : ' so far'}`, 'vx-l'], [int(r.loans)], [d3.format('$,.1f')(r.upb / 1e9) + 'bn'], [pct1(r[`vs4_priced${k}_share`])]].forEach(([text, cls]) => {
+      [[`${qName(r.start)}${r.complete && r.months === 3 ? '' : ' so far'}`, 'vx-l'], [int(r.loans)], [usdM(r.upb)], [pct1(r[`vs4_priced${k}_share`])]].forEach(([text, cls]) => {
         const td = tr.insertCell();
         td.textContent = text;
         if (cls) td.className = cls;
@@ -1826,14 +1898,13 @@
   }
 
   // ---- Borrowers ----
-  const GRP_NAME = { vs4: 'VantageScore 4.0', fico: 'Classic FICO' };
+  const GRP_NAME = { vs4: 'Priced on VS4', fico: 'Priced on FICO' };
   const COVER_NOTE = {
-    all: 'Every VS4-priced and Classic FICO-priced loan, issued since July 2026 for the borrower mix and first disclosed since July 20, 2026 for rates.',
     both: 'Loans disclosed with every score (records since Oct 19, 2026) that show both scores: priced on VS4 against priced on Classic FICO.',
     vs4only: 'VS4-priced loans that show no Classic FICO among loans disclosed with every score (records since Oct 19, 2026), against every FICO-priced loan disclosed that way. Read with care: a loan can have a FICO that does not show, so this group mixes loans with one score and loans with a hidden FICO. Fannie Mae\'s few such loans are the cleaner read.',
   };
   const keyPart = (v) => encodeURIComponent(String(v));
-  const bpSigned = (v) => (Math.abs(v) < 0.05 ? '0.0' : d3.format('+.1f')(v));
+  const bpSigned = ptsSigned;
   const bpTick = (v) => (v === 0 ? '0' : d3.format('+')(v));
 
   function drawMix(p) {
@@ -1852,9 +1923,15 @@
     const grps = ['vs4', 'fico'].filter((g) => data.some((r) => r.grp === g));
     const hasExp = data.some((r) => r.grp === 'vs4' && r.expected != null);
     const color = (g) => (g === 'vs4' ? C_VS4 : 'var(--cds-chart-muted)');
-    legend(document.getElementById('mix-legend'), grps.map((g) => [color(g), `${GRP_NAME[g]}, ${int(data.find((r) => r.grp === g).group_loans)} loans`, 'box'])
+    const groupN = (g) => {
+      const n = data.find((r) => r.grp === g).group_loans;
+      const whole = (rowsOf('borrower_profile').find((r) => r.cover === p.cover && r.grp === g) || {}).loans;
+      return whole && whole - n < 0.001 * whole ? whole : n;  // a few blank fields; the rate view's 30-year fixed subset keeps its own count
+    };
+    legend(document.getElementById('mix-legend'), grps.map((g) => [color(g), `${GRP_NAME[g]}, ${int(groupN(g))} loans`, 'box'])
       .concat(hasExp ? [['var(--color-fg)', 'VS4 if it matched its lenders’ FICO loans', 'line']] : []));
     if (!prep(box, dash.data('borrowers').status)) return;
+    document.getElementById('mix-tick-note').hidden = !hasExp;
     const buckets = [...new Set(data.map((r) => r.bucket))];
     if (!buckets.length) return;
     const W = box.clientWidth, barH = 11, gap = 14;
@@ -1863,14 +1940,14 @@
     const H = m.top + m.bottom + buckets.length * (groupH + gap);
     box.style.minHeight = `${H}px`;
     const svg = svgFor(box, W, H, 'Borrower mix of VS4 and Classic FICO loans');
-    m.left = Math.ceil(textWidth(svg, buckets)) + 10;
+    m.left = Math.ceil(textWidth(svg, buckets.map(rangeDash))) + 10;
     m.right = Math.ceil(textWidth(svg, data.map((r) => pct1(r.share)))) + 8;
     const x = d3.scaleLinear([0, d3.max(data, (r) => Math.max(r.share, r.expected ?? 0)) || 1], [m.left, W - m.right]);
     const yb = d3.scaleBand(buckets, [m.top, H - m.bottom]).paddingInner(gap / (groupH + gap));
     const yi = d3.scaleBand(grps, [0, yb.bandwidth()]).paddingInner(0.2);
     svg.append('g').selectAll('text').data(buckets).join('text')
       .attr('x', m.left - 10).attr('y', (b) => yb(b) + yb.bandwidth() / 2).attr('dy', '0.35em')
-      .attr('text-anchor', 'end').style('fill', 'var(--color-fg)').text((b) => b);
+      .attr('text-anchor', 'end').style('fill', 'var(--color-fg)').text(rangeDash);
     svg.append('line').attr('x1', x(0)).attr('x2', x(0)).attr('y1', m.top).attr('y2', H - m.bottom).attr('stroke', 'var(--cds-chart-axis)');
     const tip = tooltip(box);
     const g = svg.append('g').selectAll('g').data(data).join('g');
@@ -1881,17 +1958,23 @@
       .attr('x1', (r) => x(r.expected)).attr('x2', (r) => x(r.expected))
       .attr('y1', (r) => top(r) - 3).attr('y2', (r) => top(r) + yi.bandwidth() + 3)
       .attr('stroke', 'var(--color-fg)').attr('stroke-width', 2);
-    g.append('text').attr('x', (r) => x(Math.max(r.share, r.grp === 'vs4' ? r.expected ?? 0 : 0)) + 5)
+    // The percentage belongs to the bar, so it sits at the bar's end, past the tick only when the tick would run through it.
+    const labelW = m.right - 8;  // the widest percentage
+    const labelX = (r) => {
+      const end = x(r.share) + 5, t = r.grp === 'vs4' && r.expected != null ? x(r.expected) : -1;
+      return t >= end - 2 && t <= end + labelW + 2 ? t + 5 : end;
+    };
+    g.append('text').attr('x', labelX)
       .attr('y', (r) => top(r) + yi.bandwidth() / 2).attr('dy', '0.35em').text((r) => pct1(r.share));
     g.append('rect').attr('x', 0).attr('width', W).attr('y', top).attr('height', yi.bandwidth()).attr('fill', 'transparent')
-      .on('pointermove', (event, r) => tip.show(event, `${r.dim_label}: ${r.bucket}`, [
-        [color(r.grp), GRP_NAME[r.grp], `${pct1(r.share)} (${int(r.loans)} of ${int(r.group_loans)})`],
+      .on('pointermove', (event, r) => tip.show(event, `${r.dim_label}: ${rangeDash(r.bucket)}`, [
+        [color(r.grp), GRP_NAME[r.grp], `${pct1(r.share)} (${int(r.loans)} of ${int(groupN(r.grp))})`],
       ].concat(r.grp === 'vs4' && r.expected != null ? [['var(--color-fg)', 'If it matched its lenders’ FICO loans', pct1(r.expected)]] : [])))
       .on('pointerleave', () => tip.hide());
   }
 
-  const PROFILE_FMT = { loans: int, wa_score: fixed(0), wa_fico: fixed(0), wa_vs4: fixed(0), avg_gap: d3.format('+.1f'),
-    wa_ltv: fixed(1), wa_dti: fixed(1), wa_rate_30: fixed(2), avg_loan: money, purchase_share: pct1, cashout_share: pct1,
+  const PROFILE_FMT = { loans: int, wa_score: fixed(0), wa_fico: fixed(0), wa_vs4: fixed(0), avg_gap: ptsSigned,
+    wa_ltv: (v) => `${fixed(1)(v)}%`, wa_dti: (v) => `${fixed(1)(v)}%`, wa_rate_30: (v) => `${fixed(2)(v)}%`, avg_loan: money, purchase_share: pct1, cashout_share: pct1,
     fthb_share: pct1, investor_share: pct1, broker_share: pct1, mi_share: pct1, fixed30_share: pct1 };
   function drawProfile(p) {
     const status = dash.data('borrower_profile').status;
@@ -1932,8 +2015,12 @@
     document.getElementById('basis-seg').hidden = p.cover !== 'both';
     root.querySelectorAll('.pr-window').forEach((el) => { el.textContent = p.cover === 'all' ? 'first disclosed' : 'disclosed with every score'; });
     root.querySelectorAll('.pricing-basis').forEach((el) => { el.textContent = BASIS_TEXT[p.basis]; });
+    const weeks = rows.filter((r) => r.view === 'week' && mine(r)).sort((a, b) => a.order - b.order);
+    root.querySelectorAll('.pr-first').forEach((el) => { el.textContent = p.cover === 'all' || !weeks.length ? '' : `; first disclosed from ${shortDay(weeks[0].key)}`; });
     drawValue(st, rows);
-    drawPricingWeeks(st, rows.filter((r) => r.view === 'week' && mine(r)).sort((a, b) => a.order - b.order));
+    legend(document.getElementById('pricing-seller-legend'), BP_KEY);
+    legend(document.getElementById('pricing-segment-legend'), BP_KEY);
+    drawPricingWeeks(st, weeks);
     hbarsBp(document.getElementById('pricing-seller-chart'), st, rows.filter((r) => r.view === 'seller' && mine(r)).sort((a, b) => a.order - b.order).slice(0, 12),
       'VS4 rate against the model by lender');
     const sel = document.getElementById('pricing-dim');
@@ -1945,7 +2032,12 @@
     drawPricingHist(st, rows.filter((r) => r.view === 'hist' && mine(r)).sort((a, b) => a.order - b.order));
   }
 
-  const usdM = (v) => (Math.abs(v) >= 1e9 ? `$${d3.format('.2f')(v / 1e9)}bn` : `$${d3.format('.1f')(v / 1e6)}m`);
+  // Dollars at any size: $0, $420, $48k, $2.1m, $1.0bn, $2.1tn. Under $100k it reads in thousands, so a small amount never shows as $0.0m.
+  const usdM = (v) => {
+    const a = Math.abs(v), one = d3.format('.1f');
+    const text = a >= 999.95e9 ? `$${one(a / 1e12)}tn` : a >= 999.95e6 ? `$${one(a / 1e9)}bn` : a >= 1e5 ? `$${one(a / 1e6)}m` : a >= 1e3 ? `$${d3.format('.0f')(a / 1e3)}k` : money(a);
+    return v <= -0.5 ? `−${text}` : text;
+  };
 
   function drawFees() {
     const st = dash.data('fees').status;
@@ -1976,7 +2068,7 @@
       const tr = body.insertRow();
       tr.dataset.key = ['lender', r.id].map(keyPart).join(',');
       [olName(r), int(r.priced_loans), r.priced_loans >= 20 ? orDashL(pct1)(r.saving_share) : '—', r.priced_loans >= 20 ? orDashL(money)(r.saving_avg_usd) : '—',
-        usdM(r.taken_usd), usdM(r.left_usd), usdM(r.est_usd), orDashL(d3.format('.1f'))(r.option_bp)].forEach((text, i) => {
+        r.priced_loans ? usdM(r.taken_usd) : '—', r.left_loans ? usdM(r.left_usd) : '—', r.one_loans ? usdM(r.est_usd) : '—', orDashL(d3.format('.1f'))(r.option_bp)].forEach((text, i) => {
         const td = tr.insertCell();
         td.textContent = text;
         td.className = heads[i].className;
@@ -1996,20 +2088,19 @@
     }));
     const gb = gt.tBodies[0];
     gb.replaceChildren();
-    const signed = d3.format('+.1f');
     for (const key of [...new Set(gse.map((r) => r.key))].sort()) {
       const tr = gb.insertRow();
       const c0 = tr.insertCell();
       c0.className = 'vx-l';
-      c0.textContent = gse.find((r) => r.key === key).label;
+      c0.textContent = rangeDash(gse.find((r) => r.key === key).label);
       for (const [s] of scopes) {
         const r = gse.find((d) => d.key === key && d.scope === s);
         const td = tr.insertCell();
-        td.textContent = r ? signed(r.diff) : '—';
+        td.textContent = r ? ptsSigned(r.diff) : '—';
         if (r) td.title = `${int(r.loans)} VS4-priced loans`;
       }
       const l = lift.find((d) => d.key === key);
-      tr.insertCell().textContent = l ? signed(l.diff) : '—';
+      tr.insertCell().textContent = l ? ptsSigned(l.diff) : '—';
     }
   }
 
@@ -2035,7 +2126,7 @@
     };
     const scopes = all.filter((r) => r.key === 'better' && r.n >= 100).sort((a, b) => a.scope_rank - b.scope_rank);
     for (const r of scopes) addRow(r.label, r, all.find((d) => d.scope === r.scope && d.key === 'same'));
-    const bands = { to25: 'fee saved up to 25 bp', to50: '25 to 50 bp', to100: '50 to 100 bp', over100: 'over 100 bp' };
+    const bands = { to25: 'fee saved up to 25 bp', to50: 'fee saved 25 to 50 bp', to100: 'fee saved 50 to 100 bp', over100: 'fee saved over 100 bp' };
     const first = all.filter((r) => r.channel).sort((a, b) => a.scope_rank - b.scope_rank).find((r) => r.channel === 'R' && r.key === 'better' && r.n >= 100);
     const uwm = all.filter((r) => r.channel === 'B' && r.key === 'better' && r.n >= 100).map((r) => r.scope);
     for (const scope of [...new Set([first && first.scope, ...uwm].filter(Boolean))]) {
@@ -2045,7 +2136,7 @@
       }
     }
     const left = all.find((d) => d.scope === 'All' && d.key === 'fico_better');
-    if (left) addRow('All lenders, priced on FICO though VS4 had the lower fee', left);
+    document.getElementById('value-left').textContent = left ? `For comparison: ${int(left.n)} 30-year fixed loans priced on FICO though VS4 had the lower fee. Rate against the lender's own FICO loans: ${bpSigned(left.net_bp)} bp. Fee they could have saved: ${one(left.fee_bp)} bp (${one(left.fee_rate_bp)} bp in rate terms).` : '';
   }
 
   function pricingTip(r) {
@@ -2056,9 +2147,11 @@
     ];
   }
 
+  const BP_KEY = [[C_VS4, 'VS4 loans', 'box'], ['var(--color-fg)', 'FICO loans the model did not see', 'diamond'], ['var(--color-fg)', 'Margin of error', 'line']];
+
   function drawPricingWeeks(st, data) {
     const box = document.getElementById('pricing-week-chart');
-    legend(document.getElementById('pricing-week-legend'), [[C_VS4, 'VS4 loans', 'box'], ['var(--color-fg)', 'FICO loans the model did not see', 'line']]);
+    legend(document.getElementById('pricing-week-legend'), BP_KEY);
     if (!prep(box, st) || !data.length) return;
     const W = box.clientWidth, H = 240, m = { top: 12, right: 10, bottom: 26, left: 0 };
     const svg = svgFor(box, W, H, 'VS4 rate against the model by week of first disclosure');
@@ -2086,13 +2179,13 @@
   function hbarsBp(box, st, items, label) {
     if (!prep(box, st)) return;
     if (!items.length) return;
-    const W = box.clientWidth, rowH = 26;
+    const W = box.clientWidth, rowH = W > 360 ? Math.max(26, 208 / items.length) : 26;  // on a wide card a short list fills the height of the charts around it
     const m = { top: 6, right: 12, bottom: 26, left: 0 };
     const H = m.top + m.bottom + items.length * rowH;
     box.style.minHeight = `${H}px`;
     const svg = svgFor(box, W, H, label);
-    const text = (r) => `${r.label} · ${int(r.n)}`;
-    m.left = Math.min(Math.ceil(textWidth(svg, items.map(text))) + 14, Math.max(110, Math.floor(W * 0.42)));
+    const text = (r) => `${rangeDash(r.label).replace(/ \([A-Z]+\)$/, '').replace(/ refinance$/, ' refi')} · ${int(r.n)}`;  // short names, so the count always fits; the tooltip has the full one
+    m.left = Math.min(Math.ceil(textWidth(svg, items.map(text))) + 14, Math.max(160, Math.floor(W * 0.5)));
     const lo = Math.min(0, d3.min(items, (r) => r.premium_bp - 2 * (r.se_bp || 0)), d3.min(items, (r) => r.check_bp ?? 0));
     const hi = Math.max(0, d3.max(items, (r) => r.premium_bp + 2 * (r.se_bp || 0)), d3.max(items, (r) => r.check_bp ?? 0));
     const x = d3.scaleLinear([lo, hi], [m.left, W - m.right]).nice(5);
@@ -2105,11 +2198,12 @@
     const idx = new Map(items.map((r, i) => [r, i]));
     const yb = d3.scaleBand(d3.range(items.length), [m.top, H - m.bottom]).paddingInner(0.35);
     const cy = (r) => yb(idx.get(r)) + yb.bandwidth() / 2;
+    const bh = Math.min(28, yb.bandwidth());
     const g = svg.append('g').selectAll('g').data(items).join('g');
     g.append('text').attr('x', m.left - 10).attr('y', cy).attr('dy', '0.35em').attr('text-anchor', 'end')
       .style('fill', 'var(--color-fg)').text(text).each(function () { clip(this, m.left - 14); });
     g.append('rect').attr('x', (r) => x(Math.min(0, r.premium_bp))).attr('width', (r) => Math.abs(x(r.premium_bp) - x(0)))
-      .attr('y', (r) => yb(idx.get(r))).attr('height', yb.bandwidth()).attr('rx', 3).attr('fill', C_VS4).attr('fill-opacity', 0.85);
+      .attr('y', (r) => cy(r) - bh / 2).attr('height', bh).attr('rx', 3).attr('fill', C_VS4).attr('fill-opacity', 0.85);
     g.filter((r) => r.se_bp != null).append('line')
       .attr('x1', (r) => x(r.premium_bp - 2 * r.se_bp)).attr('x2', (r) => x(r.premium_bp + 2 * r.se_bp))
       .attr('y1', cy).attr('y2', cy).attr('stroke', 'var(--color-fg)').attr('stroke-width', 1.5);
@@ -2118,7 +2212,7 @@
     const tip = tooltip(box);
     g.append('rect').attr('x', 0).attr('width', W).attr('y', (r) => yb(idx.get(r)) - 3).attr('height', yb.bandwidth() + 6)
       .attr('fill', 'transparent')
-      .on('pointermove', (event, r) => tip.show(event, r.label, pricingTip(r)))
+      .on('pointermove', (event, r) => tip.show(event, rangeDash(r.label), pricingTip(r)))
       .on('pointerleave', () => tip.hide());
   }
 
@@ -2178,6 +2272,9 @@
       drawOutlook(p);
     } else if (current === 'lenders') {
       drawWindow();
+      drawEventList();
+      root.querySelectorAll('[data-unit]').forEach((el) => { el.textContent = p.measure === 'upb' ? 'balance' : 'loans'; });
+      root.querySelectorAll('.mk-them').forEach((el) => { el.textContent = p.measure === 'upb' ? 'it' : 'them'; });
       drawExplorer(p);
       drawHeat(p);
       if (document.getElementById('adoption-more').open) {
@@ -2195,17 +2292,17 @@
         drawBands();
       }
     } else if (current === 'borrowers') {
-      root.querySelectorAll('.cover-note').forEach((el) => { el.textContent = COVER_NOTE[p.cover]; });
+      root.querySelectorAll('.cover-note').forEach((el) => { el.textContent = p.cover === 'all' ? 'Every VS4-priced and Classic FICO-priced loan issued since July 2026.' : COVER_NOTE[p.cover]; });
       drawMix(p);
       drawProfile(p);
     } else if (current === 'pricing') {
-      root.querySelectorAll('.cover-note').forEach((el) => { el.textContent = COVER_NOTE[p.cover]; });
+      root.querySelectorAll('.cover-note').forEach((el) => { el.textContent = p.cover === 'all' ? 'Every VS4-priced and Classic FICO-priced 30-year fixed loan first disclosed since July 20, 2026.' : COVER_NOTE[p.cover]; });
       drawPricing(p);
     }
     (window.vx.hooks[current] || []).forEach((fn) => fn(p));
     window.vx.after.forEach((fn) => fn());
   }
-  window.vx = { root, rowsOf, statusOf, int, pct1, money, usdM, olName, openSeller, entityOf, monthShort, monthYear, monthLabel, shortDay, reachText, prep, svgFor, bandFrame, yAxis, bandAxis, bandHover, legend, tooltip, textWidth,
+  window.vx = { root, rowsOf, statusOf, int, pct1, money, usdM, ptsSigned, inkOn, olName, olPct, openSeller, entityOf, monthShort, monthYear, monthLabel, shortDay, reachText, prep, svgFor, bandFrame, yAxis, bandAxis, bandHover, legend, tooltip, textWidth,
     MIX_GROUPS, ADOPT_FROM, AG_NAME, show, col, mark, redraw: draw, after: [], hooks: { overview: [], outlook: [], lenders: [], scores: [], borrowers: [], pricing: [], market: [], method: [] } };
 
   // A link names a page (#lenders) or a seller (#seller-rocket-mortgage); the page opens it as it loads.

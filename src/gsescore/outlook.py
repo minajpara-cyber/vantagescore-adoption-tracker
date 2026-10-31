@@ -184,7 +184,7 @@ def build_datasets(con, lender_start: str) -> dict[str, list[dict]]:
         else:
             rest.append(s)
     if rest:
-        out.append(group_row(rest, id="other", short="All other sellers", status="other", next=False, sellers=len(rest),
+        out.append(group_row(rest, id="other", short="All other lenders", status="other", next=False, sellers=len(rest),
                              lenders=sum(s["user"] for s in rest)))
 
     # How the heavy users got to where they are, month by month from their first VS4 month.

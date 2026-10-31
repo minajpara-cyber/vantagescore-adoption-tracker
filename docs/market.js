@@ -5,7 +5,6 @@
 (() => {
   const vx = window.vx;
   const { root, rowsOf, statusOf, int, pct1, prep, legend, tooltip, mark, col } = vx;
-  const compact = d3.format('.3~s');
   const two = d3.format('.2f');
   const pct0 = d3.format('.0%');
   const node = (tag, cls, text) => {
@@ -14,7 +13,7 @@
     if (text != null) e.textContent = text;
     return e;
   };
-  const CLASSIC = col(1), NEWER = col(2), VS = col(0), UNNAMED = 'var(--cds-chart-muted)', NONE = 'color-mix(in srgb, var(--cds-chart-muted) 45%, transparent)';
+  const CLASSIC = col(1), NEWER = col(2), VS = col(0), UNNAMED = 'var(--cds-chart-muted)', NONE = 'color-mix(in srgb, var(--cds-chart-muted) 70%, transparent)';
   const GROUPS = [['classic', 'Classic FICO', CLASSIC], ['fico_new', 'Newer FICO', NEWER], ['vs', 'VantageScore', VS], ['unnamed', 'Model not named', UNNAMED], ['none', 'No score reported', NONE]];
   const FAMILY = { classic: CLASSIC, fico_new: NEWER, vs4: VS, vs_old: VS, multi: UNNAMED, other: UNNAMED };
   const SHARE_CELLS = ['classic', 'fico_new', 'vs4', 'vs_old', 'multi', 'other', 'none'];
@@ -34,7 +33,7 @@
     rows.forEach((r, i) => {
       const row = node('div', `mk-row ${cls ? cls(r, i) : ''}`);
       const name = node('div', 'mk-l', labelOf(r));
-      name.append(node('span', 'mk-n', `${compact(r.n)} loans`));
+      name.append(', ', node('span', 'mk-n', `${int(r.n)} loans`));
       const val = node('div', 'mk-v');
       val.append('FICO', node('b', null, pct1(r.fico)), ' ', 'VantageScore', node('b', null, vsFmt(r.vs)));
       const track = node('div', 'mk-t');
@@ -86,7 +85,7 @@
     root.querySelectorAll('.mk-legend').forEach((el) => legend(el, GROUPS.map(([, label, color]) => [color, label, 'box'])));
     bars(document.getElementById('mk-seg-bars'), seg, st, (r) => r.label, (r, i) => `${i < 2 ? 'mk-sum' : ''} ${i === 1 ? 'mk-rule' : ''}`);
     const shareCells = (r) => SHARE_CELLS.map((k) => [k, pct1(r[k])]);
-    table('mk-seg-table', seg, (r) => `segment,${r.key}`, (r) => [['label', r.label, true], ['n', int(r.n)], ['usd_bn', d3.format(',.0f')(r.usd_bn)], ...shareCells(r)]);
+    table('mk-seg-table', seg, (r) => `segment,${r.key}`, (r) => [['label', r.label, true], ['n', int(r.n)], ['usd_bn', vx.usdM(r.usd_bn * 1e9)], ...shareCells(r)]);
     const lenders = rows.filter((r) => r.view === 'lender' && r.scope === p.mscope).sort((a, b) => a.rank - b.rank);
     bars(document.getElementById('mk-lender-bars'), lenders.slice(0, CHART_LENDERS), st, (r) => r.name);
     table('mk-lender-table', lenders, (r) => `lender,${r.scope},${r.rank}`, (r) => [['name', r.name, true], ['n', int(r.n)], ['equity_share', pct1(r.equity_share)], ...shareCells(r)]);
@@ -105,7 +104,7 @@
       const top = Math.max(d3.max(list, (r) => r.per_loan) || 1, 1);
       apps.replaceChildren(...list.map((r) => {
         const row = node('div', 'hb');
-        row.append(node('div', 'hb-l', `${r.label}, ${compact(r.n)} loans`), node('div', 'hb-v', two(r.per_loan)));
+        row.append(node('div', 'hb-l', `${r.label}, ${int(r.n)} loans`), node('div', 'hb-v', two(r.per_loan)));
         const track = node('div', 'hb-t');
         const fill = node('span');
         fill.style.width = `${(r.per_loan / top) * 100}%`;
@@ -121,6 +120,8 @@
   const shortDay = d3.utcFormat('%b %-d, %Y');
   const day = (s) => shortDay(new Date(`${s}T00:00:00Z`));
   const key = (...parts) => parts.map(encodeURIComponent).join(',');
+  // Deal names come as filed: an all-capital name of two or more words goes to title case, and the shelf filed both ways keeps one spelling.
+  const dealName = (s) => s.replace(/^[A-Z][A-Z ]+(?= 20\d\d-)/, (m) => (m.includes(' ') ? m.toLowerCase().replace(/\b[a-z]/g, (c) => c.toUpperCase()) : m)).replace(/^Cross (?=20\d\d-)/, 'CROSS ');
 
   function linked(tbody, rows, urlOf, column) {
     tbody.querySelectorAll('tr').forEach((tr, i) => {
@@ -145,6 +146,7 @@
     mark('.pl-vs-n', 'vs4_n', 'view=meta', st, num(meta.vs4_n));
     mark('.pl-vs-only', 'vs_no_fico_n', 'view=meta', st, num(meta.vs_no_fico_n));
     mark('.pl-recent', 'recent_vs', 'view=meta', st, meta.recent_vs == null ? null : pct2(meta.recent_vs));
+    mark('.pl-recent-k', 'recent_vs_n', 'view=meta', st, num(meta.recent_vs_n));
     mark('.pl-recent-n', 'recent_n', 'view=meta', st, num(meta.recent_n));
     mark('.pl-lag', 'lag_months', 'view=meta', st, meta.lag_months == null ? null : String(meta.lag_months));
     const mixSt = statusOf('score_mix');
@@ -157,15 +159,15 @@
     const list = picked.slice().sort((a, b) => a.order - b.order);
     bars(document.getElementById('pl-bars'), p.pbasis === 'pulled' ? list.slice(-12) : list, st, (r) => r.label, null, DEAL_LINES, pct2, DEAL_GROUPS);
     const deals = rows.filter((r) => r.view === 'deal');
-    table('pl-deal-table', deals, (r) => key('deal', r.key), (r) => [['filed', day(r.filed), true], ['label', r.label, true], ['filer', r.filer, true], ['n', int(r.n)], ['vs4_n', int(r.vs4_n)], ['vs_old_n', int(r.vs_old_n)]]);
+    table('pl-deal-table', deals, (r) => key('deal', r.key), (r) => [['filed', day(r.filed), true], ['label', dealName(r.label), true], ['filer', r.filer, true], ['n', int(r.n)], ['vs4_n', int(r.vs4_n)], ['vs_old_n', int(r.vs_old_n)]]);
     const dealBody = document.querySelector('#pl-deal-table tbody');
     if (dealBody) linked(dealBody, deals, (r) => r.url, 1);
     const mentions = rows.filter((r) => r.view === 'mention');
-    table('pl-mention-table', mentions, (r) => key('mention', r.key), (r) => [['filed', day(r.filed), true], ['label', r.label, true], ['filer', r.filer, true], ['count', int(r.count)]]);
+    table('pl-mention-table', mentions, (r) => key('mention', r.key), (r) => [['filed', day(r.filed), true], ['label', dealName(r.label), true], ['filer', r.filer, true], ['count', int(r.count)]]);
     const mentionBody = document.querySelector('#pl-mention-table tbody');
     if (mentionBody) linked(mentionBody, mentions, (r) => r.url, 1);
     const filers = rows.filter((r) => r.view === 'filer').sort((a, b) => a.rank - b.rank);
-    table('pl-filer-table', filers, (r) => key('filer', r.key), (r) => [['label', r.label, true], ['filings', int(r.filings)], ['with_model', int(r.with_model)], ['n', int(r.n)], ['fico', r.n ? pct1(r.fico) : '—'], ['vs', r.n ? pct2(r.vs) : '—']]);
+    table('pl-filer-table', filers, (r) => key('filer', r.key), (r) => [['label', r.label, true], ['filings', int(r.filings)], ['with_model', int(r.with_model)], ['n', int(r.n)], ['fico', r.named ? pct1(r.fico) : '—'], ['vs', r.named ? pct2(r.vs) : '—']]);
   }
 
   // A column with a rounded top, from the baseline up.
@@ -174,6 +176,12 @@
     return `M${x},${y + h}V${y + c}Q${x},${y} ${x + c},${y}H${x + w - c}Q${x + w},${y} ${x + w},${y + c}V${y + h}Z`;
   };
   const yearOf = (k) => k;
+  // Values at the end of the lines, spread so they never print on each other and held above the axis labels.
+  const endLabels = (svg, ends, floor) => {
+    ends.sort((a, b) => a.y - b.y).forEach((e, i) => { if (i && e.y - ends[i - 1].y < 14) e.y = ends[i - 1].y + 14; });
+    ends.reduceRight((low, e) => { e.y = Math.min(e.y, low); return e.y - 14; }, floor);
+    ends.forEach((e) => svg.append('text').attr('x', e.x + 8).attr('y', e.y).attr('dy', '0.35em').style('fill', 'var(--color-fg)').text(e.text));
+  };
 
   function drawYears(p) {
     const st = statusOf('whole_market');
@@ -189,7 +197,7 @@
       const ticks = [0, 0.25, 0.5, 0.75, 1];
       const { x, widest } = vx.bandFrame(svg, keys, yearOf, y, yf, ticks, W, m);
       vx.yAxis(svg, y, yf, m.left, W - m.right, ticks);
-      vx.bandAxis(svg, x, keys, yearOf, widest, H - m.bottom);
+      vx.bandAxis(svg, x, keys, yearOf, widest, H - m.bottom + 8);
       const bw = Math.min(24, x.bandwidth()), off = (x.bandwidth() - bw) / 2;
       for (const d of data) {
         const parts = GROUPS.filter(([k]) => d[k] >= 0.0005);
@@ -216,14 +224,16 @@
       const yf = y.domain()[1] >= 0.05 ? d3.format('.0%') : d3.format('.1%');
       const { x, widest } = vx.bandFrame(svg, keys, yearOf, y, yf, 4, W, m);
       vx.yAxis(svg, y, yf, m.left, W - m.right, 4);
-      vx.bandAxis(svg, x, keys, yearOf, widest, H - m.bottom);
+      vx.bandAxis(svg, x, keys, yearOf, widest, H - m.bottom + 8);
       const cx = (d) => x(d.slot) + x.bandwidth() / 2;
+      const last = data[data.length - 1];
+      const ends = [];
       SERIES.forEach(([k, , color]) => {
         svg.append('path').attr('d', d3.line().x(cx).y((d) => y(d[k]))(data)).attr('fill', 'none').attr('stroke', color).attr('stroke-width', 2).attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round');
         svg.append('g').selectAll('circle').data(data).join('circle').attr('cx', cx).attr('cy', (d) => y(d[k])).attr('r', 4).attr('fill', color).attr('stroke', 'var(--color-panel)').attr('stroke-width', 2);
-        const last = data[data.length - 1];
-        svg.append('text').attr('x', cx(last) + 8).attr('y', y(last[k])).attr('dy', '0.35em').style('fill', 'var(--color-fg)').text(pct1(last[k]));
+        ends.push({ x: cx(last), y: y(last[k]), text: pct1(last[k]) });
       });
+      endLabels(svg, ends, H - m.bottom - 4);
       vx.bandHover(svg, zoom, x, data, 'slot', m, H, tipOf);
     }
     const body = document.querySelector('#mk-lender-years tbody');
@@ -248,6 +258,9 @@
       });
       return row;
     }));
+    // On a narrow screen the table opens on its newest years, beside the lender names.
+    const yearBox = body.closest('.vx-tablebox');
+    yearBox.scrollLeft = yearBox.scrollWidth;
   }
 
   // VA loans at the top of the score range, by closing month. Lender names come from the data.
@@ -285,9 +298,7 @@
       svg.append('circle').attr('cx', cx(last)).attr('cy', y(last.share)).attr('r', 4).attr('fill', color).attr('stroke', 'var(--color-panel)').attr('stroke-width', 2);
       ends.push({ x: cx(last), y: y(last.share), text: roomy ? tag(last) : pct1(last.share) });
     });
-    ends.sort((a, b) => a.y - b.y).forEach((e, i) => { if (i && e.y - ends[i - 1].y < 14) e.y = ends[i - 1].y + 14; });
-    ends.reduceRight((floor, e) => { e.y = Math.min(e.y, floor); return e.y - 14; }, H - m.bottom - 4);
-    ends.forEach((e) => svg.append('text').attr('x', e.x + 8).attr('y', e.y).attr('dy', '0.35em').style('fill', 'var(--color-fg)').text(e.text));
+    endLabels(svg, ends, H - m.bottom - 4);
     const labelOf = (key) => (of(key)[0] || {}).label;
     vx.bandHover(svg, box, x, keys.map((month) => ({ month })), 'month', m, H, ({ month }) => [
       `Closed ${monthLong(month)}${month === keys[keys.length - 1] ? ' (still filling in)' : ''}`,
@@ -350,7 +361,7 @@
     legend(document.getElementById('va-legend'), VA_LINES.map(([key, color]) => [color, labelOf(key), 'line']));
     drawVaChart(document.getElementById('va-chart'), st, monthly);
     const under = (r) => {
-      if (r.too_few) return 'Too few to read';
+      if (r.too_few) return 'too few to read';
       return r.upper != null ? `under ${pct0(Math.ceil(r.upper * 100) / 100)}` : pct0(r.signal);
     };
     const lenders = rows.filter((r) => r.view === 'lender').sort((a, b) => d3.descending(a.k, b.k) || a.rank - b.rank);

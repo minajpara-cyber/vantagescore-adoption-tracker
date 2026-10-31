@@ -35,7 +35,7 @@ LENDER_YEAR_MIN = 20
 MODEL_TOP = 3
 CLASSIC, FICO_NEW, VS_OLD = (1, 2, 3, 4), (11, 12, 13, 14), (5, 6)
 VS4, MULTI, OTHER, NA, NO_CO, EXEMPT = 15, 7, 8, 9, 10, 1111
-MODEL_NAMES = {1: "Equifax Beacon 5.0", 2: "Experian Fair Isaac v2", 3: "TransUnion FICO Classic 04", 4: "TransUnion FICO Classic 98", 11: "FICO 9", 12: "FICO 8", 13: "FICO 10", 14: "FICO 10T",
+MODEL_NAMES = {1: "Equifax Beacon 5.0", 2: "Experian Fair Isaac v2", 3: "TransUnion FICO Classic 04", 4: "TransUnion FICO Classic 98", 12: "FICO 8", 11: "FICO 9", 13: "FICO 10", 14: "FICO 10T",
                15: "VantageScore 4.0", 6: "VantageScore 3.0", 5: "VantageScore 2.0", 7: "More than one model", 8: "Other model"}
 MODEL_FAMILY = {**dict.fromkeys(CLASSIC, "classic"), **dict.fromkeys(FICO_NEW, "fico_new"), 15: "vs4", **dict.fromkeys(VS_OLD, "vs_old"), 7: "multi", 8: "other"}
 SHARES = ("classic", "fico_new", "vs4", "vs_old", "multi", "other", "none")
@@ -124,7 +124,8 @@ def ingest(year: int, raw_dir: Path | None = None) -> dict:
     return {"year": year, "records": rows, "filed": filed, "kept": kept, "lenders": len(names), "parquet_mb": round(out.stat().st_size / 1e6, 1)}
 
 
-_AS_IS = {w.upper(): w for w in ("US", "USA", "NFM", "CMG", "PNC", "UMB", "TD", "BMO", "M&T", "ESL", "UW", "DHI", "NBKC", "USAA", "HSBC", "BOKF", "iQ", "OCMBC", "CrossCountry", "PennyMac", "AmeriSave", "CommunityAmerica", "HomeBridge", "loanDepot.com")}
+_AS_IS = {w.upper(): w for w in ("US", "USA", "NFM", "CMG", "PNC", "UMB", "TD", "BMO", "M&T", "ESL", "UW", "DHI", "NBKC", "USAA", "HSBC", "BOKF", "iQ", "OCMBC", "CrossCountry", "PennyMac", "AmeriSave", "AmeriHome", "CommunityAmerica", "HomeBridge", "loanDepot.com")}
+_CUT_NAMES = {"Fairway Independent Mort": "Fairway Independent Mortgage", "Jovia Financial Federal Credit": "Jovia Financial Federal Credit Union"}  # as filed, cut short
 _ENDING = re.compile(r"[,\s]+(LLC|L\.L\.C\.?|Inc\.?|Corp\.?|Corporation|Ltd\.?|N\.A\.?|NA|National Association|FSB|LP|L\.P\.?|Company)\.?$", re.I)
 
 
@@ -136,7 +137,8 @@ def short_name(name: str) -> str:
         out = " ".join(w if i == 0 or w not in ("Of", "And", "The", "For") else w.lower() for i, w in enumerate(words))
     for _ in range(2):  # "Company, Inc." has two endings
         out = _ENDING.sub("", out)
-    return " ".join(_AS_IS.get(w.upper(), w) for w in out.strip(" ,.").split()) or name.strip()
+    out = " ".join(_AS_IS.get(w.upper(), w) for w in out.strip(" ,.").split()) or name.strip()
+    return _CUT_NAMES.get(out, out)
 
 
 def _r(v):

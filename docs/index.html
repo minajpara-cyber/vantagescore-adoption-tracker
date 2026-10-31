@@ -58,17 +58,17 @@
     <h1>VantageScore adoption in GSE mortgage securities</h1>
     <p class="vx-takeaway">
       VantageScore 4.0 (VS4) priced
-      <span class="vx-num s-final-share dash-skeleton" data-source="summary" data-field="final_vs4_share" data-where="agency=All">—</span>
+      <span class="vx-num h-final-share dash-skeleton" data-source="summary" data-field="final_vs4_share" data-where="agency=All">—</span>
       of GSE loans in
-      <span class="s-final-month dash-skeleton" data-source="summary" data-field="final_month" data-where="agency=All">—</span>
+      <span class="h-final-month dash-skeleton" data-source="summary" data-field="final_month" data-where="agency=All">—</span>
       and
-      <span class="vx-num s-cur-share dash-skeleton" data-source="summary" data-field="current_vs4_share" data-where="agency=All">—</span>
+      <span class="vx-num h-cur-share dash-skeleton" data-source="summary" data-field="current_vs4_share" data-where="agency=All">—</span>
       of
-      <span class="s-cur-month dash-skeleton" data-source="summary" data-field="current_month" data-where="agency=All">—</span>
+      <span class="h-cur-month dash-skeleton" data-source="summary" data-field="current_month" data-where="agency=All">—</span>
       so far. Two lenders deliver
       <span class="vx-num s-top2 dash-skeleton" data-source="summary" data-field="top2_share_of_vs4" data-where="agency=All">—</span>
       of those loans. At least
-      <span class="vx-num mx-fico dash-skeleton" data-source="score_mix" data-field="fico_share">—</span>
+      <span class="vx-num h-fico dash-skeleton" data-source="score_mix" data-field="fico_share">—</span>
       of loans have a Classic FICO.
     </p>
     <div class="vx-bar">
@@ -96,7 +96,7 @@
   <section class="vx-panel" id="overview" role="tabpanel" aria-labelledby="tab-overview">
     <section class="vx-card" id="score-mix-card" aria-labelledby="score-mix-h" data-fetchpriority="high">
       <h2 id="score-mix-h">Out of every 100 loans, which scores does the file show?</h2>
-      <p class="vx-note">Loans issued in <span class="mx-month" data-source="score_mix" data-field="start">—</span>, from <span data-term="every">records that show every score</span>. Each square is one loan in 100. A score that does not show is unknown, not absent, so read a score showing as a <span data-term="floor">floor</span> on loans that have it, and <span data-term="only">FICO only and VS4 only</span> as ceilings. Priced on VS4 is exact. Fannie Mae is the cleaner read: at Freddie Mac some lenders' loans show only the score that priced them.</p>
+      <p class="vx-note">Loans issued in <span class="mx-month" data-source="score_mix" data-field="start">—</span>, from <span data-term="every">records that show every score</span>. <span id="score-mix-square">Each square is one loan in 100.</span> A score that does not show is unknown, not absent, so read a score showing as a <span data-term="floor">floor</span> on loans that have it, and <span data-term="only">FICO only and VS4 only</span> as ceilings. Priced on VS4 is exact. Fannie Mae is the cleaner read: at Freddie Mac some lenders' loans show only the score that priced them.</p>
       <div class="wf-row" id="wf-row" data-source="score_mix"></div>
     </section>
 
@@ -117,7 +117,7 @@
           <p class="vx-note" id="who-note"></p>
           <div class="vx-chart vx-chart-xs" id="who-chart" data-source="lender_mix score_mix lender_stage"></div>
           <h3>Take that out: the <span data-term="frozen">lender mix frozen</span></h3>
-          <p class="vx-note">Every lender keeps a fixed weight, so only changes in what lenders do can move these bars. The shaded bar behind each one is the week as delivered.</p>
+          <p class="vx-note">Every lender keeps a fixed weight, so only changes in what lenders do can move these bars. The shaded bar behind each one is the week as delivered. Always a share of loans.</p>
           <div class="vx-legend" id="frozen-legend"></div>
           <div class="vx-chart vx-chart-xs" id="frozen-chart" data-source="score_mix"></div>
         </div>
@@ -128,33 +128,35 @@
       <div class="vx-card">
         <div class="vx-lbl"><span data-term="priced">Priced on VS4</span>, <span class="s-cur-month" data-source="summary" data-field="current_month" data-where="agency=All">—</span> so far</div>
         <div class="vx-val s-cur-share dash-skeleton" data-source="summary" data-field="current_vs4_share" data-where="agency=All">—</div>
-        <div class="vx-sub"><span class="s-final-month" data-source="summary" data-field="final_month" data-where="agency=All">—</span>: <span class="s-final-share" data-source="summary" data-field="final_vs4_share" data-where="agency=All">—</span>, <span class="s-change" data-source="summary" data-field="vs4_share_change_pts" data-where="agency=All">—</span> pts from <span class="s-prior-month" data-source="summary" data-field="prior_month" data-where="agency=All">—</span></div>
-        <div class="vx-sub" id="range-line">Likely to finish at <span class="r-lo" data-source="asof">—</span> to <span class="r-hi" data-source="asof">—</span><span hidden><span class="r-from" data-source="asof">—</span><span class="r-to-part"><span class="r-to" data-source="asof">—</span></span><span class="r-day-part"><span class="r-day" data-source="asof">—</span></span><span class="r-end-part" hidden></span></span></div>
+        <div>
+          <div class="vx-sub"><span class="s-final-month" data-source="summary" data-field="final_month" data-where="agency=All">—</span>: <span class="s-final-share" data-source="summary" data-field="final_vs4_share" data-where="agency=All">—</span>, <span class="s-change" data-source="summary" data-field="vs4_share_change_pts" data-where="agency=All">—</span> pts from <span class="s-prior-month" data-source="summary" data-field="prior_month" data-where="agency=All">—</span></div>
+          <div class="vx-sub" id="range-line">Likely to finish at <span class="r-lo" data-source="asof">—</span> to <span class="r-hi" data-source="asof">—</span><span hidden><span class="r-from" data-source="asof">—</span><span class="r-to-part"><span class="r-to" data-source="asof">—</span></span><span class="r-day-part"><span class="r-day" data-source="asof">—</span></span><span class="r-end-part" hidden></span></span></div>
+        </div>
       </div>
       <div class="vx-card">
         <div class="vx-lbl">Latest two weeks, <span data-term="frozen">lender mix frozen</span></div>
         <div class="vx-val ol-recent dash-skeleton" data-source="outlook" data-field="value" data-where="view=ladder&amp;key=recent">—</div>
-        <div class="vx-sub">The best read of today's run rate: lenders' VS4 use on loans first seen from <span class="ol-recent-from" data-source="outlook" data-field="recent_from" data-where="view=params">—</span></div>
+        <div class="vx-sub">The best read of today's run rate, both GSEs: lenders' VS4 use on loans first seen from <span class="ol-recent-from" data-source="outlook" data-field="recent_from" data-where="view=params">—</span></div>
       </div>
       <div class="vx-card">
-        <div class="vx-lbl">Loans with a Classic FICO, <span class="mx-month-short" data-source="score_mix" data-field="start">—</span></div>
+        <div class="vx-lbl"><span class="mx-fico-lbl">Loans</span> with a Classic FICO, <span class="mx-month" data-source="score_mix" data-field="start">—</span></div>
         <div class="vx-val mx-fico-tile dash-skeleton" data-source="score_mix" data-field="fico_share">—</div>
-        <div class="vx-sub">A <span data-term="floor">floor</span>: it counts loans that show one. Fannie Mae <span class="mx-fico-fn" data-source="score_mix" data-field="fico_share">—</span>. <span class="mx-top-name" data-source="score_mix" data-field="scope_label">—</span> is <span class="mx-top-share" data-source="score_mix" data-field="of_vs_only">—</span> of Fannie's few loans that show only VS4</div>
+        <div class="vx-sub">A <span data-term="floor">floor</span> for both GSEs: it counts <span class="mx-fico-unit">loans</span> that show one. Fannie Mae <span class="mx-fico-fn" data-source="score_mix" data-field="fico_share">—</span>. <span class="mx-top-name" data-source="score_mix" data-field="scope_label">—</span> is <span class="mx-top-share" data-source="score_mix" data-field="of_vs_only">—</span> of Fannie's few loans that show only VS4</div>
       </div>
       <div class="vx-card">
         <div class="vx-lbl">Lenders delivering VS4, <span class="s-cur-month" data-source="summary" data-field="current_month" data-where="agency=All">—</span></div>
         <div class="vx-val a-active dash-skeleton" data-source="adoption" data-field="active_sellers">—</div>
-        <div class="vx-sub">Together <span class="a-active-share" data-source="adoption" data-field="active_share">—</span> of the month's loans</div>
+        <div class="vx-sub">Together <span class="a-active-share" data-source="adoption" data-field="active_share">—</span> of the month's <span class="a-active-unit">loans</span></div>
       </div>
     </section>
 
-    <section class="vx-grid" id="changes" aria-label="This week and the quarterly view">
+    <section class="vx-grid" id="changes" aria-label="The week's figures and how far VS4 could go">
       <div class="vx-card" id="changes-card">
         <div class="vx-row">
-          <h2>This week</h2>
+          <h2 id="note-title">This week</h2>
           <label class="sx-pick"><span class="vx-lbl">Week</span><select class="vx-select" id="note-week" data-source="week_note"></select></label>
         </div>
-        <p class="vx-note">Through <span class="s-through" data-source="summary" data-field="data_through" data-where="agency=All">—</span>. Each figure against the week before. The frozen-mix figures are the better read of the trend.</p>
+        <p class="vx-note">Data through <span class="s-through" data-source="summary" data-field="data_through" data-where="agency=All">—</span>, both GSEs, share of loans. <span id="note-compare">Changes are against the week before. </span>The frozen-mix figures are the better read of the trend.</p>
         <div class="nc-row" id="note-cards" data-source="week_note score_mix"></div>
         <ul class="vx-list" id="note-list" data-source="week_note"></ul>
       </div>
@@ -163,7 +165,7 @@
           <h2>How far could it go?</h2>
           <button type="button" class="vx-chip" data-go="outlook">See the scenarios</button>
         </div>
-        <p class="vx-note">Share of loans priced on VS4. The lighter bars are what-ifs, not forecasts.</p>
+        <p class="vx-note">Share of loans priced on VS4, both GSEs. The faded bars are what-ifs, not forecasts.</p>
         <div id="reach-bars" data-source="outlook"></div>
       </div>
     </section>
@@ -185,7 +187,7 @@
     <section class="vx-grid" id="trend" aria-label="Adoption over time">
       <div class="vx-card" id="monthly-card">
         <h2>Priced on VS4, by issue month</h2>
-        <p class="vx-note">Share of loans with a credit score, by the month their pool was issued. The latest month is partial; the shaded bar is where it would likely finish, going by how past months moved from the same day.</p>
+        <p class="vx-note"><span id="monthly-base">Share of loans</span> with a credit score, by the month their pool was issued. The latest month is partial; the shaded bar is where it would likely finish, going by how past months moved from the same day.</p>
         <div class="vx-legend" id="monthly-legend"></div>
         <div class="vx-chart dash-skeleton" id="monthly-chart" data-source="monthly events asof"></div>
       </div>
@@ -232,10 +234,10 @@
           <button type="button" data-v="month">By issue month</button><button type="button" data-v="week">By week</button>
         </div>
       </div>
-      <p class="vx-note">Left: the actual share against the share with the lender mix frozen at its January to June 2026 weights. Right: every lender except the two with the most VS4 loans.</p>
+      <p class="vx-note">First chart: the actual share against the share with the lender mix frozen at its January to June 2026 weights. Second chart: every lender except the two with the most VS4 loans.</p>
       <div class="vx-grid">
-        <div><div class="vx-legend" id="clean-a-legend"></div><div class="vx-chart dash-skeleton" id="clean-a-chart" data-source="series"></div></div>
-        <div><div class="vx-legend" id="clean-b-legend"></div><div class="vx-chart dash-skeleton" id="clean-b-chart" data-source="series"></div></div>
+        <div><div class="vx-legend" id="clean-a-legend"></div><div class="vx-chart vx-chart-sm dash-skeleton" id="clean-a-chart" data-source="series"></div></div>
+        <div><div class="vx-legend" id="clean-b-legend"></div><div class="vx-chart vx-chart-sm dash-skeleton" id="clean-b-chart" data-source="series"></div></div>
       </div>
     </section>
     </details>
@@ -264,7 +266,7 @@
         <div class="vx-card">
           <div class="vx-lbl">Priced on VS4 today</div>
           <div class="vx-val ol-today dash-skeleton" data-source="outlook" data-field="value" data-where="view=ladder&amp;key=today">—</div>
-          <div class="vx-sub"><span class="ol-recent" data-source="outlook" data-field="value" data-where="view=ladder&amp;key=recent">—</span> in the latest two weeks with the lender mix frozen. <span class="ol-users" data-source="outlook" data-field="users" data-where="view=params">—</span> lenders using VS4 deliver <span class="ol-user-share" data-source="outlook" data-field="user_share" data-where="view=params">—</span> of loans</div>
+          <div class="vx-sub"><span class="ol-recent" data-source="outlook" data-field="value" data-where="view=ladder&amp;key=recent">—</span> in the latest two weeks with the lender mix frozen. <span class="ol-users" data-source="outlook" data-field="users" data-where="view=params">—</span> lenders using VS4 deliver <span class="ol-user-share" data-source="outlook" data-field="user_share" data-where="view=params">—</span> of <span class="ol-unit">loans</span></div>
         </div>
         <div class="vx-card">
           <div class="vx-lbl">If the biggest users go all the way</div>
@@ -297,7 +299,7 @@
       </div>
       <div class="vx-card" id="ol-ramp-card">
         <h2>How fast the biggest users ramped up</h2>
-        <p class="vx-note">Each one's VS4 share as a share of where it is now, by months since its first VS4 loan. The heavier line is the speed the what-ifs assume.</p>
+        <p class="vx-note">Each one's VS4 share as a share of its level in the latest two weeks, by months since its first VS4 loan. The heavier line is the speed the what-ifs assume.</p>
         <div class="vx-legend" id="ol-ramp-legend"></div>
         <div class="vx-chart vx-chart-sm dash-skeleton" id="ol-ramp-chart" data-source="outlook"></div>
       </div>
@@ -318,16 +320,17 @@
             <th scope="col" class="vx-l vx-name" data-col="name" data-field="short" data-type="text"><button type="button">Lender</button></th>
             <th scope="col" class="vx-l vx-opt" data-col="status" data-field="status" data-type="text"><button type="button">Status</button></th>
             <th scope="col" data-col="share" data-field="share"><button type="button">Share of loans</button></th>
-            <th scope="col" data-col="vs4" data-field="vs4_share"><button type="button">VS4 now</button></th>
+            <th scope="col" data-col="vs4" data-field="vs4_share"><button type="button">VS4 today</button></th>
             <th scope="col" class="vx-opt" data-col="recent" data-field="recent_share"><button type="button">Latest two weeks</button></th>
             <th scope="col" class="vx-opt" data-col="uses" data-field="higher_vs4"><button type="button">Uses VS4 when higher</button></th>
             <th scope="col" class="vx-opt" data-col="both" data-field="both_share"><button type="button">Both scores</button></th>
             <th scope="col" class="vx-opt" data-col="on" data-field="on_higher"><button type="button">All the way</button></th>
-            <th scope="col" data-col="adds" data-field="adds_higher"><button type="button">Adds to market (pts)</button></th>
+            <th scope="col" data-col="adds" data-field="adds_higher"><button type="button">Adds (pts)</button></th>
           </tr></thead>
           <tbody></tbody>
         </table>
       </div>
+      <p class="vx-note" id="ol-table-foot"></p>
     </section>
     <section class="vx-card" id="scn-card">
       <h2>Your scenario</h2>
@@ -352,7 +355,7 @@
             <th scope="col">Share of loans</th>
             <th scope="col" class="vx-opt">VS4 today</th>
             <th scope="col">Your VS4 (%)</th>
-            <th scope="col" class="vx-opt">No FICO today</th>
+            <th scope="col" class="vx-opt">Shows no FICO today</th>
             <th scope="col">Your no FICO (%)</th>
           </tr></thead>
           <tbody></tbody>
@@ -378,7 +381,7 @@
     </section>
     <section class="vx-card" id="ol-pace-card">
       <h2>How fast lenders are starting</h2>
-      <p class="vx-note">Lenders delivering their first VS4 loan each month, and their share of all loans. Start rate: the share of lenders not yet using VS4, by loans, that start in a month. Starting is not the same as using it much: most start with very few loans.</p>
+      <p class="vx-note">Lenders delivering their first VS4 loan each month, and their share of all <span class="ol-unit">loans</span>. Start rate: the share of lenders not yet using VS4, by <span class="ol-unit">loans</span>, that start in a month. Starting is not the same as using it much: most start with very few loans.</p>
       <div class="vx-tablebox">
         <table class="vx-table" id="ol-pace-table" data-source="outlook" data-row-key="view,key">
           <thead><tr>
@@ -404,10 +407,10 @@
         </div>
         <label class="sx-pick"><span class="vx-lbl">Lender or parent company</span><select class="vx-select" id="seller-pick" data-source="sellers"></select></label>
       </div>
-      <p class="vx-note">Both GSEs, loans issued <span class="sx-from" data-source="sellers" data-field="recent_from">—</span> to <span class="sx-to" data-source="sellers" data-field="recent_to">—</span> (the latest month partial), except VS4 loans to date and the first VS4 month.</p>
+      <p class="vx-note">Both GSEs, loans issued <span class="sx-from" data-source="sellers" data-field="recent_from">—</span> to <span class="sx-to" data-source="sellers" data-field="recent_to">—</span> (the latest month partial), except VS4 loans to date, the first VS4 month and both scores (loans disclosed with every score).</p>
       <div class="vx-stats">
-        <div><div class="vx-lbl">Share of GSE loans</div><div class="vx-stat-v sx-mkt dash-skeleton" data-source="sellers" data-field="mkt_share_recent">—</div></div>
-        <div><div class="vx-lbl">VS4 share of its loans</div><div class="vx-stat-v sx-vs4 dash-skeleton" data-source="sellers" data-field="vs4_share_recent">—</div></div>
+        <div><div class="vx-lbl">Share of GSE <span data-unit>loans</span></div><div class="vx-stat-v sx-mkt dash-skeleton" data-source="sellers" data-field="mkt_share_recent">—</div></div>
+        <div><div class="vx-lbl">VS4 share of its <span data-unit>loans</span></div><div class="vx-stat-v sx-vs4 dash-skeleton" data-source="sellers" data-field="vs4_share_recent">—</div></div>
         <div><div class="vx-lbl">VS4 loans to date</div><div class="vx-stat-v sx-loans dash-skeleton" data-source="sellers" data-field="vs4_loans">—</div></div>
         <div><div class="vx-lbl">Share of all VS4 loans</div><div class="vx-stat-v sx-ofall dash-skeleton" data-source="sellers" data-field="share_of_all_vs4">—</div></div>
         <div><div class="vx-lbl">First VS4 loan</div><div class="vx-stat-v sx-first dash-skeleton" data-source="sellers" data-field="first_vs4_month">—</div></div>
@@ -452,6 +455,7 @@
           <h3>VS4 share by issue month</h3>
           <div class="vx-legend" id="sx-share-legend"></div>
           <div class="vx-chart dash-skeleton" id="sx-share-chart" data-source="seller_monthly monthly events"></div>
+          <div class="vx-keys sx-events sx-events-ph" data-source="events"></div>
         </div>
         <div id="sx-volume">
           <h3>Loans by issue month</h3>
@@ -460,15 +464,19 @@
         </div>
         <div id="sx-weekly">
           <h3>VS4 share by week of first disclosure</h3>
-          <p class="vx-note sx-weekly-none" hidden>Kept for lenders with 50 or more VS4 loans.</p>
           <div class="vx-legend" id="sx-weekly-legend"></div>
           <div class="vx-chart dash-skeleton" id="sx-weekly-chart" data-source="seller_weekly"></div>
         </div>
-        <div id="sx-splits">
-          <h3>VS4 share by channel and by purpose</h3>
-          <p class="vx-note sx-split-none" hidden>Kept for the 25 largest lenders and lenders with 10 or more VS4 loans.</p>
+      </div>
+      <div class="vx-keys sx-events" data-source="events"></div>
+      <div class="sx-charts" id="sx-splits">
+        <div>
+          <h3>VS4 share by channel, both GSEs</h3>
           <div class="vx-legend" id="sx-channel-legend"></div>
           <div class="vx-chart vx-chart-sm dash-skeleton" id="sx-channel-chart" data-source="seller_splits"></div>
+        </div>
+        <div>
+          <h3>VS4 share by purpose, both GSEs</h3>
           <div class="vx-legend" id="sx-purpose-legend"></div>
           <div class="vx-chart vx-chart-sm dash-skeleton" id="sx-purpose-chart" data-source="seller_splits"></div>
         </div>
@@ -480,10 +488,10 @@
         <h2>Every large lender: which scores its loans show</h2>
         <div class="vx-seg" data-param="lsort" role="group" aria-label="Order"><button type="button" data-v="share">Largest first</button><button type="button" data-v="carrying">Most carrying VS4</button><button type="button" data-v="rising">Rising fastest</button></div>
       </div>
-      <p class="vx-note">Which scores each lender's loans show, for the GSE picked above. Carrying VS4 means both scores or VS4 only, a <span data-term="floor">floor</span>, compared between the first weeks and the latest two. Pick a lender to open it above.</p>
+      <p class="vx-note">Loans disclosed with every score, for the GSE picked above. Carrying VS4 means both scores or VS4 only, a <span data-term="floor">floor</span>, compared between the first weeks and the latest two. A dash means under 20 loans. Pick a lender to open it above.</p>
       <div class="vx-legend" id="lm-legend"></div>
       <div class="vx-tablebox" id="lm-box">
-        <table class="vx-table vx-pickable" id="lm-table" data-source="lender_stage lender_mix score_mix">
+        <table class="vx-table vx-pickable" id="lm-table" data-source="lender_stage lender_mix score_mix sellers">
           <thead><tr>
             <th scope="col" class="vx-l vx-name">Lender</th>
             <th scope="col" class="vx-opt">Share of loans</th>
@@ -503,54 +511,54 @@
     <section class="vx-card" id="heat-card">
       <div class="vx-row">
         <h2>Largest lenders: priced on VS4, by issue month</h2>
-        <div class="vx-seg" data-param="top" role="group" aria-label="Sellers shown">
+        <div class="vx-seg" data-param="top" role="group" aria-label="Lenders shown">
           <button type="button" data-v="25">Top 25</button><button type="button" data-v="50">Top 50</button>
         </div>
       </div>
-      <p class="vx-note">Ranked by loans with a credit score issued <span class="sx-from" data-source="sellers" data-field="recent_from" data-row="0">—</span> to <span class="sx-to" data-source="sellers" data-field="recent_to" data-row="0">—</span>, both GSEs; Share is each lender's share of those loans. Cells are VS4 shares for the GSE picked above, the latest month (italic) partial. Pick a row to open it above.</p>
+      <p class="vx-note">Ranked by loans with a credit score issued <span class="sx-from" data-source="sellers" data-field="recent_from" data-row="0">—</span> to <span class="sx-to" data-source="sellers" data-field="recent_to" data-row="0">—</span>, both GSEs; Share is each lender's share of GSE <span data-unit>loans</span>. Cells are VS4 shares for the GSE picked above, the latest month (italic) partial. Pick a row to open it above.</p>
+      <div class="vx-legend"><span>Dot: none priced on VS4</span><span>Blank: no loans that month</span></div>
       <div class="vx-chart dash-skeleton" id="heat-chart" data-source="sellers seller_monthly monthly"></div>
     </section>
 
     <details class="vx-more" id="adoption-more">
-      <summary>Who is using VS4 <span>over time, every lender's share of loans, the largest not using it yet</span></summary>
-    <section class="vx-sec" id="adoption" aria-labelledby="adoption-h">
+      <summary>Who is using VS4 <span>over time, every lender's share of <span data-unit>loans</span>, the largest not using it yet</span></summary>
+    <section class="vx-sec" id="adoption" aria-label="Who is using VS4">
       <header class="vx-sec-h vx-row">
-        <h2 id="adoption-h">Who is using VS4</h2>
         <div class="vx-seg" data-param="adopt" role="group" aria-label="Adoption threshold">
           <button type="button" data-v="any">First VS4 loan</button><button type="button" data-v="ten">10+ in a month</button><button type="button" data-v="pct5">5%+ of its loans</button>
         </div>
       </header>
       <div class="vx-grid">
         <div class="vx-card vx-wide" id="coverage-card">
-          <h2>Lenders using VS4, as a share of all loans</h2>
-          <p class="vx-note">Each bar is one month's loans. The colored part is the lenders using VS4, by what the toggle above counts as using it, with the earliest at the bottom. The line is VS4's share of all loans. The latest month is partial. Pick a lender to open it above.</p>
+          <h2>Lenders using VS4, as a share of all <span data-unit>loans</span></h2>
+          <p class="vx-note">Each bar is one month's <span data-unit>loans</span>. The colored part is the lenders using VS4, by what the toggle above counts as using it, with the earliest at the bottom. The line is VS4's share of all <span data-unit>loans</span>. The latest month is partial. Pick a lender to open it above.</p>
           <div class="vx-legend" id="coverage-legend"></div>
           <div class="vx-chart dash-skeleton" id="coverage-chart" data-source="adopters seller_monthly adoption sellers"></div>
         </div>
         <div class="vx-card vx-wide" id="market-card">
           <div class="vx-row">
-            <h2>Every lender: share of loans and VS4 use</h2>
+            <h2>Every lender: share of <span data-unit>loans</span> and VS4 use</h2>
             <label class="sx-pick"><span class="vx-lbl">Issue month</span><select class="vx-select" id="market-month" data-source="adoption"></select></label>
           </div>
-          <p class="vx-note">Each column is a lender, as wide as its share of the month's loans and as tall as VS4's share of its loans, so the shaded area is VS4's share of all loans. Colored columns are lenders using VS4. The dashed line is how much they use it on average. Pick a lender to open it above.</p>
-          <p class="vx-note">Lenders using VS4 delivered <span class="vx-num mk-ad" data-source="adoption">—</span> of <span class="mk-month" data-source="adoption">—</span> loans and used VS4 on <span class="vx-num mk-depth" data-source="adoption">—</span> of them; VS4 was <span class="vx-num mk-vs4" data-source="adoption">—</span> of all loans.</p>
+          <p class="vx-note">Each column is a lender: its width is its share of the month's <span data-unit>loans</span>, its height is VS4's share of its <span data-unit>loans</span>, and the dashed line is VS4's share across the lenders using it. Pick a lender to open it above.</p>
+          <p class="vx-note">Lenders using VS4 delivered <span class="vx-num mk-ad" data-source="adoption">—</span> of <span class="mk-month" data-source="adoption">—</span> <span data-unit>loans</span> and used VS4 on <span class="vx-num mk-depth" data-source="adoption">—</span> of <span class="mk-them">them</span>; VS4 was <span class="vx-num mk-vs4" data-source="adoption">—</span> of all <span data-unit>loans</span>.</p>
           <div class="vx-chart dash-skeleton" id="market-chart" data-source="seller_monthly adoption sellers adopters"></div>
         </div>
         <div class="vx-card" id="newadopt-card">
           <h2>Lenders starting, by issue month</h2>
-          <p class="vx-note">Lenders counted as using VS4 for the first time; hover for their share of the month's loans and, for both GSEs, their names.</p>
+          <p class="vx-note">Lenders counted as using VS4 for the first time; hover for their share of the month's <span data-unit>loans</span> and, for both GSEs, their names.</p>
           <div class="vx-chart dash-skeleton" id="newadopt-chart" data-source="adoption sellers"></div>
         </div>
         <div class="vx-card" id="runway-card">
           <h2>Largest lenders not using VS4 yet</h2>
-          <p class="vx-note">By share of GSE loans issued <span class="sx-from" data-source="sellers" data-field="recent_from" data-row="0">—</span> to <span class="sx-to" data-source="sellers" data-field="recent_to" data-row="0">—</span>. All lenders not using it made up <span class="vx-num rw-share" data-source="adoption" data-field="nonadopters_share_any">—</span> of loans in <span class="rw-month" data-source="adoption" data-field="month">—</span><span class="rw-partial" hidden> so far</span>.</p>
+          <p class="vx-note">By share of GSE loans issued <span class="sx-from" data-source="sellers" data-field="recent_from" data-row="0">—</span> to <span class="sx-to" data-source="sellers" data-field="recent_to" data-row="0">—</span>. All lenders not using it made up <span class="vx-num rw-share" data-source="adoption" data-field="nonadopters_share_any">—</span> of <span data-unit>loans</span> in <span class="rw-month" data-source="adoption" data-field="month">—</span><span class="rw-partial" hidden> so far</span>.</p>
           <div class="vx-tablebox">
             <table class="vx-table vx-pickable" id="runway-table" data-source="sellers" data-row-key="id" data-sort>
               <thead><tr>
                 <th scope="col" data-col="rank" data-field="rank"><button type="button">Rank</button></th>
                 <th scope="col" class="vx-l vx-name" data-col="name" data-field="name" data-type="text"><button type="button">Lender</button></th>
                 <th scope="col" class="vx-l" data-col="ticker" data-field="ticker" data-type="text"><button type="button">Ticker</button></th>
-                <th scope="col" data-col="share" data-field="mkt_share_recent"><button type="button">Share of loans</button></th>
+                <th scope="col" data-col="share" data-field="mkt_share_recent"><button type="button">Share of <span data-unit>loans</span></button></th>
                 <th scope="col" class="vx-opt" data-col="corr" data-field="corr_share_recent"><button type="button">From correspondents</button></th>
               </tr></thead>
               <tbody></tbody>
@@ -560,7 +568,7 @@
         <div class="vx-card vx-wide" id="adopters-card">
           <div class="vx-row">
             <h2>Lenders using VS4</h2>
-            <input class="vx-search" id="adopters-q" type="search" placeholder="Search sellers or tickers" aria-label="Search sellers">
+            <input class="vx-search" id="adopters-q" type="search" placeholder="Search lenders or tickers" aria-label="Search lenders">
           </div>
           <p class="vx-note"><span class="vx-num ad-count" data-source="adoption" data-field="adopters_any">—</span> lenders as of <span class="ad-month" data-source="adoption" data-field="month">—</span>, both GSEs. Shares cover loans issued <span class="sx-from" data-source="sellers" data-field="recent_from" data-row="0">—</span> to <span class="sx-to" data-source="sellers" data-field="recent_to" data-row="0">—</span>. Pick a row to open it above.</p>
           <div class="vx-tablebox">
@@ -568,11 +576,11 @@
               <thead><tr>
                 <th scope="col" class="vx-l vx-name" data-col="name" data-field="name" data-type="text"><button type="button">Lender</button></th>
                 <th scope="col" class="vx-l" data-col="ticker" data-field="ticker" data-type="text"><button type="button">Ticker</button></th>
-                <th scope="col" data-col="first" data-field="first_vs4_month" data-type="text"><button type="button">First VS4 loan</button></th>
+                <th scope="col" class="vx-opt" data-col="first" data-field="first_vs4_month" data-type="text"><button type="button">First VS4 loan</button></th>
                 <th scope="col" class="vx-opt" data-col="ten" data-field="first_10_month" data-type="text"><button type="button">First 10+ month</button></th>
                 <th scope="col" class="vx-opt" data-col="pct5" data-field="first_5pct_month" data-type="text"><button type="button">First 5%+ month</button></th>
                 <th scope="col" data-col="vs4" data-field="vs4_share_recent"><button type="button">VS4 share</button></th>
-                <th scope="col" class="vx-opt" data-col="share" data-field="mkt_share_recent"><button type="button">Share of loans</button></th>
+                <th scope="col" class="vx-opt" data-col="share" data-field="mkt_share_recent"><button type="button">Share of <span data-unit>loans</span></button></th>
                 <th scope="col" data-col="loans" data-field="vs4_loans"><button type="button">VS4 loans</button></th>
                 <th scope="col" class="vx-opt" data-col="ofall" data-field="share_of_all_vs4"><button type="button">Share of all VS4</button></th>
               </tr></thead>
@@ -595,9 +603,10 @@
         <h2>Where every lender stands</h2>
         <p class="vx-note">Each bubble is a lender, sized by its loans. Further right means more of its loans <span data-term="carrying">show VS4</span>, a <span data-term="floor">floor</span>; higher means more are <span data-term="priced">priced on VS4</span>. Most lenders sit in the corner at zero. Pick one to open it. Use Fannie Mae above for the cleaner read.</p>
         <div class="vx-legend" id="map-legend"></div>
-        <div class="vx-chart" id="map-chart" style="min-height:320px" data-source="lender_stage"></div>
+        <div class="vx-chart" id="map-chart" style="min-height:320px" data-source="lender_stage sellers"></div>
       </div>
       <div class="vx-card" id="stage-card">
+        <h2>How much of the market is at each stage</h2>
         <div class="vx-chart" id="stage-chart" style="min-height:44px" data-source="lender_stage"></div>
         <div class="vx-tablebox">
           <table class="vx-table" id="stage-table" data-source="lender_stage" data-row-key="view,key">
@@ -617,19 +626,19 @@
           <h2>Lender by lender</h2>
           <select class="vx-select" id="why-stage" aria-label="Stage" data-source="lender_stage"></select>
         </div>
-        <p class="vx-note">The 60 largest lenders and every other lender past the first stages with 100 or more loans. Both scores: the share of its loans with both. Uses VS4 when higher: among its loans with both scores where VS4 is higher (20 or more), the share priced on VS4. Latest weeks: VS4's share of its loans first disclosed in the latest two weeks.</p>
+        <p class="vx-note">The 60 largest lenders and every other lender past the first stages with 100 or more loans. Both scores: the share of its loans with both. Uses VS4 when higher: among its loans with both scores where VS4 is higher (needs 20 or more such loans), the share priced on VS4. Latest two weeks: VS4's share of its loans first disclosed in the latest two weeks.</p>
         <div class="vx-tablebox">
           <table class="vx-table" id="why-table" data-source="lender_stage" data-row-key="view,id" data-sort>
             <thead><tr>
               <th scope="col" class="vx-l vx-name" data-col="name" data-field="short" data-type="text"><button type="button">Lender</button></th>
               <th scope="col" class="vx-l vx-opt" data-col="kind" data-field="kind" data-type="text"><button type="button">Type</button></th>
               <th scope="col" class="vx-l vx-opt" data-col="lead" data-field="lead" data-type="text"><button type="button">Main channel</button></th>
-              <th scope="col" class="vx-l" data-col="stage" data-field="order"><button type="button">Stage</button></th>
+              <th scope="col" class="vx-l vx-opt" data-col="stage" data-field="order"><button type="button">Stage</button></th>
               <th scope="col" data-col="share" data-field="share"><button type="button">Share of loans</button></th>
               <th scope="col" data-col="both" data-field="both_share"><button type="button">Both scores</button></th>
               <th scope="col" data-col="uses" data-field="uses_higher"><button type="button">Uses VS4 when higher</button></th>
               <th scope="col" class="vx-l vx-opt" data-col="rule" data-field="rule" data-type="text"><button type="button">Rule</button></th>
-              <th scope="col" class="vx-opt" data-col="vs4" data-field="vs4_share"><button type="button">VS4 share</button></th>
+              <th scope="col" data-col="vs4" data-field="vs4_share"><button type="button">VS4 share</button></th>
               <th scope="col" class="vx-opt" data-col="recent" data-field="recent_share"><button type="button">Latest two weeks</button></th>
             </tr></thead>
             <tbody></tbody>
@@ -660,7 +669,7 @@
             <table class="vx-table" id="goes-table" data-source="lender_stage" data-row-key="view,key">
               <thead><tr>
                 <th scope="col" class="vx-l" data-field="label">Group</th>
-                <th scope="col" data-field="lenders">Lenders</th>
+                <th scope="col" class="vx-opt" data-field="lenders">Lenders</th>
                 <th scope="col" data-field="using">Using</th>
                 <th scope="col" data-field="share">Share of loans</th>
                 <th scope="col" data-field="both_share">Both scores</th>
@@ -684,7 +693,7 @@
         <h2>Cost or rate? What lenders pick when they hold both scores</h2>
         <div class="vx-seg" data-param="ccohort" role="group" aria-label="Weeks"><button type="button" data-v="all">All weeks</button><button type="button" data-v="latest">Latest two weeks</button></div>
       </div>
-      <p class="vx-note">Among loans that show both scores, how often the lender picks VS4. Darker means more often. Compare the lender rows with the three patterns at the bottom. Both scores are usually paid for by this point, so this shows how lenders choose, not whether they buy FICO. The nearest read of that is loans that show only VS4 at Fannie Mae, above and on the Overview.</p>
+      <p class="vx-note">Among loans that show both scores, how often the lender picks VS4. Stronger color means more often; a dash means under 20 loans. Compare the lender rows with the three patterns at the bottom. Both scores are usually paid for by this point, so this shows how lenders choose, not whether they buy FICO. The nearest read of that is loans that show only VS4 at Fannie Mae, above and on the Overview.</p>
       <div class="vx-tablebox">
         <table class="vx-table" id="decide-table" data-source="fees"><thead></thead><tbody></tbody></table>
       </div>
@@ -695,18 +704,18 @@
       </div>
       </details>
       <h3>What the pick is worth</h3>
-      <p class="vx-note">The upfront fee on those loans, as bp of balance: if every loan priced on one score, on the lower of the two, and as they did price. Share of saving: how much of the available saving lenders got. Set the dollars against what FICO costs per funded loan, in the calculator on the Outlook tab.</p>
+      <p class="vx-note">All weeks, whichever is picked above. The upfront fee on those loans, as bp of balance: if every loan priced on one score, on the lower of the two, and as they did price. Share of saving: how much of the available saving lenders got. Set the dollars against what FICO costs per funded loan, in the calculator on the Outlook tab.</p>
       <div class="vx-tablebox">
         <table class="vx-table" id="option-table" data-source="fees" data-row-key="view,key">
           <thead><tr>
             <th scope="col" class="vx-l" data-field="scope_label">Lender</th>
             <th scope="col" data-field="loans">Loans</th>
-            <th scope="col" data-field="fee_fico_bp">All on FICO</th>
-            <th scope="col" data-field="fee_vs_bp">All on VS4</th>
-            <th scope="col" data-field="fee_best_bp">Lower of the two</th>
-            <th scope="col" data-field="fee_actual_bp">As priced</th>
+            <th scope="col" data-field="fee_fico_bp">All on FICO (bp)</th>
+            <th scope="col" data-field="fee_vs_bp">All on VS4 (bp)</th>
+            <th scope="col" data-field="fee_best_bp">Lower of the two (bp)</th>
+            <th scope="col" data-field="fee_actual_bp">As priced (bp)</th>
             <th scope="col">Share of saving</th>
-            <th scope="col">Picking saves, per loan</th>
+            <th scope="col">Most it could save, per loan</th>
             <th scope="col">Dropping FICO gives up, per loan</th>
           </tr></thead>
           <tbody></tbody>
@@ -716,7 +725,7 @@
     <section class="vx-card" id="said-card">
       <h2>What companies and analysts have said</h2>
       <p class="vx-note">Public statements, newest first, next to what the loan data here shows now. Summaries are ours; follow the link for the source, and check call summaries against the transcript before relying on them.</p>
-      <div class="vx-tablebox" style="max-height:34rem">
+      <div class="vx-tablebox">
         <table class="vx-table" id="said-table" data-source="statements" data-row-key="date,who,source">
           <thead><tr>
             <th scope="col" class="vx-l" data-field="date">Date</th>
@@ -746,7 +755,7 @@
         </div>
         <div class="vx-card" id="rule-week-card">
           <h2>The 20-point line, by week</h2>
-          <p class="vx-note">Share priced on VS4 among loans with VS4 1–19 points above Classic FICO, and 20 or more above it. Below the line, VS4 cost more than FICO, or no less, on the old grid.</p>
+          <p class="vx-note">Share priced on VS4 among loans with VS4 1 to 19 points above Classic FICO, and 20 or more above it. Below the line, VS4 cost more than FICO, or no less, on the old grid.</p>
           <div class="vx-legend" id="rule-week-legend" data-source="rules"></div>
           <div class="vx-chart dash-skeleton" id="rule-week-chart" data-source="rules"></div>
         </div>
@@ -760,15 +769,14 @@
     </section>
     <details class="vx-more" id="ceiling-more">
       <summary>How high VS4's share could go <span>actual share against each rule, and where the headroom is</span></summary>
-    <section class="vx-sec" id="ceiling-sec" aria-labelledby="ceiling-h">
+    <section class="vx-sec" id="ceiling-sec" aria-label="How high VS4's share could go">
       <header class="vx-sec-h">
-        <h2 id="ceiling-h">How high VS4's share could go</h2>
         <p>VS4's share if every lender ordered both scores and priced on VS4 under each rule, on today's single fee grid: wherever it saves a fee, wherever its score is higher, or wherever it is no worse. These are not limits: the largest users already price on VS4 on loans where it saves nothing. Loans with both scores count as they are and VS4-only loans as VS4; a loan with only a Classic FICO takes the rate measured on loans with both scores in its Classic FICO bucket, purpose, channel and GSE. Months before every score was disclosed are estimates, because their loans show only one score. The lenders that order both scores today are not a random sample, and matching on those traits does not correct for that.</p>
       </header>
       <div class="vx-sec">
         <div class="vx-card" id="ceiling-card">
           <h2>Actual share against each rule</h2>
-          <p class="vx-note">By issue month, for the GSE picked above; the latest month is partial. Hollow points on a dashed line are estimates.</p>
+          <p class="vx-note">By issue month, for the GSE picked above; the latest month is partial. Hollow points are estimates or the partial month.</p>
           <div class="vx-legend" id="ceiling-legend" data-source="ceiling"></div>
           <div class="vx-chart dash-skeleton" id="ceiling-chart" data-source="ceiling"></div>
         </div>
@@ -810,23 +818,23 @@
             <h2>Borrower mix</h2>
             <select class="vx-select" id="mix-dim" aria-label="Breakdown" data-source="borrowers"></select>
           </div>
-          <p class="vx-note">Share of each side's loans in each group. The tick on a VS4 bar is the share expected if VS4 loans matched their own lenders' Classic FICO loans: the gap between bar and tick is which borrowers lenders put on VS4, apart from which lenders use it.</p>
+          <p class="vx-note">Share of each side's loans in each group.<span id="mix-tick-note"> The tick on a VS4 bar is the share expected if VS4 loans matched their own lenders' Classic FICO loans: the gap between bar and tick is which borrowers lenders put on VS4, apart from which lenders use it.</span></p>
           <div class="vx-legend" id="mix-legend" data-source="borrowers"></div>
           <div class="vx-chart dash-skeleton" id="mix-chart" data-source="borrowers"></div>
         </div>
         <div class="vx-card" id="profile-card">
-          <h2>Average loan</h2>
-          <p class="vx-note">Balance-weighted score, LTV, DTI and rate. The rate covers 30-year fixed loans only and is not adjusted for loan mix or lender; the Pricing tab is.</p>
+          <div class="vx-row" id="profile-head"><h2>Average loan</h2></div>
+          <p class="vx-note">Balance-weighted score, LTV, DTI and rate. The rate covers 30-year fixed loans only and is not adjusted for loan mix or lender. The <button type="button" class="vx-link" data-go="pricing">Pricing tab</button> adjusts for both.</p>
           <div class="vx-cmp" id="profile-grid">
-            <div class="vx-h"></div><div class="vx-h vx-v">VantageScore 4.0</div><div class="vx-h vx-v">Classic FICO</div>
+            <div class="vx-h"></div><div class="vx-h vx-v">Priced on VS4</div><div class="vx-h vx-v">Priced on FICO</div>
             <div>Loans</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="loans" data-grp="vs4">—</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="loans" data-grp="fico">—</div>
             <div>Credit score used for pricing</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="wa_score" data-grp="vs4">—</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="wa_score" data-grp="fico">—</div>
             <div data-covers="both">Classic FICO</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="wa_fico" data-grp="vs4" data-covers="both">—</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="wa_fico" data-grp="fico" data-covers="both">—</div>
             <div data-covers="both">VantageScore 4.0</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="wa_vs4" data-grp="vs4" data-covers="both">—</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="wa_vs4" data-grp="fico" data-covers="both">—</div>
             <div data-covers="both">VS4 minus Classic FICO (points)</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="avg_gap" data-grp="vs4" data-covers="both">—</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="avg_gap" data-grp="fico" data-covers="both">—</div>
-            <div>Loan-to-value (%)</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="wa_ltv" data-grp="vs4">—</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="wa_ltv" data-grp="fico">—</div>
-            <div>Debt-to-income (%)</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="wa_dti" data-grp="vs4">—</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="wa_dti" data-grp="fico">—</div>
-            <div>Note rate, 30-year fixed (%)</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="wa_rate_30" data-grp="vs4">—</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="wa_rate_30" data-grp="fico">—</div>
+            <div>Loan-to-value</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="wa_ltv" data-grp="vs4">—</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="wa_ltv" data-grp="fico">—</div>
+            <div>Debt-to-income</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="wa_dti" data-grp="vs4">—</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="wa_dti" data-grp="fico">—</div>
+            <div>Note rate, 30-year fixed</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="wa_rate_30" data-grp="vs4">—</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="wa_rate_30" data-grp="fico">—</div>
             <div>Average loan size</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="avg_loan" data-grp="vs4">—</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="avg_loan" data-grp="fico">—</div>
             <div>Purchase loans</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="purchase_share" data-grp="vs4">—</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="purchase_share" data-grp="fico">—</div>
             <div>Cash-out refinances</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="cashout_share" data-grp="vs4">—</div><div class="vx-v dash-skeleton" data-source="borrower_profile" data-field="cashout_share" data-grp="fico">—</div>
@@ -866,7 +874,7 @@
         <div class="vx-card">
           <div class="vx-lbl">Missed by lenders that hold both scores</div>
           <div class="vx-val fe-left dash-skeleton" data-source="fees" data-field="left_usd" data-where="view=market&amp;key=All">—</div>
-          <div class="vx-sub"><span class="fe-left-n" data-source="fees" data-field="left_loans" data-where="view=market&amp;key=All">—</span> loans priced on FICO though VS4 had the lower fee; <span class="fe-left-top" data-source="fees" data-field="short">—</span> is the most</div>
+          <div class="vx-sub"><span class="fe-left-n" data-source="fees" data-field="left_loans" data-where="view=market&amp;key=All">—</span> <span class="fe-month-s" data-source="fees" data-field="month" data-where="view=market&amp;key=All">—</span> loans so far priced on FICO though VS4 had the lower fee; <span class="fe-left-top" data-source="fees" data-field="short">—</span> is the most</div>
         </div>
       </div>
       <div class="vx-card" id="fee-lender-card">
@@ -875,14 +883,14 @@
         <div class="vx-tablebox">
           <table class="vx-table" id="fee-table" data-source="fees" data-row-key="view,id">
             <thead><tr>
-              <th scope="col" class="vx-l" data-field="short">Lender</th>
+              <th scope="col" class="vx-l vx-name" data-field="short">Lender</th>
               <th scope="col" class="vx-opt" data-field="priced_loans">VS4-priced, both scores</th>
-              <th scope="col" data-field="saving_share">Saves a fee</th>
-              <th scope="col" data-field="saving_avg_usd">Saved per loan</th>
+              <th scope="col" class="vx-opt" data-field="saving_share">Saves a fee</th>
+              <th scope="col" class="vx-opt" data-field="saving_avg_usd">Saved per loan</th>
               <th scope="col" data-field="taken_usd">Saved</th>
               <th scope="col" data-field="left_usd">Missed, both scores</th>
-              <th scope="col" class="vx-opt" data-field="est_usd">Missed, shows FICO only (est.)</th>
-              <th scope="col" data-field="option_bp">All three (bp of balance)</th>
+              <th scope="col" data-field="est_usd">Missed, shows FICO only (est.)</th>
+              <th scope="col" class="vx-opt" data-field="option_bp">All three (bp of balance)</th>
             </tr></thead>
             <tbody></tbody>
           </table>
@@ -894,6 +902,7 @@
         <div class="vx-tablebox">
           <table class="vx-table" id="gse-score-table" data-source="fees"><thead><tr></tr></thead><tbody></tbody></table>
         </div>
+        <p class="vx-sub">All figures are points of Fannie Score or Freddie Score. The top bucket has no better VS4 bucket to compare.</p>
       </div>
     </section>
     <section class="vx-sec" id="pricing-head" aria-labelledby="pricing-h">
@@ -907,7 +916,8 @@
             </div>
           </div>
         </div>
-        <p>Each VS4 loan's 30-year fixed note rate minus the rate a model of Classic FICO-priced loans gives the same loan <span class="pricing-basis">in the same fee tier</span>: the same lender and channel in the same week, the same lender and purpose, the same fee-grid cell (score, LTV and purpose), and the same occupancy, property, loan size, DTI, mortgage insurance, state and number of borrowers. Positive means VS4 borrowers pay more. Discount points and lender credits are not disclosed.</p>
+        <p>Each VS4 loan's 30-year fixed note rate minus the rate a model of Classic FICO-priced loans gives the same loan <span class="pricing-basis">in the same fee tier</span>: the same lender and channel in the same week, the same lender and purpose, the same fee-grid cell (score, LTV and purpose), and the same occupancy, property, loan size, DTI, mortgage insurance, state and number of borrowers.</p>
+        <p data-clamp="0">Positive means VS4 borrowers pay more. Discount points and lender credits are not disclosed.</p>
         <p class="cover-note"></p>
       </header>
       <div class="vx-tiles" id="pricing-tiles">
@@ -924,7 +934,7 @@
         <div class="vx-card">
           <div class="vx-lbl">VS4 loans compared</div>
           <div class="vx-val pr-n dash-skeleton" data-source="pricing" data-field="n">—</div>
-          <div class="vx-sub">30-year fixed, <span class="pr-window">first disclosed</span> from <span class="pr-since" data-source="pricing" data-field="since">—</span></div>
+          <div class="vx-sub">30-year fixed, <span class="pr-window">first disclosed</span> from <span class="pr-since" data-source="pricing" data-field="since">—</span><span class="pr-first"></span></div>
         </div>
         <div class="vx-card">
           <div class="vx-lbl">Model's typical miss on held-out FICO loans</div>
@@ -955,6 +965,7 @@
           <tbody></tbody>
         </table>
       </div>
+      <p class="vx-sub" id="value-left"></p>
       </details>
     </section>
     <section class="vx-grid" id="pricing-charts">
@@ -963,22 +974,28 @@
         <p class="vx-note">Bars: VS4 loans' rate against the model, in bp, with a margin of error. Diamonds: FICO loans the model did not see that week, which should sit near zero.</p>
         <div class="vx-legend" id="pricing-week-legend" data-source="pricing"></div>
         <div class="vx-chart dash-skeleton" id="pricing-week-chart" data-source="pricing"></div>
+        <p class="vx-sub">Basis points (bp) against the expected FICO rate. Above zero, VS4 costs more.</p>
       </div>
       <div class="vx-card" id="pricing-seller-card">
         <h2>By lender</h2>
         <p class="vx-note">Each lender's VS4 loans against the model, which already prices that lender's own FICO loans; diamonds are its FICO loans the model did not see. Lenders with 20 or more VS4 loans, with their count.</p>
+        <div class="vx-legend" id="pricing-seller-legend" data-source="pricing"></div>
         <div class="vx-chart dash-skeleton" id="pricing-seller-chart" data-source="pricing"></div>
+        <p class="vx-sub">Basis points (bp) against the expected FICO rate. Right of zero, VS4 costs more.</p>
       </div>
       <div class="vx-card" id="pricing-segment-card">
         <div class="vx-row"><h2>By type of loan</h2><select class="vx-select" id="pricing-dim" aria-label="Breakdown" data-source="pricing"></select></div>
         <p class="vx-note">Groups by the VS4 loan's own characteristics; the score bands are fee tiers.</p>
+        <div class="vx-legend" id="pricing-segment-legend" data-source="pricing"></div>
         <div class="vx-chart dash-skeleton" id="pricing-segment-chart" data-source="pricing"></div>
+        <p class="vx-sub">Basis points (bp) against the expected FICO rate. Right of zero, VS4 costs more.</p>
       </div>
       <div class="vx-card" id="pricing-hist-card">
-        <h2>How spread out the differences are</h2>
+        <div class="vx-row" id="hist-head"><h2>How spread out the differences are</h2></div>
         <p class="vx-note">Share of loans by how far the rate sits above or below the model, VS4 against FICO loans the model did not see, from the same weeks.</p>
         <div class="vx-legend" id="pricing-hist-legend" data-source="pricing"></div>
         <div class="vx-chart dash-skeleton" id="pricing-hist-chart" data-source="pricing"></div>
+        <p class="vx-sub">Across: basis points (bp) against the expected FICO rate. Right of zero, the loan costs more.</p>
       </div>
     </section>
   </template>
@@ -992,7 +1009,7 @@
             <button type="button" data-v="hmda">Every kind of loan, by year</button><button type="button" data-v="pl">Private-label deals, weekly</button><button type="button" data-v="va">VA loans, monthly</button>
           </div>
         </div>
-        <p class="mk-only-hmda"><span data-term="hmda">HMDA</span>, the federal record nearly every lender files, names the score model behind each credit decision on every kind of loan. <span class="mk-year" data-source="whole_market" data-field="year" data-where="view=meta">—</span> is the starting line: lenders began delivering VS4 to Fannie and Freddie in 2026. The next file arrives about June <span class="mk-next">—</span>.</p>
+        <p class="mk-only-hmda"><span data-term="hmda">HMDA</span>, the federal record nearly every lender files, names the score model behind each credit decision. <span class="mk-year" data-source="whole_market" data-field="year" data-where="view=meta">—</span> is the starting line: lenders began delivering VS4 to Fannie and Freddie in 2026. The next file arrives about June <span class="mk-next">—</span>.</p>
         <p class="mk-only-pl" hidden>Deals to be rated file their due diligence findings with the SEC on <span data-term="abs15g">Form ABS-15G</span> before first sale, and some of those reports name the score model on each loan. This is the live read, updated weekly. It covers only rated deals and only reports with a model column, and the loans are months old by the time a deal files.</p>
         <p class="mk-only-va" hidden>Ginnie Mae's monthly loan files show one score on each FHA and VA loan and don't name its model. But on Fannie and Freddie loans showing both scores, <span class="va-ref-vs4" data-source="ginnie_va">—</span> reach 830 on <span data-term="vs4">VS4</span> and <span class="va-ref-classic" data-source="ginnie_va">—</span> on <span data-term="classic">Classic FICO</span>. So a VA loan at 830 or above is very likely not on Classic FICO. FHA can't take VS4 until January 2027, which makes it the check. This is inference: no file names a model, and a VS4 score doesn't mean no FICO was bought.</p>
       </header>
@@ -1010,7 +1027,7 @@
         <div class="vx-card">
           <div class="vx-lbl">All VA loans likely on VS4</div>
           <div class="vx-val"><span class="va-all-low dash-skeleton" data-source="ginnie_va">—</span> to <span class="va-all-high dash-skeleton" data-source="ginnie_va">—</span></div>
-          <div class="vx-sub"><span class="va-both" data-source="ginnie_va">—</span> of VA loans at 830 or above since <span class="va-since" data-source="ginnie_va">—</span> are these two lenders'</div>
+          <div class="vx-sub"><span class="va-both" data-source="ginnie_va">—</span> of VA loans at 830 or above since <span class="va-since" data-source="ginnie_va">—</span> came from these two lenders</div>
         </div>
         <div class="vx-card">
           <div class="vx-lbl">FHA loans at 830 or above</div>
@@ -1020,7 +1037,7 @@
       </div>
       <section class="vx-card mk-only-va" id="va-month-card" aria-labelledby="va-month-h" hidden>
         <h2 id="va-month-h">When did VA loans start reaching 830?</h2>
-        <p class="vx-note">Share of VA purchases and full refinances at 830 or above, by closing date, from Ginnie Mae's files through <span class="va-last" data-source="ginnie_va">—</span>. The shares above are a range because the files can't tell VS4 on every loan from VS4 only when it is 20 or more points higher.</p>
+        <p class="vx-note">Share of VA purchases and full refinances at 830 or above, by closing date, from Ginnie Mae's files through <span class="va-last" data-source="ginnie_va">—</span>. The shares above are a range because the files can't tell VS4 on every loan from VS4 only when 20 or more points higher.</p>
         <div class="vx-legend" id="va-legend"></div>
         <div class="vx-chart" id="va-chart" data-source="ginnie_va"></div>
       </section>
@@ -1085,7 +1102,7 @@
               <thead><tr>
                 <th scope="col" class="vx-l" data-field="label">Kind of loan</th>
                 <th scope="col" data-field="n">Loans</th>
-                <th scope="col" class="vx-opt" data-field="usd_bn">$bn</th>
+                <th scope="col" class="vx-opt" data-field="usd_bn">Dollars</th>
                 <th scope="col" data-field="classic">Classic FICO</th>
                 <th scope="col" data-field="fico_new">Newer FICO</th>
                 <th scope="col" data-field="vs4">VS4</th>
@@ -1131,7 +1148,7 @@
         <div class="vx-legend mk-legend"></div>
         <div class="vx-chart mk-bars" id="mk-lender-bars" data-source="whole_market"></div>
         <div class="vx-row mk-gap">
-          <h3>Year by year <span class="mk-sub">The same lenders, going by legal entity. A merger or a new entity breaks a row</span></h3>
+          <h3>Year by year <span class="mk-sub">The same lenders, going by legal entity. A merger or a new entity breaks a row. A dash means fewer than 20 loans that year</span></h3>
           <div class="vx-seg" data-param="mmeasure" role="group" aria-label="What the cells show">
             <button type="button" data-v="classic">Classic FICO</button><button type="button" data-v="fico_new">Newer FICO</button><button type="button" data-v="vs">VantageScore</button>
           </div>
@@ -1169,7 +1186,7 @@
               <thead><tr>
                 <th scope="col" class="vx-l" data-field="name">Model named</th>
                 <th scope="col" data-field="n">Loans</th>
-                <th scope="col" data-field="equity_share">In home equity</th>
+                <th scope="col" class="vx-opt" data-field="equity_share">In home equity</th>
                 <th scope="col" data-source="whole_market" data-field="first_named">First named</th>
                 <th scope="col" class="vx-l" data-field="users">Biggest users</th>
               </tr></thead>
@@ -1195,9 +1212,9 @@
           <div class="vx-sub">A floor. <span class="pl-vs-n" data-source="private_label" data-field="vs4_n" data-where="view=meta">—</span> on VS4. On <span class="pl-vs-only" data-source="private_label" data-field="vs_no_fico_n" data-where="view=meta">—</span>, no FICO model is named</div>
         </div>
         <div class="vx-card">
-          <div class="vx-lbl">Credit pulled since the GSEs opened to VS4</div>
+          <div class="vx-lbl">Recent loans naming VantageScore</div>
           <div class="vx-val pl-recent dash-skeleton" data-source="private_label" data-field="recent_vs" data-where="view=meta">—</div>
-          <div class="vx-sub">Name VantageScore, of <span class="pl-recent-n" data-source="private_label" data-field="recent_n" data-where="view=meta">—</span> dated loans</div>
+          <div class="vx-sub"><span class="pl-recent-k" data-source="private_label" data-field="recent_vs_n" data-where="view=meta">—</span> of <span class="pl-recent-n" data-source="private_label" data-field="recent_n" data-where="view=meta">—</span> loans with credit pulled since the GSEs opened to VS4</div>
         </div>
         <div class="vx-card">
           <div class="vx-lbl">For scale: Fannie and Freddie loans showing VS4</div>
@@ -1284,7 +1301,7 @@
         <li>Exact: the share priced on VS4. Floors, on loans that have the score: the share showing Classic FICO, showing VS4 and showing both, and anything built on them, such as loans carrying VS4, a lender's stage and how far right it sits on the map. Ceilings, on loans that have only one score: the share showing FICO only and VS4 only.</li>
         <li>Resting on what shows: cost or rate, and how much of a lower fee reaches the rate, use only loans that show both scores. A lender's rule, the what-ifs on how far VS4 could go and the fee estimate for loans that show FICO only treat a loan that shows one score as having that one. Fees missed on loans with both scores run low where fewer loans show both.</li>
         <li>VS4 only on the Borrowers and Pricing tabs mixes loans that have one score with loans whose FICO does not show. Fannie Mae's few such loans are the cleaner read.</li>
-        <li>No Classic FICO in the scenario and FICO's exposure is a choice you set. Today's share is read from loans that show none at Fannie Mae, an upper bound on loans where FICO was dropped. Scores pulled on loans that never fund cannot be seen anywhere in these files.</li>
+        <li>The share with no Classic FICO, in "Your scenario" and "FICO's exposure", is a number you set. Today's share is read from loans that show none at Fannie Mae, an upper bound on loans where FICO was dropped. Scores pulled on loans that never fund cannot be seen anywhere in these files.</li>
         </ul>
       </details>
       <details class="vx-more">
@@ -1293,26 +1310,26 @@
         <li>A loan runs on several clocks. Scores are pulled at application, the rate is set at lock, the lender can pick the score that prices the loan as late as delivery, and the upfront fee goes by the MBS issue date. The files give none of the first three dates.</li>
         <li>Issue month, the month of the loan's pool: for headline share, because it ties to GSE volume and sets the fee grid. It runs behind closing, by more at slower lenders.</li>
         <li>Week first disclosed, the week a loan first appears in an intraday file: for news, because it is the earliest sign of what lenders are delivering. Weeks swing with which lenders delivered, so read them with the lender mix frozen.</li>
-        <li>Closing month, estimated as the first payment month less two, since a first payment usually falls in the second month after closing: for how a lender's behavior is changing, because it sits nearest the borrower's application and lock. Recent months fill with the fastest deliverers first, so read them lender by lender, or with each lender at a fixed weight as the market bars do. A label such as 60% in estimates how much of that month has arrived, going by how the lender's earlier months filled. A lender with under 20 loans in a month keeps its rate from the last month it had that many.</li>
+        <li>Closing month, estimated as the first payment month less two, since a first payment usually falls in the second month after closing: for how a lender's behavior is changing, because it sits nearest the borrower's application and lock. Recent months fill with the fastest deliverers first, so read them lender by lender, or with each lender at a fixed weight as the market bars do. A label such as "60% in" estimates how much of that month has arrived, going by how the lender's earlier months filled. A lender with under 20 loans in a month keeps its rate from the last month it had that many.</li>
         <li>A score pick made at delivery can move inside one closing month; a rate cannot, so a lender's rates can lag its picks. For FICO's revenue, a loan's pulls fall before its closing month, so shift issue months back when lining them up with FICO's quarters.</li>
         </ul>
       </details>
       <details class="vx-more">
         <summary>Which score priced the loan</summary>
         <ul>
-        <li>The model that priced a loan comes from the Pricing Indicator the GSEs began disclosing in October. Before that, each loan disclosed only the score it was priced with, so the populated score field identifies the model.</li>
+        <li>The model that priced a loan comes from the Pricing Indicator the GSEs began disclosing in Oct 2026. Before that, each loan disclosed only the score it was priced with, so the populated score field identifies the model.</li>
         <li>Shares count loans with a valid credit score. Pools that disclose no score, mostly re-performing loans, are left out.</li>
         <li>Issue month comes from the GSEs' month-end issuance files, the official list for each month. The latest month uses intraday files and will change until its month-end file is published.</li>
-        <li>The range shown for the latest month is where it would end if it moved to final as earlier months did. Each month from August 2026 is rebuilt as the intraday files published by each day of that month showed it, and its move from that day to its final figure is added to the latest month's share. July is left out because the intraday history, which starts July 1, misses some of its loans.</li>
+        <li>The range shown for the latest month is where it would end if it moved to final as earlier months did. Each month from Aug 2026 is rebuilt as the intraday files published by each day of that month showed it, and its move from that day to its final figure is added to the latest month's share. Jul 2026 is left out because the intraday history, which starts Jul 1, 2026, misses some of its loans.</li>
         <li>The weekly series dates each loan by its first appearance in an intraday file. Loans are republished for up to a few weeks, so the series starts three weeks after the portal's intraday history begins.</li>
         </ul>
       </details>
       <details class="vx-more">
         <summary>Lenders</summary>
         <ul>
-        <li>Lenders are matched across Fannie Mae and Freddie Mac by name, ignoring punctuation and endings such as LLC and N.A. Display names, parent companies and tickers come from a hand-kept list (reference/lenders.csv in the repository); Rocket Companies combines Rocket Mortgage and Nationstar (Mr. Cooper), which stopped delivering loans under its own name after January 2026.</li>
+        <li>Lenders are matched across Fannie Mae and Freddie Mac by name, ignoring punctuation and endings such as LLC and N.A. Display names, parent companies and tickers come from a hand-kept list (reference/sellers.csv in the repository); Rocket Companies combines Rocket Mortgage and Nationstar (Mr. Cooper), which stopped delivering loans under its own name after Jan 2026.</li>
         <li>The lender here is the company that delivered the loan to the GSE, not always the one that made it: correspondent aggregators such as AmeriHome and PennyMac deliver loans other lenders originated. "Bought from correspondents" is the share of a lender's loans in the correspondent channel.</li>
-        <li>Lender figures labeled as recent cover the last three issue months, the latest one partial. The tables and charts keep the 100 largest lenders by that measure and every lender with a VS4 loan.</li>
+        <li>Where a lender figure gives a range of issue months, that range is the last three, the latest one partial. The tables and charts keep the 100 largest lenders by loans in that range and every lender with a VS4 loan. Weekly charts are kept for lenders with 50 or more VS4 loans, and channel and purpose charts for the 25 largest lenders and lenders with 10 or more VS4 loans.</li>
         </ul>
       </details>
       <details class="vx-more">
@@ -1320,16 +1337,16 @@
         <ul>
         <li>A lender counts as an adopter from the first issue month it delivered a VS4 loan. The stricter thresholds need 10 or more VS4 loans in one month, or VS4 on 5% or more of a month's loans (with at least 20 loans). Each GSE is counted on its own when one is picked.</li>
         <li>Each month's change in VS4 share is split exactly into three parts, lender by lender: lenders delivering VS4 for the first time; existing adopters' change in VS4 share, weighted by their share of loans; and the change in each lender's share of loans, weighted by its VS4 share.</li>
-        <li>The fixed-mix series weights each lender's VS4 share by its share of loans issued January to June 2026. The other clean series leaves out the two lenders with the most VS4 loans to date.</li>
-        <li>Lenders starting VS4 in the last 30 days are those whose first VS4 loan first appeared in an intraday file in that window; for loans issued before the intraday history begins (July 1, 2026), the issue month counts instead.</li>
+        <li>The fixed-mix series weights each lender's VS4 share by its share of loans issued Jan to Jun 2026. The other clean series leaves out the two lenders with the most VS4 loans to date.</li>
+        <li>The "First VS4 loan" line in Overview's week card names lenders whose first VS4 loan first appeared in an intraday file that week; for loans issued before the intraday history begins (Jul 1, 2026), the issue month counts instead.</li>
         <li>In the charts of lenders by their share of loans, a lender's share is its share of the GSE's loans with a credit score issued that month (or of their balance), and with one GSE picked, its threshold month is the month it met the threshold at that GSE. Lenders outside the lender list, none of which has delivered a VS4 loan, are drawn as one block.</li>
         </ul>
       </details>
       <details class="vx-more">
         <summary>Score groups</summary>
         <ul>
-          <li>Loans carrying VS4: records that show every score cover under a tenth of loans first disclosed before September 28, 2026, about three quarters of that week's and nearly all since, so the split starts there. Before it, the chart shows VS4-priced loans from the weekly and monthly series, a floor on loans carrying VS4. A steady mix keeps each lender at its share of all weeks since September 28; a lender with under 20 loans in a week takes its rate over all weeks.</li>
-        <li>From Oct 19, 2026 the GSEs disclose every score they have on a loan, not only the one that priced it, and a Pricing Indicator saying which did; every record published from then on carries it, including loans first disclosed earlier and republished. Both scores: such loans that show a Classic FICO and a VS4 score. Shows VS4 only: such loans priced on VS4 that show no Classic FICO, set against every FICO-priced loan disclosed that way. All loans: every VS4- and FICO-priced loan issued since July 2026. The table of which scores loans show counts loans by the week they first appeared, from Oct 19.</li>
+          <li>Loans carrying VS4: records that show every score cover under a tenth of loans first disclosed before Sep 28, 2026, about three quarters of that week's and nearly all since, so the split starts there. Before it, the chart shows VS4-priced loans from the weekly and monthly series, a floor on loans carrying VS4. A steady mix keeps each lender at its share of all weeks since Sep 28, 2026; a lender with under 20 loans in a week takes its rate over all weeks.</li>
+        <li>From Oct 19, 2026 the GSEs disclose every score they have on a loan, not only the one that priced it, and a Pricing Indicator saying which did; every record published from then on carries it, including loans first disclosed earlier and republished. Both scores: such loans that show a Classic FICO and a VS4 score. Shows VS4 only: such loans priced on VS4 that show no Classic FICO, set against every FICO-priced loan disclosed that way. All loans: every VS4- and FICO-priced loan issued since Jul 2026.</li>
         <li>Both GSEs let a lender choose Classic FICO or VS4 for each loan run through Desktop Underwriter or Loan Product Advisor, with one model for every borrower on the loan; manually underwritten loans still need Classic FICO. Lenders deliver one score: the delivery file has a single credit score field. A second score must reach the GSE another way, most likely through underwriting. The GSEs' playbook says Desktop Underwriter receives the credit report as part of underwriting, while lenders using Loan Product Advisor have the option to order credit through it. Neither GSE says this decides which scores show, so it is our reading. VS4 only at Freddie Mac does not mean Classic FICO was not pulled.</li>
         <li>In the borrower mix, the share expected for VS4 loans is what it would be if each lender's VS4 loans looked like that lender's own Classic FICO loans in the same window; lenders with fewer than 20 FICO loans count at the market's mix.</li>
         </ul>
@@ -1337,16 +1354,16 @@
       <details class="vx-more">
         <summary>Why lenders choose</summary>
         <ul>
-          <li>Cost or rate: loans with both scores issued from October 1, 2026, terms over 15 years. The fee at each score comes from the grid at the loan's purpose and LTV; loans in programs with no base fee count as the same fee either way. Same fee covers adjacent score buckets that the grid charges alike, as well as the same bucket. What the pick is worth uses the same loans. These are the GSEs' fees, not what a borrower sees.</li>
-        <li>Stages, for each lender, from every record that carries the Pricing Indicator: prices on VS4 at least half the time VS4 is higher (20 or more such loans); at least a tenth of the time; shows both scores on 5% or more of its loans but rarely prices on VS4; shows one score with a few VS4 loans; shows only Classic FICO. Its share with both scores is read at Fannie Mae where it has 20 or more loans there.</li>
-        <li>A lender's rule compares how often it prices on VS4 at 1–19 and at 20 or more points above Classic FICO: whenever VS4 is higher, 60% or more below the 20-point line in the latest two weeks; a 20-point rule, 60% or more above it; moving, the same with a rise of 5 points or more below it; some, a tenth or more above it; rarely, less.</li>
+          <li>Cost or rate: loans with both scores issued from Oct 1, 2026, terms over 15 years. The fee at each score comes from the grid at the loan's purpose and LTV; loans in programs with no base fee count as the same fee either way. Same fee covers adjacent score buckets that the grid charges alike, as well as the same bucket. What the pick is worth uses the same loans. These are the GSEs' fees, not what a borrower sees.</li>
+        <li>Stages, for each lender, from every record that carries the Pricing Indicator: prices on VS4 at least half the time VS4 is higher (20 or more such loans); at least a tenth of the time; shows both scores on 5% or more of its loans but rarely prices on VS4; under 5% show both, with a few priced on VS4; under 5% show both, with none. Its share with both scores is read at Fannie Mae where it has 20 or more loans there.</li>
+        <li>A lender's rule compares how often it prices on VS4 at 1 to 19 and at 20 or more points above Classic FICO: whenever VS4 is higher, 60% or more below the 20-point line in the latest two weeks; a 20-point rule, 60% or more above it; moving, the same with a rise of 5 points or more below it; some, a tenth or more above it; rarely, less.</li>
         <li>Owners come from the hand-kept lender list, and otherwise from the lender's name; a bank-owned lender counts as a bank. A lender's main channel is the one with half or more of its loans. The lender is not always the lender that made the loan: at a correspondent aggregator, the choice of score may sit with the originating lender.</li>
         </ul>
       </details>
       <details class="vx-more">
         <summary>The fee grid and lenders' rules</summary>
         <ul>
-        <li>The GSEs' upfront fees step at nine credit score buckets: 639 or less, 20-point steps from 640 to 779, and 780 and over. For MBS issued before October 1, 2026 those tiers applied to VS4 at 20 points higher (the top tier was 780 and over for Classic FICO, 800 and over for VS4). Since then one grid has covered both. For a loan that shows both scores, the bucket gap is its VS4 bucket minus its Classic FICO bucket on today's grid; the point gap is its VS4 score minus its Classic FICO.</li>
+        <li>The GSEs' upfront fees step at nine credit score buckets: 639 or less, 20-point steps from 640 to 779, and 780 and over. For MBS issued before Oct 1, 2026 those tiers applied to VS4 at 20 points higher (the top tier was 780 and over for Classic FICO, 800 and over for VS4). Since then one grid has covered both. For a loan that shows both scores, the bucket gap is its VS4 bucket minus its Classic FICO bucket on today's grid; the point gap is its VS4 score minus its Classic FICO.</li>
         <li>A lender's rule is read from its loans with both scores, by point gap, by the week each loan first appeared in an intraday file. These views take every record that carries the Pricing Indicator, including loans for issue months after the current one, since the newest loans show a rule moving. Rates are locked well before delivery, so a change in a lender's rule reaches these files weeks later.</li>
         <li>The rules count loans that show both scores as they are, VS4-priced loans that show no Classic FICO as VS4, and give each loan that shows only a Classic FICO the rate at which VS4 lands in a better bucket among loans with both scores in its Classic FICO bucket, purpose, channel and GSE (its bucket and GSE, or its bucket alone, where fewer than 30 such loans). It assumes VS4 relates to Classic FICO the same way in every month and at every lender. A loan whose VS4 exists but does not show is treated the same way.</li>
         <li>Records from before Oct 19, 2026 show only the score that priced the loan, so those rules would overstate lenders already choosing between scores: every VS4 loan would count as better, and their Classic FICO loans would take a rate that ignores that they passed on VS4. Months made up of such records are therefore estimates. A lender that delivered a VS4 loan that month takes its own rate on loans disclosed with every score (in that GSE, else both GSEs, with at least 30 such loans; failing that, its VS4 loans take the rate over all such VS4 loans). Other lenders' loans follow the rules above. This assumes a lender's borrowers change little from month to month.</li>
@@ -1355,9 +1372,9 @@
       <details class="vx-more">
         <summary>Rate model</summary>
         <ul>
-        <li>A model of the note rates of Classic FICO-priced 30-year fixed loans first disclosed from July 20, 2026. It adds an effect for each of: week of first disclosure, estimated closing month, GSE, lender and channel, lender and channel in that week, lender and channel in that closing month, lender and purpose, upfront fee credit score bucket by LTV bucket by purpose, occupancy, units, property type, loan size, DTI, mortgage insurance, state, first-time buyer and number of borrowers. Each effect is shrunk toward zero where it rests on few loans. It is fitted on four in five of those loans, chosen by loan id, and checked on the fifth.</li>
-        <li>Each VS4 loan's rate is compared with the rate the model gives the same loan priced on Classic FICO: in the same fee tier (its VS4 score in the FICO slot, less 20 points for loans issued before October 1, 2026) or, for loans that show one, with the borrower's own Classic FICO. The headline figure subtracts what the model misses on held-out FICO loans from the same weeks.</li>
-        <li>Fees: base grids from Freddie Mac Guide Exhibit 19 (Bulletin 2026-K), which apply to either score for settlement from October 1, 2026; Fannie Mae's matrix is taken to match, unchecked. Loans in HFA, HomeReady, Home Possible, RefiNow and Refi Possible programs count as paying no base fee; first-time buyers' income caps cannot be seen here, so some savings are overstated. Other add-ons (second homes, condos and so on) do not depend on the score. Yearly figures scale the month's to the GSEs' balance at the pace of their final months.</li>
+        <li>A model of the note rates of Classic FICO-priced 30-year fixed loans first disclosed from Jul 20, 2026. It adds an effect for each of: week of first disclosure, estimated closing month, GSE, lender and channel, lender and channel in that week, lender and channel in that closing month, lender and purpose, upfront fee credit score bucket by LTV bucket by purpose, occupancy, units, property type, loan size, DTI, mortgage insurance, state, first-time buyer and number of borrowers. Each effect is shrunk toward zero where it rests on few loans. It is fitted on four in five of those loans, chosen by loan id, and checked on the fifth.</li>
+        <li>Each VS4 loan's rate is compared with the rate the model gives the same loan priced on Classic FICO: in the same fee tier (its VS4 score in the FICO slot, less 20 points for loans issued before Oct 1, 2026) or, for loans that show one, with the borrower's own Classic FICO. The headline figure subtracts what the model misses on held-out FICO loans from the same weeks.</li>
+        <li>Fees: base grids from Freddie Mac Guide Exhibit 19 (Bulletin 2026-K), which apply to either score for settlement from Oct 1, 2026; Fannie Mae's matrix is taken to match, unchecked. Loans in HFA, HomeReady, Home Possible, RefiNow and Refi Possible programs count as paying no base fee; first-time buyers' income caps cannot be seen here, so some savings are overstated. Other add-ons (second homes, condos and so on) do not depend on the score. Yearly figures scale the month's to the GSEs' balance at the pace of their final months.</li>
         <li>How much of a lower fee reaches the rate: for each loan priced on VS4 where the grid's fee is lower than at its own Classic FICO, the rate against the model at its own FICO, less the same for that lender and channel's FICO-priced loans with both scores (or the lender's, with under 20 in the channel), which takes out what a lender's loans with both scores do on their own. That fall over the fee at 5 to 1 is the share that reaches the rate. It is a floor on what reaches the borrower: points and lender credits are not disclosed.</li>
         <li>Discount points and lender credits are not disclosed, so a lower upfront fee can reach the borrower as a credit rather than a lower rate. Lock dates are not disclosed either; the closing month and week of first disclosure stand in for them.</li>
         </ul>
@@ -1365,10 +1382,10 @@
       <details class="vx-more">
         <summary>Outlook</summary>
         <ul>
-        <li>The outlook starts from loans disclosed with every score (records that carry the Pricing Indicator) and issued in the latest two issue months, both GSEs together. For each lender it takes its share of those loans, its VS4 share, and the share of its loans where VS4 wins under each rule: VS4 saves a fee (it lands in a better bucket on today's grid), or VS4's score is higher. Loans that show one score are counted as under Score choice.</li>
+        <li>The outlook starts from loans disclosed with every score (records that carry the Pricing Indicator) and issued in the latest two issue months, both GSEs together. For each lender it takes its share of those loans, its VS4 share, and the share of its loans where VS4 wins under each rule: VS4 saves a fee (it lands in a better bucket on today's grid), or VS4's score is higher. Loans that show one score are counted as in "The fee grid and lenders' rules" above.</li>
         <li>The latest two weeks' figure takes each lender's VS4 share on loans first disclosed in the latest two weeks, whatever their issue month, at its usual share of loans; a lender with fewer than 50 such loans keeps its VS4 share. A lender on a rule orders both scores on every loan and prices on VS4 wherever the rule says, or keeps its latest share where that is higher. Each lender's share of loans stays as it is in the window.</li>
-        <li>The biggest users have 100 or more such loans and a VS4 share of at least half of the share of their loans where VS4 saves a fee. Lenders using VS4 are those with a VS4 loan first disclosed since September 2026, when VS4 opened to every lender; a lender with VS4 loans before then and none since shows as stopped. The recent pace pools the issue months since then: loans from lenders delivering their first VS4 loan over loans from lenders that had never delivered one.</li>
-        <li>In the paths, a lender that moves goes from its latest share to its share on the rule at the speed the biggest users have shown: their VS4 share as a share of where it is now, by months since their first VS4 loan, together while at least two of them reach that month and never falling, then all the way. Heavy users and other users start the month after the latest; in the pace case, each month the recent pace of the remaining lenders' loans starts too, from the same month.</li>
+        <li>The biggest users have 100 or more such loans and a VS4 share of at least half of the share of their loans where VS4 saves a fee. Lenders using VS4 are those with a VS4 loan first disclosed since Sep 2026, when VS4 opened to every lender; a lender with VS4 loans before then and none since shows as stopped. The recent pace pools the issue months since then: loans from lenders delivering their first VS4 loan over loans from lenders that had never delivered one.</li>
+        <li>In the paths, a lender that moves goes from its latest share to its share on the rule at the speed the biggest users have shown: their VS4 share as a share of their level in the latest two weeks, by months since their first VS4 loan. That speed pools them over the months at least two of them have reached and never falls; after those months it goes straight to the lender's share on the rule. "Nothing changes" keeps every lender at its latest share. On "Biggest users go all the way" and "Every lender using VS4 does", those lenders start the month after the latest. On "Other lenders start too", each month the recent pace of the remaining lenders' loans starts as well, from the same month.</li>
         <li>These are scenarios, not a forecast. They assume VS4 relates to Classic FICO the same way at every lender, and rest on how a few lenders have behaved so far. Starting to use VS4 is not moving to a rule: a lender that orders both scores but prices on Classic FICO may never move. For a lender already using VS4, a loan that shows only a Classic FICO takes the rate at which VS4 wins on comparable loans; if that lender ordered VS4 and left it off because it did not win, its share on the rule is lower than shown.</li>
         </ul>
       </details>
@@ -1383,7 +1400,7 @@
       <details class="vx-more">
         <summary>The whole market, from HMDA</summary>
         <ul>
-        <li>HMDA is the federal record of mortgage applications that nearly every lender files each year. It names the score model the lender relied on for the credit decision. A year's public file arrives about the following June, so this page is a starting line, not a live count.</li>
+        <li>HMDA is the federal record of mortgage applications that nearly every lender files each year. It names the score model the lender relied on for the credit decision. A year's public file arrives about the following June, so these figures are a starting line, not a live count.</li>
         <li>A named model is a fact. "More than one model" and "other model" name nothing further, and "not applicable" or "exempt" says nothing: smaller lenders can be exempt, and some loans, such as streamlined refinances, may use no score at all. None of these count as FICO or VantageScore, so the shares naming each are floors.</li>
         <li>The fields cover the applicant and the co-applicant, and a lender can name the model in either. A loan with two named models counts once on the bars, under the first of VS4, older VantageScore, newer FICO and Classic FICO. In the table of models it counts under each.</li>
         <li>Each loan made counts once, sorted in this order. Home equity and second liens: any line of credit or junior lien. Left out: multifamily and reverse mortgages. Then FHA, VA and USDA; sold to Fannie or Freddie; business purpose; jumbo, above the conforming limit; and conforming size by who bought it.</li>
@@ -1398,7 +1415,7 @@
         <summary>Private-label deals, from SEC filings</summary>
         <ul>
         <li>No residential deal files the SEC's asset-level form. But a deal to be rated, registered or not, must file its third-party due diligence findings on Form ABS-15G at least five business days before first sale. Some of those reports list each reviewed loan with the score model per borrower and bureau.</li>
-        <li>The collector searches EDGAR for reports with a model column and reads each new one weekly, from January 2025. A loan in two reports of a deal, or in an amended filing, counts once. Reports are not kept, only what they say about each loan's model.</li>
+        <li>The collector searches EDGAR for reports with a model column and reads each new one weekly, from Jan 2025. A loan in two reports of a deal, or in an amended filing, counts once. Reports are not kept, only what they say about each loan's model.</li>
         <li>A named model is a fact. A blank is unknown, and so is a score column with no model: a column headed FICO can hold a VantageScore. Reports that name VantageScore only in their text are listed apart for that reason. Shares naming FICO and VantageScore are floors.</li>
         <li>What this cannot see: unrated deals, loans outside the review sample, reports with no model column and which score priced the loan. Originators are usually masked, so views are by deal and filer, not lender. Application, lock and note dates are masked too, so the credit report date is the clock, and only on the loans that show it.</li>
         <li>Kind of deal goes by the deal's name, so it is rough. Numeric model codes in some reports have no key here and count as unclear.</li>
@@ -1407,8 +1424,8 @@
       <details class="vx-more">
         <summary>VA loans, from Ginnie Mae's loan files</summary>
         <ul>
-        <li>Ginnie Mae's monthly new-issue files list each FHA and VA loan with one score, the issuer, its channel and its closing date. They don't name the score model. Issuers start reporting the model to Ginnie Mae by June 30, 2027, and nothing says it will be published.</li>
-        <li>The test: on Fannie and Freddie loans showing both scores, Classic FICO almost never reaches 830 and VS4 often does. So a VA loan at 830 or above is very likely not on Classic FICO. FHA can't take VS4 until case numbers assigned from January 1, 2027, which makes it the check.</li>
+        <li>Ginnie Mae's monthly new-issue files list each FHA and VA loan with one score, the issuer, its channel and its closing date. They don't name the score model. Issuers start reporting the model to Ginnie Mae by Jun 30, 2027, and nothing says it will be published.</li>
+        <li>The test: on Fannie and Freddie loans showing both scores, Classic FICO almost never reaches 830 and VS4 often does. So a VA loan at 830 or above is very likely not on Classic FICO. FHA can't take VS4 until case numbers assigned from Jan 1, 2027, which makes it the check.</li>
         <li>To size a move: how many of a group's loans would reach 830 if every loan showed VS4, from the odds of VS4 at 830 or above at each Classic score on Fannie loans showing both. The share showing divides the loans at 830 or above by that number.</li>
         <li>The share of loans on VS4 is a range. Nearly every loan reaching 830 on VS4 is 20 or more points above its Classic FICO, so a lender using VS4 only when it is that much higher looks the same as one using it on every loan. The high end is the share showing. The low end scales it by how few loans are 20 or more points higher.</li>
         <li>Loans are purchases and full refinances (cash-out or rate-and-term) closed within four months of the pool's issue month. Streamlines, modified and re-pooled loans are left out: their scores are optional or old. The newest closing months fill in with fast deliverers first. The chart leaves out a closing month with under 1,000 VA loans; the lender table and the FHA total count it.</li>

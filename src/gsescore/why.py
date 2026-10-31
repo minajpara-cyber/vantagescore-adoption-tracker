@@ -7,8 +7,8 @@ Stages, for each seller:
   pricing  prices on VS4 at least half the time VS4 is higher (MIN_N+ such loans)
   some     at least a tenth of the time
   both     shows both scores on STAGE_BOTH+ of its loans but rarely prices on VS4
-  trace    shows one score, with a few VS4 loans
-  fico     shows only Classic FICO
+  trace    under STAGE_BOTH show both, a few priced on VS4
+  fico     under STAGE_BOTH show both, none priced on VS4
 Its rule, from its loans with both scores (MIN_N+ loans in each band): whenever, priced on VS4 at least RULE_HIGH of the
 time with VS4 1-19 points above FICO in the latest weeks; moving, at least RULE_HIGH at 20+ points and up RULE_MOVE or more
 below the line; line, at least RULE_HIGH at 20+ points; some, at least a tenth at 20+; rare, less.
@@ -41,8 +41,8 @@ RULE_HIGH = 0.6
 RULE_MOVE = 0.05
 STATEMENTS_CSV = paths.REPO / "reference" / "statements.csv"
 STAGES = [("pricing", "Uses VS4 most of the time its score is higher"), ("some", "Uses VS4 some of the time its score is higher"),
-          ("both", "Shows both scores, rarely uses VS4"), ("trace", "Shows one score, a few VS4 loans"),
-          ("fico", "Shows only Classic FICO")]
+          ("both", "Shows both scores, rarely uses VS4"), ("trace", "Under 5% show both, a few priced on VS4"),
+          ("fico", "Under 5% show both, none priced on VS4")]
 CHANNELS = {"R": "Retail", "B": "Broker", "C": "Correspondent"}
 PURPOSES = {"P": "Purchase", "C": "Cash-out refinance", "R": "No cash-out refinance"}
 KIND_ORDER = ["Bank", "Nonbank", "Builder", "Credit union", "Housing agency"]
