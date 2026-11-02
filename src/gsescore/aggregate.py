@@ -18,7 +18,7 @@ Loan-level data never leaves the local warehouse; only these aggregates are publ
                seller-level adoption, built in lenders.py
   borrowers, borrower_profile
                which scores loans carry, and borrower mix by score group, built in borrowers.py
-  rates        how a VS4 loan's note rate compares with comparable FICO loans, by three methods, built in pricing.py; dashboard only
+  rates        how a VS4 loan's note rate compares with comparable FICO loans, by three methods, built in pricing.py
   choice, ceiling, rules, score_mix
                when lenders price on VS4, how high its share could go, and which scores loans carry, built in scores.py
   outlook      where VS4's share could go, lender by lender, built in outlook.py

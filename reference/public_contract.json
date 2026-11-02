@@ -43,10 +43,6 @@
     "fields": ["actual", "actual_upb", "agency", "complete", "ex_top2", "ex_top2_upb", "excluded", "fixed", "fixed_upb", "period", "scored", "start"],
     "views": {}
   },
-  "asof": {
-    "fields": ["agency", "as_of", "day", "final_seen_share", "final_vs4_share", "final_vs4_upb_share", "first_month", "gap", "gap_upb", "kind", "last_month", "month", "months", "scored_loans", "vs4_share", "vs4_share_hi", "vs4_share_lo", "vs4_upb_share", "vs4_upb_share_hi", "vs4_upb_share_lo"],
-    "views": {}
-  },
   "borrowers": {
     "fields": ["bucket", "bucket_order", "cover", "dim", "dim_label", "expected", "group_loans", "grp", "loans", "share"],
     "views": {}
@@ -182,6 +178,29 @@
       "meta": ["before_lead_k", "before_lead_n", "before_second_k", "before_second_n", "factor", "fha_k", "fha_n", "files", "first", "first_issue", "gap", "high", "high_elsewhere", "last", "last_issue", "lead", "lead_high_of_top", "leaders_share", "m1", "m2", "ref_classic", "ref_far_all", "ref_far_at_top", "ref_high_of_top", "ref_n", "ref_vs4", "second", "second_high_of_top", "since", "top", "va_n", "view", "window_k"],
       "month": ["full", "k", "key", "label", "month", "n", "share", "signal", "view"],
       "range": ["full", "high", "k", "key", "label", "low", "n", "share", "signal", "view"]
+    }
+  },
+  "rates": {
+    "fields": ["above", "abs_p90", "answer", "as_of", "band", "cell20", "cell5", "cell5_se", "changed", "close", "comparators", "correspondent_out", "dated", "description", "detail", "diff", "diff_se", "dim", "dot", "dot_raw", "eq", "eq_hi", "eq_lo", "equivalent_caption", "equivalent_more", "equivalent_stat", "est", "expected", "fannie", "fannie_n", "fico_mean", "fico_rare", "fico_rare_n", "flag", "gap", "gap_line", "group", "guard", "hi", "hi_raw", "in_share", "key", "label", "lender_line", "lender_rates", "lender_weeks", "less20", "less20_se", "limit", "lines", "llpa_share", "llpa_sum", "lo", "lo_raw", "loans", "lower_dot", "lower_gap", "lower_hi", "lower_lo", "lower_n", "lower_rough", "lower_se", "max", "mid", "milliman_line", "min", "miss_share", "model", "model_n", "model_se", "money", "n", "n_lender_channels", "n_loans", "n_under_820", "n_vs4", "n_vs4_fico", "not_like_for_like", "number_bands", "number_blend", "number_caption", "number_why", "offset_tail", "on_fico", "on_fico_se", "on_vs4", "on_vs4_se", "order", "p2_5", "p97_5", "pass", "points", "pool", "provisional_from", "purpose", "rc_kept", "rc_reason", "reaches_back", "read", "read20", "read5", "read_number", "read_tier", "rocket", "rocket_n", "rule_at_lock", "said_check", "same_dot", "same_fico_dot", "same_fico_hi", "same_fico_lo", "same_fico_mid", "same_fico_n", "same_fico_read5", "same_fico_read_tier", "same_fico_rough", "same_fico_se", "same_fico_shown_cell5", "same_fico_shown_read5", "same_fico_shown_read_tier", "same_fico_shown_tier", "same_fico_under820", "same_fico_weeks", "same_gap", "same_hi", "same_llpa_dot", "same_llpa_hi", "same_llpa_lo", "same_llpa_mid", "same_llpa_n", "same_llpa_read5", "same_llpa_read_tier", "same_llpa_rough", "same_llpa_se", "same_llpa_shown_cell5", "same_llpa_shown_read5", "same_llpa_shown_read_tier", "same_llpa_shown_tier", "same_llpa_weeks", "same_lo", "same_n", "same_number_dot", "same_number_hi", "same_number_lo", "same_number_mid", "same_number_n", "same_number_read5", "same_number_read_tier", "same_number_rough", "same_number_se", "same_number_shown_cell5", "same_number_shown_read5", "same_number_shown_read_tier", "same_number_shown_tier", "same_number_weeks", "same_rough", "same_se", "sample", "scope", "score_lead", "se", "sentence", "shape", "slope", "spread_hi", "spread_lo", "stamp", "stamp_more", "state", "strong", "sub", "test_line", "text", "th", "thin", "tier", "tier_se", "title", "tl", "top_share", "unit", "use_above", "use_below", "use_below_early", "use_below_early_n", "use_below_late", "use_below_late_n", "use_bp", "uwm", "uwm_broker", "uwm_broker_n", "uwm_correspondent", "uwm_correspondent_n", "uwm_n", "value", "view", "vs_mean", "what", "without_top", "without_top_n", "without_top_se"],
+    "views": {
+      "meta": ["shape", "as_of", "stamp", "dated"],
+      "row": ["key", "order", "title", "n"],
+      "answer": ["key", "order", "text"],
+      "limit": ["key", "order", "text"],
+      "line": ["key", "label", "order"],
+      "past": ["key", "label", "order"],
+      "steps": ["key", "label", "order"],
+      "same_number": ["key", "label", "order"],
+      "fico_gap": ["key", "label"],
+      "equivalent": ["band", "key"],
+      "lender": ["key", "label", "order"],
+      "cut": ["dim", "key", "label"],
+      "check": ["key", "label", "order"],
+      "milliman": ["key", "label", "order"],
+      "follows_score": ["group", "key", "label", "scope"],
+      "llpa_rate": ["key", "label", "purpose"],
+      "quote": ["order", "text"],
+      "behind": ["key", "order", "what"]
     }
   }
 }

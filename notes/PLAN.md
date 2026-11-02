@@ -99,7 +99,7 @@ local in notes/ANALYTICS_PLAN.md)
    month takes its own ceiling from records with every score, since counting its VS4 loans as better and
    its FICO loans at the market rate overstates a lender already choosing between scores.
 3. Pricing. Done Oct 29, 2026 on the private dashboard; rebuilt Oct 31, 2026, when the first version's rate
-   figures were withdrawn. src/gsescore/pricing.py writes the dashboard-only dataset rates: how a VS4 loan's
+   figures were withdrawn. src/gsescore/pricing.py writes the dataset rates: how a VS4 loan's
    note rate compares with comparable FICO loans, at the same FICO and at the same score number, by three
    methods. Its docstring describes the sample, the methods and each view. Upfront fees: see Phase 3, item 4.
    Next: note rate minus pass-through rate (retained servicing). Points and lender credits are not disclosed.

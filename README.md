@@ -4,12 +4,12 @@ Tracks VantageScore 4.0 vs FICO in US mortgages: Fannie Mae and Freddie Mac MBS 
 loan-level issuance disclosure files, plus the federal HMDA record, SEC Form ABS-15G filings and Ginnie Mae
 loan files for the rest of the market. Plan and definitions: [notes/PLAN.md](notes/PLAN.md).
 Public site: https://minajpara-cyber.github.io/vantagescore-adoption-tracker/ (served from docs/, refreshed weekly).
-A private claude.ai dashboard (since Oct 29, 2026) gets new views first. The two pages differ since
-Oct 31, 2026, when the old rate section and the rate figures left the public page.
+A private claude.ai dashboard (since Oct 29, 2026) gets new views first. The whole page, with the
+rebuilt Rates tab, was last copied to the public site on Nov 2, 2026.
 
 New analysis goes to the private dashboard first. The public site keeps its own copy of the page
 (site/public/) and dataset list (`PUBLIC_DATASETS` in src/gsescore/site.py) until a view goes public:
-copy it there and add its datasets (the whole page was last copied Oct 30, 2026). `PUBLIC_DROP` lists the
+copy it there and add its datasets (the whole page was last copied Nov 2, 2026). `PUBLIC_DROP` lists the
 fields a dataset's public copy leaves out, and reference/public_contract.json each public file's fields
 and views: a test holds the builders to it, and `refresh` warns when a listed one goes missing from docs/data.
 
@@ -22,9 +22,9 @@ data/warehouse/{loan,security}/...         one parquet per ingested file (all co
 data/warehouse/manifest.jsonl              what was ingested, with header and row counts
 data/gse.duckdb                            DuckDB with the views below, for ad-hoc SQL
 site/data/*.json                           aggregates the pages read (git-ignored; docs/data holds the public site's copies)
-site/data/rates.json                       the weekly rate read, built in src/gsescore/pricing.py: dashboard only, never on the public site's list
+site/data/rates.json                       the weekly rate read, built in src/gsescore/pricing.py
 site/dashboard/                            the private dashboard page (claude.ai Dashboard type): index.html, page.css, app.js, tools.js, visuals.js, market.js. Tabs: Overview, Rates, Outlook, Lenders, Why lenders choose, Borrowers, Whole market, Method
-site/public/                               the public site's own copy of the page, pinned until a new view goes public; its Pricing tab has no rate read
+site/public/                               the public site's own copy of the page, pinned until a new view goes public
 site/standalone/                           template + `dash` stand-in that turn a page into a static site
 docs/                                      the public site (GitHub Pages serves main:/docs), aggregates only
 reference/sellers.csv                      hand-kept seller names, short labels, parent companies, tickers and lender types

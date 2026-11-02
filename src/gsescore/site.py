@@ -6,10 +6,9 @@ source runs as a plain static site too. Only aggregate datasets are copied.
 
 The public site is pinned to its own copy of the page (site/public/) and dataset list: new analysis
 goes to the private claude.ai dashboard first and reaches the public site only once the dashboard
-page is copied there and its datasets added below (last done Oct 30, 2026, with every tab and
-dataset). The public page differs from the dashboard since Oct 31, 2026, when the old rate section and
-the rate figures left it. `build_preview()` builds the full dashboard page as a static site under
-build/preview/ (git-ignored) for checking it locally.
+page is copied there and its datasets added below (last done Nov 2, 2026, with every tab and
+dataset, the rate read included). `build_preview()` builds the full dashboard page as a static site
+under build/preview/ (git-ignored) for checking it locally.
 
 reference/public_contract.json lists each public file's fields and views, names only. A test holds the
 builders to it on planted data, and `contract_warnings()` reads the real docs/data for the weekly report.
@@ -26,8 +25,8 @@ from .pricing import check_warnings
 
 # What the public page reads; keep it to datasets cleared for the public site.
 PUBLIC_DATASETS = ["monthly", "weekly", "summary", "events", "sellers", "seller_monthly", "seller_weekly",
-                   "seller_splits", "adoption", "adopters", "series", "asof", "borrowers", "borrower_profile",
-                   "choice", "ceiling", "outlook", "rules", "score_mix", "lender_stage", "statements", "fees",
+                   "seller_splits", "adoption", "adopters", "series", "borrowers", "borrower_profile",
+                   "rates", "choice", "ceiling", "outlook", "rules", "score_mix", "lender_stage", "statements", "fees",
                    "week_note", "assumptions", "lender_mix", "closing", "whole_market", "private_label", "ginnie_va"]
 # What the claude.ai dashboard page reads; data/dashboard_uploads.json records the version of each it has.
 DASHBOARD_DATASETS = ["monthly", "weekly", "summary", "events", "sellers", "seller_monthly", "seller_weekly",
@@ -35,7 +34,7 @@ DASHBOARD_DATASETS = ["monthly", "weekly", "summary", "events", "sellers", "sell
                       "rates", "choice", "ceiling", "outlook", "rules", "score_mix", "lender_stage", "statements", "fees",
                       "week_note", "assumptions", "lender_mix", "closing", "whole_market", "private_label", "ginnie_va"]
 # Fields the public copy of a dataset leaves out: "field" on every row, "view.field" on that view's rows. fees: the yearly figure "if every lender
-# took the lower fee", withdrawn Oct 31, 2026, and what reads or scales to it. The public table still reads a lender's option_bp and est_usd.
+# took the lower fee", withdrawn Oct 31, 2026, and what reads or scales to it.
 PUBLIC_DROP = {"fees": ["option_annual_usd", "option_usd", "annual_upb", "upb", "market.option_bp", "market.est_usd", "market.one_loans"]}
 RATE_READ_DAYS = 14  # the weekly report warns once the rate read's data is older than this
 UPLOADS = paths.DATA / "dashboard_uploads.json"

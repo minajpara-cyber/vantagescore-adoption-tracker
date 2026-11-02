@@ -1,4 +1,4 @@
-"""Rate engine: how a VS4 loan's note rate compares with comparable FICO loans, by three methods, for site/data/rates.json (dashboard only).
+"""Rate engine: how a VS4 loan's note rate compares with comparable FICO loans, by three methods, for site/data/rates.json.
 
 Sample: 30-year fixed loans priced on Classic FICO or VS4 with a score and an LTV, first disclosed from WEEKLY_START and closed from CLOSE_FROM (closing.py), in every
 issue month, since the reads go by week first disclosed and closing month. A rate is set at lock; those two dates stand in for it. A score that shows is a fact and one

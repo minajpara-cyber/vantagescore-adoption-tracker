@@ -1,6 +1,6 @@
 // The whole market. From HMDA: which score lenders named on every kind of loan, which lenders named what, who uses each model, and applications per loan.
 // From SEC filings: which model private-label deal reports name, and how much of the market they let us see.
-// From Ginnie Mae's loan files: whose VA loans show scores Classic FICO almost never reaches.
+// From Ginnie Mae's loan files: whose VA loans show scores Classic FICO almost never gets to.
 // Runs after the other scripts; what they share is on window.vx.
 (() => {
   const vx = window.vx;

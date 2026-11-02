@@ -3062,7 +3062,7 @@ public_reads, dashboard_reads = page_reads(public_page), page_reads(dashboard_pa
 assert public_reads and public_reads <= set(PUBLIC_DATASETS), public_reads - set(PUBLIC_DATASETS)
 assert dashboard_reads and dashboard_reads <= set(DASHBOARD_DATASETS), dashboard_reads - set(DASHBOARD_DATASETS)
 assert "rate_readout" not in DASHBOARD_DATASETS and "rate_readout" not in PUBLIC_DATASETS and "pricing" not in PUBLIC_DATASETS and "pricing" not in DASHBOARD_DATASETS
-assert "rates" in DASHBOARD_DATASETS and "rates" not in PUBLIC_DATASETS and "rates" not in public_reads, "the rate read stays on the dashboard"
+assert "rates" in DASHBOARD_DATASETS and "rates" in PUBLIC_DATASETS and "rates" in public_reads, "the rate read went public on Nov 2, 2026"
 assert "rates" in dashboard_reads and "rate_readout" not in dashboard_reads and "pricing" not in public_reads | dashboard_reads, (public_reads, dashboard_reads)
 
 # The Rates tab reads only what the builder writes, on planted data: every meta field and limit key, every field of a row, and each lender read. A term on the page has its definition.
@@ -3225,7 +3225,7 @@ assert "A lender can change its pick at once, but rates on loans locked since th
 assert 'class="h-top2"' in page_index and "TOP_SHORT = { 'ROCKET MORTGAGE, LLC': 'Rocket', 'UNITED WHOLESALE MORTGAGE, LLC': 'UWM' }" in page_js and "'Two lenders'" in page_js and 'of <span class="mx-month" data-source="score_mix" data-field="start">—</span> loans have a Classic FICO.' in page_index, "the header names the two lenders where the file's two are the ones it knows, and gives the share its month"
 assert "event.target.querySelector('.vx-chart, table, .vx-note, .vx-sec-h')) draw();" in page_js, "a fold of plain text keeps a selection and a focused term"
 
-# What is withdrawn stays off the page sources. The public page only loses figures; the private page loses more and takes its rate figures from rates.
+# What is withdrawn stays off the page sources, on both pages.
 RATE_LABELS_GONE = ("net_bp", "premium_bp", "reaches_fee", "option_annual_usd", "Shows in the rate", "None visible", "against the FICO model", "Before that check", "VS4 loans compared", "typical miss", "Where does the fee saving go?", "About all",
                     "How spread out", "By type of loan", "A lower fee showing in the rate", "Same fee, rate against its own FICO loans", "of a lower fee shows in its note rate", "investors charging", "if every lender took the lower fee")
 PUBLIC_GONE = RATE_LABELS_GONE + ("rate_readout", "m.option_bp")
@@ -3266,19 +3266,21 @@ def holds_contract(name, got):
 
 for name, got in planted_rows.items():
     holds_contract(name, got)
-assert [name for name, got in planted_rows.items() if not got] == ["seller_weekly"], [name for name, got in planted_rows.items() if not got]  # no lender here has enough VS4 loans for a row
+assert [name for name, got in planted_rows.items() if not got] == ["seller_weekly", "rates"], [name for name, got in planted_rows.items() if not got]  # no lender here has enough VS4 loans for a row, nor these files FICO loans enough to fit a model
 assert not any(r["kind"] == "rate" for r in planted_rows["week_note"] if r["view"] == "line"), planted_rows["week_note"]
+for planted_view in (views, views_b, views_between, views_grow, views_line, views_past, views_rc):
+    holds_contract("rates", [r for got in planted_view.values() for r in got])  # the rate read's own planted builds
 for name, got in (("fees", fee), ("outlook", res), ("week_note", wn), ("closing", cl7), ("lender_stage", why.build_datasets(c4, "2026-12-01")["lender_stage"]), ("lender_mix", split4_rows),
                   ("ceiling", built2["ceiling"]), ("rules", built2["rules"]), ("score_mix", built2["score_mix"]), ("choice", built2["choice"])):
     holds_contract(name, public_rows(name, got))  # the views these builders reach only on the planted tables above
 assert {(name, view) for name, want in contract.items() for view in want["views"]} - reached == {("score_mix", "vs_only")}, reached  # no VS4-only loans in records with the indicator here
 
-# The public build: the fees file loses the withdrawn figure and what scales to it, a lender keeps option_bp, a dashboard-only file missing from site/data does not matter, and a file the page no longer reads goes.
+# The public build: the fees file loses the withdrawn figure and what scales to it, a lender keeps option_bp, and a file the page no longer reads goes.
 site.STANDALONE, site.PUBLIC_PAGE, site.DASHBOARD_PAGE = gse_paths.REPO / "site" / "standalone", public_page / "index.html", dashboard_page / "index.html"
 assert site.DOCS == home / "docs" and site.PREVIEW == home / "build" / "preview"
 (site.DOCS / "data").mkdir(parents=True)
 (site.DOCS / "data" / "pricing.json").write_text('{"rows":[]}')
-assert "data/fees.json" in site.build_site() and not (site.DOCS / "data" / "pricing.json").exists() and not (site.DOCS / "data" / "rates.json").exists()
+assert "data/fees.json" in site.build_site() and not (site.DOCS / "data" / "pricing.json").exists() and (site.DOCS / "data" / "rates.json").exists()
 pub_fees = json.loads((site.DOCS / "data" / "fees.json").read_text())["rows"]
 pub_market, pub_lender = [r for r in pub_fees if r["view"] == "market"], [r for r in pub_fees if r["view"] == "lender"]
 assert pub_market and pub_lender and pub_market == public_rows("fees", [r for r in json.loads((gse_paths.SITE_DATA / "fees.json").read_text())["rows"] if r["view"] == "market"]), pub_market
