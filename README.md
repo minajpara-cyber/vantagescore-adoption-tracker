@@ -22,6 +22,7 @@ data/warehouse/{loan,security}/...         one parquet per ingested file (all co
 data/warehouse/manifest.jsonl              what was ingested, with header and row counts
 data/gse.duckdb                            DuckDB with the views below, for ad-hoc SQL
 site/data/*.json                           aggregates the pages read (git-ignored; docs/data holds the public site's copies)
+site/data/rates.json                       the weekly rate read, built in src/gsescore/pricing.py: dashboard only, never on the public site's list
 site/dashboard/                            the private dashboard page (claude.ai Dashboard type): index.html, page.css, app.js, tools.js, visuals.js, market.js. Tabs: Overview, Rates, Outlook, Lenders, Why lenders choose, Borrowers, Whole market, Method
 site/public/                               the public site's own copy of the page, pinned until a new view goes public; its Pricing tab has no rate read
 site/standalone/                           template + `dash` stand-in that turn a page into a static site
@@ -63,8 +64,9 @@ Downloads. Then:
 The weekly refresh is a scheduled task in the Claude app (Mondays 9:00): it opens both portals in
 Chrome, asks you to sign in if needed, runs the collector, then `refresh`, uploads the dashboard
 datasets `dashboard-changes` lists (and records them with `dashboard-record`), and `publish`. The report
-`refresh` prints has `warnings` (a public contract view or field missing from docs/data; the rate read past
-14 days old, or unreadable) and `rate_read_as_of`; none of them stops the run.
+`refresh` prints has `warnings` (a public contract view or field missing from docs/data; the rate read in
+site/data/rates.json past 14 days old, or unreadable; a rate build check that missed) and `rate_read_as_of`;
+none of them stops the run.
 
 Files on the portal (Oct 2026): intraday loan files `fl{YYMMDD}[_N].zip` / `FNM_ILLD_{YYYYMMDD}_{N}.zip`
 back to Jul 1, 2026 (about four months kept); month-end files `FRE_ILLD_{YYYYMM}.zip` /

@@ -2,7 +2,7 @@
 // Runs after the page's main script, which shares what these need on window.vx. Yours to change on the page; nothing here is saved.
 (() => {
   const vx = window.vx;
-  const { root, rowsOf, statusOf, int, pct1, money, usdM, ptsSigned: signed, inkOn, olName, olPct, openSeller, monthYear, monthLabel, shortDay, prep, svgFor, bandFrame, yAxis, bandAxis, bandHover, legend, MIX_GROUPS, ADOPT_FROM } = vx;
+  const { root, rowsOf, statusOf, int, pct1, money, usdM, ptsSigned: signed, readText, LENDER_READS, inkOn, olName, olPct, openSeller, monthYear, monthLabel, shortDay, prep, svgFor, bandFrame, yAxis, bandAxis, bandHover, legend, MIX_GROUPS, ADOPT_FROM } = vx;
   const pct0 = d3.format('.0%');
   const one = d3.format('.1f');
   const num = (v) => (Number.isInteger(v) ? String(v) : String(Math.round(v * 100) / 100));
@@ -133,10 +133,12 @@
     return (r) => !scored.get(r.start) || r.loans / scored.get(r.start) >= COVER_MIN;
   };
   vx.coveredWeek = coveredWeek;
-  const inLabel = (a) => (a != null && a < IN_MIN ? `${Math.round(a * 20) * 5}% in` : null);
+  const inPct = (a) => (a < 0.025 ? 'under 5%' : `${Math.round(a * 20) * 5}%`);  // a month that has barely begun does not print as none in
+  const inLabel = (a) => (a != null && a < IN_MIN ? `${inPct(a)} in` : null);
+  vx.inLabel = inLabel;
   const closeBar = (r, n, split, priced, more) => {
     const tag = inLabel(r.arrived);
-    const rows = [...more, ...(tag ? [[null, 'Arrived so far, estimated', `about ${Math.round(r.arrived * 20) * 5}%`]] : [])];
+    const rows = [...more, ...(tag ? [[null, 'Arrived so far, estimated', `${r.arrived < 0.025 ? '' : 'about '}${inPct(r.arrived)}`]] : [])];
     const title = `${monthYear(r.start)} closings, ${int(n)} loans${tag ? ' so far' : ''}`;
     return split ? { key: r.start, ...split, tag, more: rows, title } : { key: r.start, pre: priced, tag, more: rows, title };
   };
@@ -410,6 +412,19 @@
     return out.slice(0, 4);
   }
 
+  function drawCompanyRate(l) {
+    const rates = vx.rateRows(rowsOf('rates'));
+    const box = document.getElementById('co-rate-box');
+    box.hidden = !rates.length;
+    if (!rates.length) return;
+    const r = rates.find((d) => d.view === 'lender' && d.scope === 'card' && d.key === l.id);
+    const read = (k) => (r[`${k}_dot`] == null ? 'Too few to compare' : `${readText(r[`${k}_dot`], r[`${k}_lo`], r[`${k}_hi`])}${r[`${k}_rough`] ? ', rough' : ''}`);
+    fillTable(document.getElementById('co-rate'), r ? LENDER_READS.map(([k, label]) => [[label, 'vx-l'], [read(k), 'vx-l']]) : [[['Too few to compare', 'vx-l']]]);
+    const note = document.getElementById('co-rate-note');
+    note.hidden = !(r && r.correspondent_out);
+    note.textContent = 'Rocket correspondent left out';
+  }
+
   function drawCompany(p) {
     const card = document.getElementById('co-read');
     if (!card) return;
@@ -448,6 +463,7 @@
     add('20 or more points higher', l.above == null ? null : pct0(l.above));
     add(`Both scores${l.both_at === 'FNMA' ? ' at Fannie Mae' : ''}, earlier to latest weeks`, l.both_early == null || l.both_late == null ? null : fromTo(l.both_early, l.both_late));
     fillTable(document.getElementById('co-facts'), facts);
+    drawCompanyRate(l);
 
     const list = (id, items) => document.getElementById(id).replaceChildren(...items);
     const q = asks(l, banks);

@@ -22,6 +22,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from . import paths
+from .pricing import check_warnings
 
 # What the public page reads; keep it to datasets cleared for the public site.
 PUBLIC_DATASETS = ["monthly", "weekly", "summary", "events", "sellers", "seller_monthly", "seller_weekly",
@@ -31,12 +32,12 @@ PUBLIC_DATASETS = ["monthly", "weekly", "summary", "events", "sellers", "seller_
 # What the claude.ai dashboard page reads; data/dashboard_uploads.json records the version of each it has.
 DASHBOARD_DATASETS = ["monthly", "weekly", "summary", "events", "sellers", "seller_monthly", "seller_weekly",
                       "seller_splits", "adoption", "adopters", "series", "borrowers", "borrower_profile",
-                      "rate_readout", "choice", "ceiling", "outlook", "rules", "score_mix", "lender_stage", "statements", "fees",
+                      "rates", "choice", "ceiling", "outlook", "rules", "score_mix", "lender_stage", "statements", "fees",
                       "week_note", "assumptions", "lender_mix", "closing", "whole_market", "private_label", "ginnie_va"]
 # Fields the public copy of a dataset leaves out: "field" on every row, "view.field" on that view's rows. fees: the yearly figure "if every lender
 # took the lower fee", withdrawn Oct 31, 2026, and what reads or scales to it. The public table still reads a lender's option_bp and est_usd.
 PUBLIC_DROP = {"fees": ["option_annual_usd", "option_usd", "annual_upb", "upb", "market.option_bp", "market.est_usd", "market.one_loans"]}
-RATE_READ_DAYS = 14  # the weekly report warns once the dated rate read is older than this
+RATE_READ_DAYS = 14  # the weekly report warns once the rate read's data is older than this
 UPLOADS = paths.DATA / "dashboard_uploads.json"
 CONTRACT = paths.REPO / "reference" / "public_contract.json"
 DOCS = paths.ROOT / "docs"
@@ -95,7 +96,7 @@ def dashboard_changes() -> list[dict]:
     out = []
     for name in DASHBOARD_DATASETS:
         path = paths.SITE_DATA / f"{name}.json"
-        if not path.exists():  # rate_readout alone is written by hand; rate_read_status warns, and the dashboard keeps its last upload
+        if not path.exists():
             continue
         sha = _sha256(path)
         if done.get(name, {}).get("sha256") != sha:
@@ -156,13 +157,14 @@ def contract_warnings() -> list[str]:
 
 
 def rate_read_status(today: date | None = None) -> tuple[str | None, list[str]]:
-    """The date of the rate read (rate_readout.json's meta row) and a warning if it is old, missing or unreadable. Never raises."""
+    """The date of the rate read (rates.json's meta row), a warning if it is old, missing or unreadable, and one for each build check that missed. Never raises."""
     try:
-        rows = json.loads((paths.SITE_DATA / "rate_readout.json").read_text())["rows"]
+        rows = json.loads((paths.SITE_DATA / "rates.json").read_text())["rows"]
         as_of = next(r["as_of"] for r in rows if r.get("view") == "meta")
         age = (today or date.today()) - date.fromisoformat(as_of)
+        checks = check_warnings(rows)
     except Exception as e:
-        return None, [f"rate read: could not read the date in site/data/rate_readout.json: {e!r}"]
+        return None, [f"rate read: could not read the date in site/data/rates.json: {e!r}"]
     if age > timedelta(days=RATE_READ_DAYS):
-        return as_of, [f"rate read: data through {as_of} is {age.days} days old, past the {RATE_READ_DAYS}-day limit"]
-    return as_of, []
+        return as_of, [f"rate read: data through {as_of} is {age.days} days old, past the {RATE_READ_DAYS}-day limit", *checks]
+    return as_of, checks

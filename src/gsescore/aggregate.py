@@ -18,7 +18,7 @@ Loan-level data never leaves the local warehouse; only these aggregates are publ
                seller-level adoption, built in lenders.py
   borrowers, borrower_profile
                which scores loans carry, and borrower mix by score group, built in borrowers.py
-  pricing      VS4 note rates against a model of FICO-priced loans' rates, built in pricing.py; since Oct 31, 2026 only the workbook reads it
+  rates        how a VS4 loan's note rate compares with comparable FICO loans, by three methods, built in pricing.py; dashboard only
   choice, ceiling, rules, score_mix
                when lenders price on VS4, how high its share could go, and which scores loans carry, built in scores.py
   outlook      where VS4's share could go, lender by lender, built in outlook.py
@@ -44,16 +44,13 @@ from .hmda import build_datasets as build_hmda_datasets
 from .lenders import build_datasets as build_lender_datasets
 from .notes import build_datasets as build_note_datasets
 from .outlook import build_datasets as build_outlook_datasets
-from .pricing import build_pricing
+from .pricing import WEEKLY_START, build_rates
 from .scores import build_datasets as build_score_datasets
 from .warehouse import INTRADAY_ISSUE_MONTH_SQL, SCORE_MODEL_SQL, connect
 from .why import build_datasets as build_why_datasets
 
 # VS4 fields went live Nov 17, 2025; the first month-end file on the portal is December 2025.
 SERIES_START = "2025-11-01"
-# The portal's intraday history starts Jul 1, 2026, and a loan is republished for up to ~3 weeks
-# (90th percentile 20 days), so weeks before this would count June disclosures as new.
-WEEKLY_START = "2026-07-20"
 # Broad availability began Sep 8-10, 2026: the summary counts sellers from loans issued from September.
 LENDER_START = "2026-09-01"
 # Borrower-mix window: issue months with meaningful VS4 volume (>4% from July 2026).
@@ -302,7 +299,7 @@ def build(out_dir: Path = paths.SITE_DATA) -> dict:
     more |= build_closing_datasets(con, more["lender_stage"])
     more |= build_fee_datasets(con, last_month)
     more |= build_outlook_datasets(con, LENDER_START)  # needs the ceiling's loans (scores.py) and the seller tables
-    more["pricing"] = build_pricing(con, WEEKLY_START, in_range)
+    more["rates"] = build_rates(con, more["closing"])  # every issue month, not in_range: its reads go by week first disclosed and closing month
     more |= build_note_datasets(con, more["statements"], more["score_mix"])
     more |= build_exposure_datasets(con, more["score_mix"])
     more |= build_hmda_datasets()

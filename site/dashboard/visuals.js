@@ -333,16 +333,16 @@
   const TERMS = [
     ['gse', 'GSE', 'Fannie Mae or Freddie Mac. This site covers loans they put into mortgage-backed securities.'],
     ['vs4', 'VS4', 'VantageScore 4.0, the credit score the GSEs began accepting alongside Classic FICO.'],
-    ['priced', 'Priced on VS4', 'VS4 was the score that set the loan\'s upfront fee. The GSEs disclose which score did this on each loan.'],
+    ['priced', 'Priced on VS4', 'VS4 was the score that set the loan\'s LLPA. On records from Oct 19, 2026, which reach back to loans first disclosed in late September, the GSEs state this; before that it comes from the one score shown.'],
     ['carrying', 'Carrying VS4', 'The loan shows a VS4 score, whichever score priced it. A lender can carry VS4 and still price on FICO. The share is a floor: a loan can have a VS4 that does not show.'],
     ['both', 'Both scores', 'The GSE file shows both a Classic FICO and a VS4 on the loan. One of them priced it.'],
     ['only', 'FICO only, VS4 only', 'The file shows just that one score. That does not mean the other was never pulled: lenders deliver one score, and at Freddie Mac some lenders\' loans often show only the one that priced them. So these shares are ceilings on loans with only one score.'],
-    ['floor', 'Floor, ceiling, exact', 'A score that does not show is unknown, not absent. So the share showing a score is a floor on loans that have it: the true share is at least this. The share showing only one score is a ceiling on loans that have only that one: the true share is at most this. The share priced on VS4 is exact, because the GSEs state it for every loan.'],
+    ['floor', 'Floor, ceiling, exact', 'A score that does not show is unknown, not absent. So the share showing a score is a floor on loans that have it: the true share is at least this. The share showing only one score is a ceiling on loans that have only that one: the true share is at most this. The share priced on VS4 is exact: the GSEs state it on records with the Pricing Indicator, and before that the one score shown names it.'],
     ['every', 'Records that show every score', 'Since Oct 19, 2026 the GSE files show every score the GSE has on a loan and which one priced it. Before that they showed only the score that priced the loan, so older bars are a floor.'],
     ['frozen', 'Lender mix frozen', 'Each week different lenders deliver different amounts. Freezing the mix gives each lender a fixed weight, its share of all the weeks shown, so only changes in what lenders do can move the number.'],
     ['llpa', 'LLPA', 'The GSEs\' upfront charge on a loan, by its credit score, LTV and purpose. It has been one grid for both scores since Oct 1, 2026, and that grid matches Fannie Mae\'s matrix of Sep 30, 2026.'],
     ['fee', 'Upfront fee', 'The same charge as the LLPA, under the name some tabs still use.'],
-    ['rule', 'A lender\'s rule', 'When it chooses VS4. A 20-point rule means using VS4 only when its score beats FICO by 20 or more points, which matched the fees before Oct 1, 2026.'],
+    ['rule', 'A lender\'s rule', 'When it chooses VS4. A 20-point rule means using VS4 only when its score beats FICO by 20 or more points, which matched the LLPA grid before Oct 1, 2026.'],
     ['stage', 'Stage', 'How far a lender has gone: FICO only, a few VS4 loans, both scores shown, using VS4 some of the time, or most of the time its score is higher.'],
     ['channel', 'Channel', 'How the lender got the loan: retail (its own), broker, or correspondent (bought from another lender).'],
     ['week', 'By week', 'Loans by the week they first appeared in the GSEs\' intraday files, ahead of the month their pool is issued.'],
@@ -350,6 +350,18 @@
     ['closing', 'Closing month', 'The month the loan closed, as near as the files allow: its first payment month less two. A recent month is still arriving, so a label such as "60% in" estimates how much of it has come through so far.'],
     ['lender', 'Lender', 'The company that delivered the loan to the GSE. It is not always the one that made the loan.'],
     ['bp', 'bp', 'Basis point, a hundredth of a percentage point. A pt is a full percentage point.'],
+    ['note', 'Note rate', 'The interest rate written on the loan. Discount points and lender credits sit outside it, and these files do not show them.'],
+    ['samefico', 'Same FICO', 'A VS4 loan that shows a FICO, set against FICO loans at that FICO, with the lender, channel, timing, GSE, purpose and LTV held equal.'],
+    ['samenumber', 'Same score number', 'A VS4 loan\'s VS4 number, set against FICO loans whose FICO is that same number, with the same things held equal. The loan need not show a FICO.'],
+    ['vs4loan', 'VS4 loan', 'A loan priced on VS4: the Pricing Indicator says so or, on records before the indicator, VS4 is the only score shown.'],
+    ['ficoloan', 'FICO loan', 'A loan priced on Classic FICO. It may also carry a VS4.'],
+    ['oldrule', 'The old rule', 'For MBS issued before Oct 1, 2026, the LLPA grid counted a VS4 score as 20 points lower. From Oct 1 both scores use one grid.'],
+    ['switchpoint', 'Switch point', 'The point where a lender moves from FICO to VS4, by how far VS4 sits above FICO.'],
+    ['dates', 'The dates', 'In order: rate set (not disclosed), loan closes, first disclosed in a GSE file, issued into an MBS.'],
+    ['range95', '95% range', 'An approximate range for the estimate, from resampling lender and channel groups, or weeks inside them on Which FICO. At the switch point it comes from that fit\'s own error. Ends in the text are rounded outward. It does not cover points, credits or lock dates.'],
+    ['lenderweek', 'Lender-week', 'One lender\'s loans first disclosed in one week. Figures on under 8 of them are marked rough, outlined or hollow.'],
+    ['thin', 'Rough', 'A figure resting on few lender-weeks, one lender\'s loans in one week, with at least 5 loans.'],
+    ['methods', 'The 3 methods', 'Exact match with a 5-point score band sets each VS4 loan against FICO loans with the same lender, channel, timing, GSE, purpose and LTV range, in the same 5-point score band. Exact match with one LLPA tier does the same with one LLPA tier as the band (20 points under 640), so more loans find a match. A model fitted on FICO loans gives each VS4 loan the rate it predicts at that score, controlling for loan traits too. On the charts, the estimate is the midpoint of the two exact matches and the range spans all three.'],
     ['hmda', 'HMDA', 'The Home Mortgage Disclosure Act record: a yearly federal filing by nearly every mortgage lender, covering each application whatever became of it. It names the score model the lender relied on for the credit decision.'],
     ['fullsignal', 'Would reach 830 if all on VS4', 'How many of a group of VA loans would reach 830 if every loan showed VS4, from the odds at each Classic score on Fannie loans showing both scores. It sizes what a full move would look like at the top of the score range.'],
     ['abs15g', 'Form ABS-15G', 'Where a mortgage deal to be rated, registered or not, files its due diligence findings with the SEC, at least five business days before first sale. Some of these reports list each loan and the score model on it.'],
@@ -388,26 +400,45 @@
     const hostBox = root.getBoundingClientRect(), box = el.getBoundingClientRect();
     const left = Math.max(0, Math.min(box.left - hostBox.left, hostBox.width - pop.offsetWidth - 4));
     pop.style.left = `${left}px`;
-    pop.style.top = `${box.bottom - hostBox.top + 6}px`;
+    // It opens above its term where below would leave the viewport and above would not.
+    const h = pop.offsetHeight, up = box.bottom + 6 + h > innerHeight && box.top - 6 - h >= 0;
+    pop.style.top = `${up ? box.top - hostBox.top - h - 6 : box.bottom - hostBox.top + 6}px`;
   };
   root.addEventListener('pointerover', (event) => {
+    const dragged = event.pointerType === 'mouse' && event.buttons;  // a mouse drag selects, so it opens nothing, and one that began on the definition keeps it
     const el = event.target.closest('[data-term]');
-    if (el) showPop(el);
-    else if (popFor) hidePop();
+    if (el) { if (!dragged) showPop(el); }
+    else if (popFor && !(dragged ? pop.contains(getSelection().anchorNode) : event.target.closest('.vx-pop'))) hidePop();  // a pointer on the definition, or crossing the gap to it, keeps it, to read; a drag keeps it only if it began on it
   });
   root.addEventListener('focusin', (event) => {
     const el = event.target.closest('[data-term]');
     if (el) showPop(el);
   });
   root.addEventListener('focusout', (event) => {
-    if (event.target.closest('[data-term]')) hidePop();
+    if (event.target.closest('[data-term]') && !pop.matches(':hover')) hidePop();  // a press on the definition takes the focus from its term and keeps it
+  });
+  // A mouse leaving the page closes it, unless its term has the focus. A tap has no pointer left to leave.
+  root.addEventListener('pointerleave', (event) => {
+    if (popFor && event.pointerType !== 'touch' && document.activeElement !== popFor) hidePop();
+  });
+  document.addEventListener('keydown', (event) => {  // on the document, as a term under a mouse has no focus
+    if (event.key === 'Escape' && popFor) hidePop();
   });
   root.addEventListener('click', (event) => {
     const el = event.target.closest('[data-term]');
     if (el) return showPop(el);
-    if (popFor) hidePop();
+    if (popFor && !(event.target.closest('.vx-pop') && String(getSelection()))) hidePop();  // a tap on it closes it, as anywhere; a drag that selected its words does not
     const go = event.target.closest('[data-go]');
-    if (go) { show(go.dataset.go); window.scrollTo(0, 0); }
+    if (go) {  // a link reads as a link, so Back comes back here, whether or not a host's setLink moves this frame's URL. A host can refuse the entries.
+      try {
+        history.replaceState({ tab: root.querySelector('.vx-tabs [aria-selected="true"]').dataset.tab }, '', location.href);
+        history.pushState({ tab: go.dataset.go }, '', location.href);
+      } catch {}
+      show(go.dataset.go);
+      window.scrollTo(0, 0);
+      const goTab = document.getElementById(`tab-${go.dataset.go}`);  // the keyboard goes on from the tab it landed on, not from the top of the page
+      if (goTab) goTab.focus({ preventScroll: true });
+    }
     const more = event.target.closest('.vx-more-note');
     if (more) {
       const note = more.previousElementSibling;

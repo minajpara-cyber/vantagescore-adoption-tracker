@@ -3,7 +3,6 @@
   const AGENCIES = ['All', 'FNMA', 'FHLMC'];
   const AG_NAME = { All: 'Both GSEs', FNMA: 'Fannie Mae', FHLMC: 'Freddie Mac' };
   const AG_NOUN = { All: 'GSE', FNMA: 'Fannie Mae', FHLMC: 'Freddie Mac' };
-  const MODELS = ['VantageScore 4.0', 'Classic FICO'];
   const TABS = ['overview', 'pricing', 'outlook', 'lenders', 'scores', 'borrowers', 'market', 'method'];
   // The tab reads Rates and its id stays pricing, so a link to #rates opens it as well.
   const tabOf = (name) => (name === 'rates' ? 'pricing' : name);
@@ -26,7 +25,7 @@
   const longDay = (s) => d3.utcFormat('%b %-d, %Y')(parse(s));
   const shortDay = (s) => d3.utcFormat('%b %-d')(parse(s));
   const pts = (v) => `${ptsSigned(v * 100)} pts`;
-  const rangeDash = (s) => String(s).replace(/(\d[kKmM]?)-(\$?\d)/g, '$1–$2');  // the data files write ranges with a hyphen
+  const rangeDash = (s) => String(s).replace(/(\d[kKmM]?)-(\$?\d)/g, '$1–\u2060$2');  // the data files write ranges with a hyphen; the word joiner keeps a range on one line
   const enc = (s) => String(s).replace(/%/g, '%25').replace(/&/g, '%26').replace(/=/g, '%3D');
   const col = (i) => dash.colors[i % dash.colors.length];
   const agencyColor = (a) => col(Math.max(0, AGENCIES.indexOf(a)));
@@ -184,6 +183,7 @@
     });
   }
 
+  const TOP_SHORT = { 'ROCKET MORTGAGE, LLC': 'Rocket', 'UNITED WHOLESALE MORTGAGE, LLC': 'UWM' };
   function drawSummary(p) {
     const status = dash.data('summary').status;
     const all = rowsOf('summary');
@@ -205,6 +205,9 @@
     put('h-cur-month', 'current_month', monthYear, both, 'All');
     put('h-final-share', 'final_vs4_share', pct1, both, 'All');
     put('h-cur-share', 'current_vs4_share', pct1, both, 'All');
+    // It names the two largest where the file's two have short names here, and any other two stay unnamed.
+    const topNames = String(both.top2_sellers ?? '').split(' and ').map((name) => TOP_SHORT[name]);
+    root.querySelectorAll('.h-top2').forEach((el) => { el.textContent = topNames.length === 2 && topNames.every(Boolean) ? topNames.join(' and ') : 'Two lenders'; });
     // Between a month's final file and the next month joining the series, the latest month is the final one: nothing is "so far".
     root.querySelectorAll('.h-so-far').forEach((el) => { el.hidden = !!both.final_month && both.current_month === both.final_month; });
     root.querySelectorAll('.s-so-far').forEach((el) => { el.hidden = !!mine.final_month && mine.current_month === mine.final_month; });
@@ -238,8 +241,8 @@
   const svgFor = (box, W, H, label) => d3.select(box).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`)
     .attr('role', 'img').attr('aria-label', label);
 
-  function textWidth(svg, labels) {
-    const t = svg.append('text').attr('visibility', 'hidden');
+  function textWidth(svg, labels, size = null) {
+    const t = svg.append('text').attr('visibility', 'hidden').style('font-size', size);
     let w = 0;
     for (const s of labels) w = Math.max(w, t.text(s).node().getComputedTextLength());
     t.remove();
@@ -264,9 +267,14 @@
     if (!el) return;
     el.replaceChildren(...items.map(([color, label, kind, strong]) => {
       const item = document.createElement('span');
+      if (!color) {  // words alone, with no swatch
+        item.append(label);
+        return item;
+      }
       const sw = document.createElement('span');
-      sw.className = kind === 'line' ? 'vx-sw vx-sw-line' : kind === 'diamond' ? 'vx-sw vx-sw-diamond' : kind === 'dot' ? 'vx-sw vx-sw-dot' : 'vx-sw';
-      if (kind === 'diamond') sw.style.borderColor = color;
+      sw.className = kind === 'line' || kind === 'diamond' || kind === 'dot' || kind === 'outline' || kind === 'hollow' ? `vx-sw vx-sw-${kind}` : 'vx-sw';
+      if (kind === 'diamond' || kind === 'outline') sw.style.borderColor = color;
+      else if (kind === 'hollow') sw.style.color = color;
       else sw.style.background = color;
       item.append(sw, label);
       if (strong) item.style.color = 'var(--color-fg)';
@@ -298,7 +306,8 @@
         const [px, py] = d3.pointer(event, box);
         const w = tip.offsetWidth, h2 = tip.offsetHeight;
         tip.style.left = `${px + 14 + w > box.clientWidth ? Math.max(0, px - 14 - w) : px + 14}px`;
-        tip.style.top = `${Math.max(0, Math.min(py - h2 / 2, box.clientHeight - h2))}px`;
+        const top = Math.max(0, Math.min(py - h2 / 2, box.clientHeight - h2)), r = box.getBoundingClientRect();
+        tip.style.top = `${Math.max(-r.top + 4, Math.min(top, innerHeight - r.top - h2 - 4))}px`;
         tip.style.opacity = 1;
       },
       hide() { tip.style.opacity = 0; },
@@ -418,7 +427,7 @@
     const rule = svg.append('line').attr('y1', m.top).attr('y2', H - m.bottom)
       .attr('stroke', 'var(--cds-chart-axis)').attr('opacity', 0);
     const mids = [...new Set(data.map((r) => r.month))].map((mo) => ({ mo, t: parse(mo).getTime() + 14.5 * DAY }));
-    svg.append('rect').attr('x', m.left).attr('y', m.top).attr('width', W - m.left - m.right)
+    svg.append('rect').attr('x', m.left).attr('y', m.top).attr('width', Math.max(0, W - m.left - m.right))
       .attr('height', H - m.top - m.bottom).attr('fill', 'transparent')
       .on('pointermove', (event) => {
         const t = x.invert(d3.pointer(event)[0]).getTime();
@@ -1760,10 +1769,10 @@
       const using = d3.sum(whyRows('stage').filter((d) => d.key === 'pricing' || d.key === 'some'), (d) => d.lenders);
       return `${pr.users == null ? '—' : int(pr.users)} lenders have delivered a VS4 loan to the GSEs since September, and ${int(using)} price on it regularly. At most ${head.vs_only_share == null ? '—' : pct1(head.vs_only_share)} of loans have only VS4. This covers GSE loans only.`;
     }
-    if (r.check === 'pricing') return (rowsOf('rate_readout').find((d) => d.view === 'meta') || {}).said_check || '—';
+    if (r.check === 'pricing') return (rateRows(rowsOf('rates')).find((d) => d.view === 'meta') || {}).said_check || '—';
     if (r.check === 'fees') {
       const fm = rowsOf('fees').find((d) => d.view === 'market' && d.key === 'All') || {};
-      return fm.taken_annual_usd == null ? '—' : `On the grid, ${usdM(fm.taken_annual_usd)} a year in LLPAs not paid at today's use.`;
+      return fm.taken_annual_usd == null ? '—' : `On the grid, ${aboutUsd(fm.taken_annual_usd).replace('About', 'about')} a year in LLPAs not paid at today's use.`;
     }
     if (r.check === 'august') {
       const a = rowsOf('monthly').find((d) => d.agency === 'All' && d.month === '2026-08-01');
@@ -1940,50 +1949,270 @@
   }
 
   // ---- Rates ----
-  const RATE_KEY = [['var(--color-fg)', 'Central figure', 'dot'], [C_VS4, 'Spread across the fuller methods', 'box'],
-    ['var(--color-fg-muted)', 'Rough 95% range from redrawing lenders and channels at random', 'line']];
   const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
   const bpText = (v) => (Math.abs(v) < 0.05 ? '0' : d3.format('+.1~f')(v));
-  const bpFigure = (v) => (!isNum(v) ? '—' : Math.abs(v) < 0.05 ? 'about 0' : `${bpText(v)} bp`);
-  const bpSpan = (a, b) => (isNum(a) && isNum(b) ? `${bpText(a)} to ${bpText(b)} bp` : '—');
+  const TOO_FEW = 'Too few to compare';
+  const bpFigure = (v) => (!isNum(v) ? TOO_FEW : Math.abs(v) < 0.05 ? 'about 0' : `${bpText(v)} bp`);
+  const bpSpan = (a, b) => `${bpText(a)} to ${bpText(b)} bp`;
+  const spanLine = (color, label, a, b) => (isNum(a) && isNum(b) ? [[color, label, bpSpan(a, b)]] : []);
   const rateName = (r) => [r.title, r.sub].filter(Boolean).join(', ');
-
-  // The question, the answer, its chart and its limits. Every finding comes from rate_readout; a row or field it lacks is left out, never drawn as zero.
-  function drawRateAnswer() {
-    const st = dash.data('rate_readout').status;
-    const all = rowsOf('rate_readout');
-    const meta = all.find((r) => r.view === 'meta') || {};
-    mark('#ra-answer', 'answer', 'view=meta', st, meta.answer);
-    for (const f of ['stamp', 'dated', 'changed']) {
-      document.getElementById(`ra-${f}`).hidden = st !== 'loading' && !meta[f];
-      mark(`#ra-${f}`, f, 'view=meta', st, meta[f]);
+  const nearBp = (v) => Math.sign(v) * Math.floor(Math.abs(v) * 2 + 0.5) / 2;  // a figure the file keeps in decimals, on the printed rule's half points
+  const thinText = (r) => bpSpan(Math.floor(r.tl * 2) / 2, Math.ceil(r.th * 2) / 2);  // a 95% range prints outward at half points, as the sentences do
+  const readText = (dot, lo, hi) => (!isNum(dot) ? '—' : `${bpText(dot)}${isNum(lo) && isNum(hi) ? ` (${bpText(lo)} to ${bpText(hi)})` : ''}`);
+  const score = fixed(0);
+  const pct0 = d3.format('.0%');
+  const termSpan = (term, text) => {
+    const el = document.createElement('span');
+    el.dataset.term = term;
+    el.textContent = text;
+    return el;
+  };
+  const keyWords = (before, term, text, after) => {
+    const el = document.createElement('span');
+    el.append(before, termSpan(term, text), after);
+    return el;
+  };
+  const methodsWords = (before, after) => keyWords(before, 'methods', '3 methods', after);
+  const C_DOT = 'var(--color-fg)', C_THIN = 'var(--color-fg-muted)';
+  // The same legend words on every chart.
+  const rateKey = () => [[C_DOT, 'Dot: estimate', 'dot'], [C_VS4, methodsWords('Bar: how far the ', ' disagree, not a margin of error'), 'box'], [C_THIN, keyWords('Thin line: ', 'range95', '95% range', ', approximate'), 'line']];
+  const SAME_MARKS = [null, 'Dot and bar as above.'];
+  const roughKey = [C_VS4, 'Outlined bar: few weeks of loans.', 'outline'];
+  const RANGE_WORDS = 'How far the 3 methods disagree', THIN_WORDS = '95% range, approximate';
+  const weeksWords = (weeks, rough) => (isNum(weeks) ? (weeks < 8 ? `few lender-weeks (${int(weeks)})` : `${int(weeks)} lender-weeks`) : rough ? 'few lender-weeks' : null);
+  // How many of a row's loans the two exact-match methods reached.
+  const comparedLine = (r, count) => {
+    if (!isNum(r.read5) || !isNum(r.read_tier) || !isNum(r.n)) return [];
+    const [a, b] = [count(Math.min(r.read5, r.read_tier)), count(Math.max(r.read5, r.read_tier))];
+    return [[null, `Compared: ${a === b ? a : `${a} to ${b}`} of ${count(isNum(r.pool) ? r.pool : r.n)} loans`]];
+  };
+  // A lead holds one sentence; what follows it sits under it in the body's style. It ends at the first full stop before a capital or a digit, and not at a name's own stop, as in U.S. Bank or Mr. Cooper.
+  const leadSplit = (text) => {
+    for (const hit of (text || '').matchAll(/\.\s+[A-Z0-9]/g)) {
+      if (!/\b(?:U\.S|Mr)$/.test(text.slice(0, hit.index))) return [text.slice(0, hit.index + 1), text.slice(hit.index + 1).trim()];
     }
-    const list = document.getElementById('ra-limits');
+    return [text, null];
+  };
+
+  // The page and its data upload apart, so a file in any other shape than this page's says it failed and prints none of its words. Move this with the engine's RATES_SHAPE.
+  const RATES_SHAPE = 2;
+  const rateRows = (rows) => (rows.length && (rows.find((r) => r.view === 'meta') || {}).shape !== RATES_SHAPE ? [] : rows);
+  // What every Rates draw reads. Every finding comes from rates; a row or field it lacks is left out, never drawn as zero.
+  const rateRead = () => {
+    const rows = rowsOf('rates'), all = rateRows(rows);
+    return { st: all === rows ? dash.data('rates').status : 'error', all, meta: all.find((r) => r.view === 'meta') || {}, limitOf: (key) => (all.find((r) => r.view === 'limit' && r.key === key) || {}).text };
+  };
+  // The first use of each term in a run of sentences is dotted, and the map remembers which are left.
+  const TERM_WORDS = [['samefico', /\bsame FICO\b/i], ['bp', /\bbp\b/], ['samenumber', /\bsame score number\b/i], ['vs4loan', /\bVS4 loans?\b/], ['llpa', /\bLLPA\b/], ['range95', /\b95% range\b/], ['ficoloan', /\bFICO loans?\b/], ['dates', /\bweek first disclosed\b/], ['oldrule', /\bthe old rule\b/], ['switchpoint', /\bswitch point\b/]];
+  function termParts(text, left) {
+    const parts = [text];
+    for (const [term, word] of left) {
+      const at = parts.findIndex((p) => typeof p === 'string' && word.test(p));
+      if (at < 0) continue;
+      const hit = parts[at].match(word);
+      parts.splice(at, 1, parts[at].slice(0, hit.index), termSpan(term, hit[0]), parts[at].slice(hit.index + hit[0].length));
+      left.delete(term);
+    }
+    return parts;
+  }
+  // A list sentence may open with a short head ending in a colon or question mark. The head prints in bold, term dots and all, and the rest follows; words in brackets before the colon stay out of the bold.
+  const RUN_IN = /^((?:[^:.?(]|\.(?=\d)){2,85})(\s\([^)]*\))?([:?]) /;
+  // A number keeps its unit on its line, in all but What to quote, whose words are there to be pasted.
+  const bpTogether = (s) => s.replace(/(\d) bp\b/g, '$1 bp');
+  function runIn(line, left) {
+    const text = bpTogether(line);
+    const hit = text.match(RUN_IN);
+    if (!hit) return termParts(text, left);
+    const head = document.createElement('b');
+    head.className = 'ra-head';
+    head.append(...termParts(hit[2] ? hit[1] : `${hit[1]}${hit[3]}`, left));
+    return [head, ...termParts(`${hit[2] ? `${hit[2]}${hit[3]}` : ''} ${text.slice(hit[0].length)}`, left)];
+  }
+  function rateText(id, st, text, left = new Map(), parts = termParts) {
+    const el = document.getElementById(id);
+    const shown = text ? bpTogether(rangeDash(text)) : text;
+    el.hidden = st !== 'loading' && !text;
+    fill(el, st, shown);
+    if (st === 'ok' && text) el.replaceChildren(...parts(shown, left));
+  }
+  const rateLine = (id, field, read) => rateText(id, read.st, read.meta[field]);
+  // A line is its text, or { text, field, where } where it names its row. heads: the lines may open with a run-in head.
+  function rateList(id, st, lines, left = new Map(), heads = false) {
+    const list = document.getElementById(id);
     list.classList.toggle('dash-skeleton', st === 'loading');
-    list.replaceChildren(...all.filter((r) => r.view === 'limit' && r.text).sort((a, b) => a.order - b.order).map((r) => {
+    const textOf = (line) => (line && line.field ? line.text : line);
+    list.replaceChildren(...lines.filter(textOf).map((line) => {
       const li = document.createElement('li');
-      li.textContent = r.text;
+      if (line.field) Object.assign(li.dataset, { source: 'rates', field: line.field, where: line.where });
+      li.append(...(heads ? runIn : termParts)(rangeDash(textOf(line)), left));
       return li;
     }));
     list.hidden = st !== 'loading' && !list.children.length;
-    const box = document.getElementById('ra-chart');
-    legend(document.getElementById('ra-legend'), RATE_KEY);
-    if (!prep(box, st)) return;
-    const items = all.filter((r) => r.view === 'row').sort((a, b) => a.order - b.order);
-    const vals = items.flatMap((r) => [r.tl, r.th, r.lo, r.hi, r.dot]).filter(isNum);
-    if (!vals.length) return;
-    // Under about 520 px the title and sub take their own lines above the row's plot, and the figure ends the title's line.
-    const W = box.clientWidth, narrow = W < 520, rowH = narrow ? 62 : 46;
-    const m = { top: 2, right: 8, bottom: 46, left: 8 };
-    const H = m.top + m.bottom + items.length * rowH;
+    return list.children.length;
+  }
+  // A tap has no pointer left to leave, so a chart's tip stays until the next tap off its marks.
+  const tapOff = (box, name, hide) => d3.select(document).on(`click.${name}`, (event) => { if (!box.contains(event.target) || !event.target.closest('.rt-hit')) hide(); });
+  const hits = (sel, show, hide) => sel.attr('class', 'rt-hit').attr('fill', 'transparent').on('pointermove', show).on('click', show).on('pointerleave', hide);
+  function wrapLines(svg, text, max) {
+    return String(text).split(' ').reduce((lines, word) => {
+      const next = lines.length ? `${lines[lines.length - 1]} ${word}` : word;
+      if (lines.length && textWidth(svg, [next]) <= max) lines[lines.length - 1] = next;
+      else lines.push(word);
+      return lines;
+    }, []);
+  }
+  const textLines = (svg, lines, x, mid, anchor = 'start') => lines.map((s, i) => svg.append('text').attr('x', x).attr('y', mid + (i - (lines.length - 1) / 2) * 15).attr('dy', '0.35em').attr('text-anchor', anchor).text(s));
+  // A dot keeps its ring on a wide bar; on a narrow bar it shrinks, and under 10 px it loses the ring, so the bar still shows.
+  const dotFor = (w, r, ring = 4) => (w == null || w >= 20 ? { size: r, ring } : w >= 10 ? { size: 3, ring: 3 } : { size: 2.5, ring: 0 });
+  // The range across the methods with the estimate on it: an outline where few lender-weeks stand behind it.
+  function estimateMark(svg, x, mid, c, barH, r) {
+    const barred = isNum(c.lo) && isNum(c.hi);
+    const w = barred ? Math.max(4, Math.abs(x(c.hi) - x(c.lo))) : null;
+    if (barred) {
+      const bar = svg.append('rect').attr('x', (x(c.lo) + x(c.hi) - w) / 2).attr('y', mid - barH / 2).attr('width', w).attr('height', barH).attr('rx', 3);
+      if (c.rough) bar.attr('x', (x(c.lo) + x(c.hi) - w) / 2 + 0.75).attr('y', mid - barH / 2 + 0.75).attr('width', w - 1.5).attr('height', barH - 1.5).attr('fill', 'none').attr('stroke', C_VS4).attr('stroke-width', 1.5);
+      else bar.attr('fill', C_VS4);
+    }
+    const { size, ring } = dotFor(w, r);
+    svg.append('circle').attr('cx', x(c.dot)).attr('cy', mid).attr('r', size).attr('fill', C_DOT).attr('stroke', 'var(--color-panel)').attr('stroke-width', ring).style('paint-order', 'stroke');
+  }
+
+  // The answer: its lead line above the chart, the chart's caption and then the same-FICO lines as a list under it, which is the order their terms are read in. The same-number line opens the second card.
+  function answerLine(tag, cls, row, left) {
+    const el = document.createElement(tag);
+    if (cls) el.className = cls;
+    el.dataset.source = 'rates';
+    el.dataset.field = 'text';
+    el.dataset.where = `view=answer&key=${row.key}`;
+    el.append(...runIn(rangeDash(row.text), left));
+    return el;
+  }
+  function drawAnswer({ st, all, meta }, left) {
+    const box = document.getElementById('ra-answer');
+    const points = document.getElementById('ra-points');
+    box.classList.toggle('dash-skeleton', st === 'loading');
+    points.classList.toggle('dash-skeleton', st === 'loading');
+    const lines = all.filter((r) => r.view === 'answer' && r.text).sort((a, b) => a.order - b.order);
+    const opening = lines.filter((r) => r.key === 'lead').map((r) => answerLine('p', 'ra-lead', r, left));
+    box.hidden = !!lines.length && !opening.length;
+    rateText('ra-stamp', st, meta.stamp, left);
+    points.replaceChildren(...lines.filter((r) => ['same_fico', 'same_llpa'].includes(r.key)).map((r) => answerLine('li', null, r, left)));
+    points.hidden = st !== 'loading' && !points.children.length;
+    if (!lines.length) {
+      const only = document.createElement('p');
+      if (st === 'ok' && meta.answer) {  // every answer line run together is body text, not a lead
+        only.dataset.source = 'rates';
+        only.dataset.field = 'answer';
+        only.dataset.where = 'view=meta';
+      } else only.className = 'ra-lead';
+      // A chart can stand with no answer rows, so the line about no figures prints only where nothing is drawn.
+      only.textContent = st === 'loading' ? '' : st !== 'ok' ? 'Failed to load' : meta.answer || (all.some((r) => r.view === 'row') ? '' : 'No rate figures in this build.');
+      box.hidden = st === 'ok' && !only.textContent;
+      return box.replaceChildren(only);
+    }
+    box.replaceChildren(...opening);
+  }
+
+  // What the controls do to the gap, rung by rung. A bar is square at zero and rounded at its value.
+  const STEP_RUNGS = [['raw', 'Raw gap, by loan'], ['time', 'Same week and closing month'], ['lender', 'Plus lender, channel, purpose'], ['traits', 'Plus GSE and LTV range'], ['traits_under', 'VS4 under 820 only'], ['number', 'Plus the same score number']];
+  const stepBp = (v) => bpText(Math.abs(v) < 10 ? nearBp(v) : Math.round(v));
+  const hBar = (x0, x1, top, h) => {
+    const s = x1 < x0 ? -1 : 1, c = Math.min(4, Math.abs(x1 - x0), h / 2);
+    return `M${x0},${top}H${x1 - s * c}Q${x1},${top} ${x1},${top + c}V${top + h - c}Q${x1},${top + h} ${x1 - s * c},${top + h}H${x0}Z`;
+  };
+  function drawRateSteps({ st, all }) {
+    const rungs = STEP_RUNGS.map(([key, label]) => ({ ...(all.find((r) => r.view === 'steps' && r.key === key) || {}), key, label })).filter((r) => isNum(r.gap));
+    const wrap = document.getElementById('ra-steps-wrap');
+    wrap.hidden = st === 'ok' && rungs.length < 3;
+    const gapOf = (key) => (rungs.find((r) => r.key === key) || {}).gap;
+    const raw = gapOf('raw'), mixed = gapOf('lender');
+    document.getElementById('ra-steps-h').textContent = isNum(raw) && raw > 0 && isNum(mixed) && Math.abs(mixed) < raw / 2 ? `Most of the raw ${d3.format('.0f')(raw)} bp gap is timing and lender mix` : 'What the controls do to the raw gap';
+    const lead = all.find((r) => r.view === 'row' && r.key === 'same_number') || {};
+    const last = rungs[rungs.length - 1];
+    const parted = !!last && last.key === 'number' && isNum(lead.dot) && stepBp(last.gap) !== bpText(lead.dot);
+    const note = document.getElementById('ra-steps-note');
+    note.hidden = st !== 'ok' || wrap.hidden;
+    note.textContent = `VS4 minus FICO, bp. Both sides issued from Oct 1${parted ? `, so it ends at ${stepBp(last.gap)}, not ${bpText(lead.dot) === '0' ? 'the same-number figure' : `the ${bpText(lead.dot)}`} above, which goes back to Jul 20` : ''}.`;
+    const box = document.getElementById('ra-steps');
+    if (wrap.hidden || !document.getElementById('ra-firm').open || !prep(box, st)) return rungs.length >= 3;  // a chart in a closed fold has no width, and the fold's toggle draws it
+    // Under about 520 px a rung's label takes its own line above its bar, as on the first chart.
+    const W = box.clientWidth, narrow = W < 520, rowH = narrow ? 34 : 25, barH = narrow ? 10 : 14;
+    const H = rungs.length * rowH;
     box.style.minHeight = `${H}px`;
-    const svg = svgFor(box, W, H, `VS4 minus FICO, bp of note rate. ${items.map((r) => `${rateName(r)}: central figure ${bpFigure(r.dot)}, fuller methods ${bpSpan(r.lo, r.hi)}, rough 95% range ${bpSpan(r.tl, r.th)}`).join('. ')}.`);
-    const indent = (r) => (r.strong ? 0 : 12);
+    const svg = svgFor(box, W, H, `The gap between VS4 and FICO loans as controls are added, bp of note rate, both sides issued from Oct 1. ${rungs.map((r) => `${r.label}: ${stepBp(r.gap)}`).join('. ')}.`);
+    const valueW = Math.ceil(textWidth(svg, rungs.map((r) => stepBp(r.gap))));
+    const left = narrow ? 0 : Math.min(Math.ceil(textWidth(svg, rungs.map((r) => r.label))) + 12, Math.floor(W * 0.5));
+    // Tiny gaps stay tiny bars: the scale reaches at least 1 bp each way a bar runs.
+    const lo = Math.min(rungs.some((r) => r.gap < 0) ? -1 : 0, d3.min(rungs, (r) => r.gap)), hi = Math.max(1, d3.max(rungs, (r) => r.gap));
+    const x = d3.scaleLinear([lo, hi], [left + (lo < 0 ? valueW + 6 : 0), W - valueW - 6]);
+    const end = (r) => (Math.abs(x(r.gap) - x(0)) < 2 ? x(0) + (r.gap < 0 ? -2 : 2) : x(r.gap));
+    const fillOf = (r) => (r === last ? C_DOT : 'var(--cds-chart-muted)');
+    const barTop = narrow ? 18 : (rowH - barH) / 2;
+    const g = svg.append('g').selectAll('g').data(rungs).join('g').attr('transform', (r, i) => `translate(0,${i * rowH})`);
+    g.append('text').attr('x', 0).attr('y', narrow ? 8 : rowH / 2).attr('dy', '0.35em').style('fill', 'var(--color-fg)').text((r) => r.label).each(function () { clip(this, narrow ? W : left - 8); });
+    g.append('path').attr('d', (r) => hBar(x(0), end(r), barTop, barH)).attr('fill', fillOf);
+    g.append('line').attr('x1', x(0)).attr('x2', x(0)).attr('y1', barTop - 2).attr('y2', barTop + barH + 2).attr('stroke', 'var(--cds-chart-axis)').attr('stroke-width', 1.5);
+    g.append('text').attr('x', (r) => end(r) + (r.gap < 0 ? -6 : 6)).attr('y', barTop + barH / 2).attr('dy', '0.35em').attr('text-anchor', (r) => (r.gap < 0 ? 'end' : 'start')).style('fill', 'var(--color-fg)').text((r) => stepBp(r.gap));
+    const tip = tooltip(box);
+    const show = (event, r) => tip.show(event, r.label, [[fillOf(r), 'Gap', `${stepBp(r.gap)} bp`], ...(isNum(r.read) && isNum(r.pool) ? [[null, `Compared: ${int(r.read)} of ${int(r.pool)} VS4 loans`]] : [])]);
+    hits(g.append('rect').attr('width', W).attr('height', rowH), show, () => tip.hide());
+    tapOff(box, 'ratessteps', () => tip.hide());
+    return true;
+  }
+
+  // The question, the answer, its chart and its limits.
+  function drawRateAnswer() {
+    const read = rateRead();
+    const { st, all, meta, limitOf } = read;
+    const left = new Map(TERM_WORDS);
+    drawAnswer(read, left);
+    rateText('ra-selected', st === 'loading' ? 'ok' : st, limitOf('selected'), new Map(), runIn);
+    document.getElementById('ra-offset').hidden = st !== 'loading' && !all.length;
+    document.getElementById('ra-offset-tail').textContent = st === 'ok' && meta.offset_tail ? meta.offset_tail : '';
+    rateLine('ra-dated', 'dated', read);
+    rateList('ra-limits', st, [limitOf('note_rate'), limitOf('rests_on')], left, true);
+    const follows = all.find((r) => r.view === 'follows_score' && r.scope === 'all' && r.sentence);
+    // Each fold is read on its own, so the first use of a term in each one gets its dot.
+    document.getElementById('ra-score').hidden = !rateList('ra-score-list', st, [meta.score_lead, meta.score_lead && limitOf('ranges'), meta.expected, meta.rule_at_lock, limitOf('past'), follows && follows.sentence, limitOf('same_loans'), meta.test_line, limitOf('line')], new Map(left), true) && st !== 'loading';
+    const firm = rateList('ra-firm-list', st, [limitOf('ranges'), limitOf('left_out'), limitOf('method'), limitOf('thin'), limitOf('match'), limitOf('book'), meta.equivalent_more, limitOf('rebuilt')], new Map(left), true);
+    const ladder = drawRateSteps(read);
+    document.getElementById('ra-firm').hidden = !firm && !ladder && st !== 'loading';
+    const box = document.getElementById('ra-chart');
+    const key = document.getElementById('ra-legend');
+    const items = all.filter((r) => r.view === 'row').sort((a, b) => a.order - b.order);
+    const vals = items.filter((r) => isNum(r.dot)).flatMap((r) => [r.tl, r.th, r.lo, r.hi, r.dot]).filter(isNum);
+    legend(key, rateKey());
+    const wordsLink = document.createElement('button');
+    wordsLink.type = 'button';
+    wordsLink.className = 'vx-link';
+    wordsLink.dataset.go = 'method';
+    wordsLink.textContent = 'What the words mean';
+    key.append(wordsLink);
+    key.hidden = st !== 'loading' && !vals.length;
+    box.hidden = st === 'ok' && !vals.length;
+    if (box.hidden || !prep(box, st)) return;
+    const W = box.clientWidth;
+    const m = { top: 2, right: 8, bottom: 46, left: 8 };
+    const svg = svgFor(box, W, 10, `VS4 minus FICO, bp of note rate. ${items.map((r) => `${rateName(r)}: ${[isNum(r.dot) ? `estimate ${bpFigure(r.dot)}` : 'too few to compare', ...(isNum(r.dot) && isNum(r.lo) && isNum(r.hi) ? [`how far the 3 methods disagree ${bpSpan(r.lo, r.hi)}`] : []), ...(isNum(r.dot) && isNum(r.tl) && isNum(r.th) ? [`95% range, approximate, ${thinText(r)}`] : [])].join(', ')}`).join('. ')}.`);
+    const indent = (r) => (r.strong ? 0 : r.key === 'same_llpa_low' ? 24 : 12);  // a part of a part sits one step further in
     const heavy = 1.08;  // the medium weight runs wider than the text it is measured in
     const figureW = Math.ceil(textWidth(svg, items.map((r) => bpFigure(r.dot))) * heavy);
+    const widest = d3.max(items, (r) => indent(r) + Math.max(textWidth(svg, [r.title ?? '']) * heavy, textWidth(svg, [r.sub ?? ''])));
+    // Where the labels would take over half the chart, the title and sub take their own lines above the row's plot, and the figure ends the title's line.
+    const narrow = W < 520 || widest + 16 > W * 0.5;
+    const titles = new Map(items.map((r) => [r, narrow && r.title ? wrapLines(svg, r.title, (W - figureW - 10 - indent(r)) / heavy) : [r.title ?? '']]));
+    const subs = new Map(items.map((r) => [r, narrow && r.sub ? wrapLines(svg, r.sub, W - indent(r)) : [r.sub ?? '']]));
+    const titleMore = (r) => 15 * (titles.get(r).length - 1);
+    const extra = (r) => titleMore(r) + 15 * (subs.get(r).length - 1);
+    const rowOf = (r) => (narrow ? 62 + extra(r) : 46);
+    const tops = new Map();
+    let H = m.top;
+    for (const r of items) { tops.set(r, H); H += rowOf(r); }
+    H += m.bottom;
+    svg.attr('viewBox', `0 0 ${W} ${H}`);
+    box.style.minHeight = `${H}px`;
     if (!narrow) {
-      const widest = d3.max(items, (r) => indent(r) + Math.max(textWidth(svg, [r.title ?? '']) * heavy, textWidth(svg, [r.sub ?? ''])));
-      m.left = Math.min(Math.ceil(widest) + 16, Math.max(150, Math.floor(W * 0.4)));
+      m.left = Math.ceil(widest) + 16;
       m.right = figureW + 16;
     }
     const x = d3.scaleLinear([Math.min(0, d3.min(vals)) - 1, Math.max(0, d3.max(vals)) + 1], [m.left, W - m.right]);
@@ -1992,9 +2221,9 @@
       m.left = m.right = Math.max(m.left, Math.ceil(textWidth(svg, ticks.map(bpTick)) / 2) + 1);
       x.range([m.left, W - m.right]);
     }
-    const titleY = narrow ? 8 : rowH / 2 - 8, subY = narrow ? 23 : rowH / 2 + 8, cy = narrow ? 45 : rowH / 2;
+    const titleY = narrow ? 8 : 15, subY = narrow ? 23 : 31, cyOf = (r) => (narrow ? 45 + extra(r) : 23);
     // Where labels sit above each plot, the grid runs only beside the plots, so no line crosses a label.
-    for (const [y1, y2] of narrow ? items.map((r, i) => [m.top + i * rowH + cy - 11, m.top + i * rowH + cy + 11]) : [[m.top, H - m.bottom]]) {
+    for (const [y1, y2] of narrow ? items.map((r) => [tops.get(r) + cyOf(r) - 11, tops.get(r) + cyOf(r) + 11]) : [[m.top, H - m.bottom]]) {
       svg.append('g').selectAll('line').data(ticks).join('line').attr('x1', (v) => x(v)).attr('x2', (v) => x(v))
         .attr('y1', y1).attr('y2', y2).attr('stroke', 'var(--cds-chart-grid)');
       svg.append('line').attr('x1', x(0)).attr('x2', x(0)).attr('y1', y1).attr('y2', y2)
@@ -2002,34 +2231,551 @@
     }
     svg.append('g').attr('transform', `translate(0,${H - m.bottom + 8})`)
       .call(d3.axisBottom(x).tickValues(ticks).tickFormat(bpTick).tickSize(0)).call(styleAxis);
-    svg.append('text').attr('x', (m.left + W - m.right) / 2).attr('y', H - 4).attr('text-anchor', 'middle').text(W < 340 ? 'VS4 minus FICO, bp (left of 0: VS4 lower)' : 'VS4 minus FICO, bp of note rate (left of 0: VS4 lower)');
-    const g = svg.append('g').selectAll('g').data(items).join('g').attr('transform', (r, i) => `translate(0,${m.top + i * rowH})`);
+    const axisWords = 'VS4 minus FICO rate, bp (left of 0: VS4 lower)';
+    svg.append('text').attr('x', (m.left + W - m.right) / 2).attr('y', H - 4).attr('text-anchor', 'middle').text(textWidth(svg, [axisWords]) < W ? axisWords : axisWords.replace(' rate,', ','));
+    const g = svg.append('g').selectAll('g').data(items).join('g').attr('transform', (r) => `translate(0,${tops.get(r)})`);
     const weight = (r) => (r.strong ? 'var(--cds-font-weight-medium)' : null);
-    g.append('text').attr('x', indent).attr('y', titleY).attr('dy', '0.35em').style('fill', 'var(--color-fg)').style('font-weight', weight)
-      .text((r) => r.title ?? '').each(function (r) { clip(this, (narrow ? W - figureW - 10 : m.left - 12) - indent(r)); });
-    g.append('text').attr('x', indent).attr('y', subY).attr('dy', '0.35em')
-      .text((r) => r.sub ?? '').each(function (r) { clip(this, (narrow ? W : m.left - 12) - indent(r)); });
-    g.append('text').attr('x', W).attr('y', narrow ? titleY : cy).attr('dy', '0.35em').attr('text-anchor', 'end').style('fill', 'var(--color-fg)').style('font-weight', weight)
+    g.each(function (r) {
+      titles.get(r).forEach((line, i) => d3.select(this).append('text').attr('x', indent(r)).attr('y', titleY + 15 * i).attr('dy', '0.35em').style('fill', 'var(--color-fg)').style('font-weight', weight(r)).text(line));
+      subs.get(r).forEach((line, i) => d3.select(this).append('text').attr('x', indent(r)).attr('y', subY + titleMore(r) + 15 * i).attr('dy', '0.35em').text(line));
+    });
+    g.append('text').attr('x', W).attr('y', (r) => (narrow ? titleY : cyOf(r))).attr('dy', '0.35em').attr('text-anchor', 'end').style('fill', 'var(--color-fg)').style('font-weight', weight)
       .text((r) => bpFigure(r.dot));
-    const range = g.filter((r) => isNum(r.tl) && isNum(r.th));
-    range.append('line').attr('x1', (r) => x(r.tl)).attr('x2', (r) => x(r.th)).attr('y1', cy).attr('y2', cy).attr('stroke', 'var(--color-fg-muted)').attr('stroke-width', 1.5);
+    const drawn = g.filter((r) => isNum(r.dot));
+    const range = drawn.filter((r) => isNum(r.tl) && isNum(r.th));
+    range.append('line').attr('x1', (r) => x(r.tl)).attr('x2', (r) => x(r.th)).attr('y1', cyOf).attr('y2', cyOf).attr('stroke', C_THIN).attr('stroke-width', 1.5);
     for (const k of ['tl', 'th']) {
-      range.append('line').attr('x1', (r) => x(r[k])).attr('x2', (r) => x(r[k])).attr('y1', cy - 4).attr('y2', cy + 4).attr('stroke', 'var(--color-fg-muted)').attr('stroke-width', 1.5);
+      range.append('line').attr('x1', (r) => x(r[k])).attr('x2', (r) => x(r[k])).attr('y1', (r) => cyOf(r) - 4).attr('y2', (r) => cyOf(r) + 4).attr('stroke', C_THIN).attr('stroke-width', 1.5);
     }
+    const barred = (r) => isNum(r.lo) && isNum(r.hi);
     const barW = (r) => Math.max(4, Math.abs(x(r.hi) - x(r.lo)));
-    g.filter((r) => isNum(r.lo) && isNum(r.hi)).append('rect').attr('x', (r) => (x(r.lo) + x(r.hi) - barW(r)) / 2).attr('width', barW)
-      .attr('y', cy - 6).attr('height', 12).attr('rx', 3).attr('fill', C_VS4);
-    g.filter((r) => isNum(r.dot))// on a phone a dot this size would hide a narrow bar
-      .append('circle').attr('cx', (r) => x(r.dot)).attr('cy', cy).attr('r', narrow ? 3.5 : 6)
-      .attr('fill', 'var(--color-fg)').attr('stroke', 'var(--color-panel)').attr('stroke-width', narrow ? 1.5 : 2);
-    // A tap has no pointer left to leave, so its tip stays until the next tap elsewhere.
+    drawn.filter(barred).append('rect').attr('x', (r) => (x(r.lo) + x(r.hi) - barW(r)) / 2).attr('width', barW)
+      .attr('y', (r) => cyOf(r) - 6).attr('height', 12).attr('rx', 3).attr('fill', C_VS4);
+    const dotOf = (r) => dotFor(barred(r) ? barW(r) : null, narrow ? 3.5 : 6, narrow ? 3 : 4);
+    drawn.append('circle').attr('cx', (r) => x(r.dot)).attr('cy', cyOf).attr('r', (r) => dotOf(r).size)
+      .attr('fill', C_DOT).attr('stroke', 'var(--color-panel)').attr('stroke-width', (r) => dotOf(r).ring).style('paint-order', 'stroke');
     const tip = tooltip(box);
-    const showTip = (event, r) => tip.show(event, rateName(r), [
-      [RATE_KEY[0][0], 'Central figure', bpFigure(r.dot)], [RATE_KEY[1][0], 'Fuller methods', bpSpan(r.lo, r.hi)], [RATE_KEY[2][0], '95% range', bpSpan(r.tl, r.th)],
-      ...[r.loans, r.money].filter(Boolean).map((text) => [null, text])]);
-    g.append('rect').attr('class', 'ra-hit').attr('width', W).attr('height', rowH).attr('fill', 'transparent')
-      .on('pointermove', showTip).on('click', showTip).on('pointerleave', () => tip.hide());
-    d3.select(document).on('click.rates', (event) => { if (!event.target.closest('.ra-hit')) tip.hide(); });
+    const showTip = (event, r) => tip.show(event, r.title ?? '', isNum(r.dot) ? [[C_DOT, 'Estimate', bpFigure(r.dot)], ...spanLine(C_VS4, RANGE_WORDS, r.lo, r.hi), ...(isNum(r.tl) && isNum(r.th) ? [[C_THIN, THIN_WORDS, thinText(r)]] : [])] : [[null, TOO_FEW]]);
+    hits(g.append('rect').attr('width', W).attr('height', rowOf), showTip, () => tip.hide());
+    tapOff(box, 'rates', () => tip.hide());
+  }
+
+  // Same score number by closing month: each line is the midpoint of the two exact-match methods, each bar the range across all three. A month with under half its loans in, or few lender-weeks, is drawn hollow, and only firm months set the axis.
+  const NUMBER_LINES = [['stake', col(2), 'Old rule would raise LLPA'], ['no_stake', col(3), 'Old rule would not']];
+  const GRID_NOTE = { month: '2026-09-01', text: 'Sep 29: one LLPA grid for both scores announced' };
+  const FIRM_IN = 0.5, HOLLOW_NEAR = 5;
+  function drawRateNumber() {
+    const read = rateRead();
+    const { st, all } = read;
+    const lead = all.find((r) => r.view === 'row' && r.key === 'same_number') || {};
+    const fade = all.find((r) => r.view === 'same_number' && r.scope === 'fade') || {};
+    const rows = all.filter((r) => r.view === 'same_number' && r.scope === 'month' && r.close && isNum(r.dot_raw) && NUMBER_LINES.some(([g]) => g === r.group));
+    // The answer's same-number line leads, and without it the row's own figure does.
+    const answer = all.find((r) => r.view === 'answer' && r.key === 'same_number' && r.text);
+    const [statLead, statRest] = leadSplit(answer && answer.text);
+    const left = new Map(TERM_WORDS);
+    Object.assign(document.getElementById('rn-stat').dataset, answer ? { field: 'text', where: 'view=answer&key=same_number' } : { field: 'dot', where: 'view=row&key=same_number' });
+    rateText('rn-stat', st, answer ? statLead.replace(' at the same score number', '') : isNum(lead.dot) ? `${bpText(lead.dot)} bp on VS4 loans under 820` : null, left);
+    rateText('rn-rest', st === 'loading' ? 'ok' : st, statRest, left);
+    const metaNote = (field) => ({ text: read.meta[field], field, where: 'view=meta' });
+    rateList('rn-notes', st, [...(rows.length ? [metaNote('number_blend'), metaNote('number_why'), { text: fade.text, field: 'text', where: 'view=same_number&scope=fade' }] : []), metaNote('number_bands')], left, true);
+    const statement = rowsOf('statements').find((r) => r.who === 'Milliman' && r.check === 'pricing' && r.date && !Number.isNaN(parse(r.date).getTime()) && r.statement);
+    const said = document.getElementById('rn-said');
+    said.hidden = !statement;
+    said.replaceChildren();
+    if (statement && statement.url) {
+      const a = document.createElement('a');
+      a.className = 'vx-link';
+      a.href = statement.url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.textContent = statement.who;
+      said.append(a);
+    } else if (statement) said.append(statement.who);
+    if (statement) said.append(`, ${longDay(statement.date)}: ${statement.statement}`);
+    rateLine('rn-line', 'milliman_line', read);
+    document.getElementById('rn-more').hidden = !statement && !read.meta.milliman_line;
+    const saidBp = statement && statement.statement.match(/(\d+(?:\.\d+)?) bp above/);
+    document.getElementById('rn-more-h').textContent = saidBp && isNum(lead.dot) && bpText(lead.dot) !== '0' ? `Milliman's +${saidBp[1]} bp beside this ${bpText(lead.dot)}` : 'Milliman\'s figure beside this one';
+
+    const hollow = (r) => !!r.thin || (isNum(r.in_share) && r.in_share < FIRM_IN);
+    const months = [...new Set(rows.map((r) => r.close))].sort();
+    const latest = months[months.length - 1];
+    const lines = NUMBER_LINES.filter(([g]) => rows.some((r) => r.group === g)).map(([g, color, label]) => ({ color, label, pts: months.map((c) => rows.find((r) => r.group === g && r.close === c) || { close: c }) }));
+    const shareOf = (c) => (rows.find((r) => r.close === c && isNum(r.in_share)) || {}).in_share;
+    const tagOf = (c) => (window.vx.inLabel ? window.vx.inLabel(shareOf(c)) : null);
+    const key = document.getElementById('rn-legend');
+    // Two lines keep a legend beside their end labels, so color never has to name them alone. The marks are the first chart's, and a month's % in is said once.
+    legend(key, [...lines.map((l) => [l.color, l.label, 'line']), SAME_MARKS, ...(rows.some(hollow) ? [[C_THIN, `Hollow, dashed: under half the month's loans are in this chart${rows.some((r) => r.thin) ? ', or few weeks of loans' : ''}. It starts with loans first disclosed Jul 20, and a recent month is not all in yet.`, 'hollow']] : months.some(tagOf) ? [[null, '% in: how much of the month\'s loans are in this chart. It starts with loans first disclosed Jul 20, and a recent month is not all in yet.']] : [])]);
+    key.hidden = !rows.length;
+    const box = document.getElementById('rn-chart');
+    box.hidden = st === 'ok' && !rows.length;
+    const sub = document.getElementById('rn-sub');
+    sub.hidden = !rows.length;
+    sub.textContent = rangeDash(isNum(lead.dot) && bpText(lead.dot) !== '0' && lines.length === 2 ? `VS4 640-819: the ${bpText(lead.dot)} as two kinds of loan.` : 'VS4 640-819, by the month each loan closed.');
+    document.getElementById('rate-number').hidden = st === 'ok' && !all.length;
+    if (box.hidden || !prep(box, st)) return;
+    const partial = [...months.filter(tagOf).map((c) => `${monthShort(c)} ${tagOf(c)}`), ...[...new Set(rows.filter((r) => r.thin).map((r) => r.close))].map((c) => `${monthShort(c)} few lender-weeks`)];
+    const W = box.clientWidth, H = 330;
+    const m = { top: 26, right: 12, bottom: 64, left: 0 };
+    const svg = svgFor(box, W, H, `VS4 minus FICO at the same score number, VS4 640 to 819, bp of note rate, by closing month. ${lines.map((l) => `${l.label}: ${l.pts.filter((r) => isNum(r.dot_raw)).map((r) => `${monthShort(r.close)} ${readText(r.dot, r.spread_lo, r.spread_hi)}`).join(', ')}`).join('. ')}.${partial.length ? ` Partial months: ${partial.join(', ')}.` : ''}`);
+    const firm = rows.filter((r) => !hollow(r));
+    const marksOf = (list) => list.flatMap((r) => [r.dot_raw, r.lo_raw, r.hi_raw]).filter(isNum);
+    const firmExt = marksOf(firm.length ? firm : rows);
+    // A hollow month widens the axis only when its marks sit near the firm months'; one far off stays at the edge and says its figure.
+    const ext = [...firmExt, ...marksOf(rows.filter(hollow)).filter((v) => v >= d3.min(firmExt) - HOLLOW_NEAR && v <= d3.max(firmExt) + HOLLOW_NEAR)];
+    const y = d3.scaleLinear([Math.min(0, d3.min(ext)), Math.max(0, d3.max(ext))], [H - m.bottom, m.top]).nice(6);
+    const [yLo, yHi] = y.domain();
+    const yAt = (v) => y(Math.max(yLo, Math.min(yHi, v)));
+    const yVals = y.ticks(4);
+    const yTick = (v) => (v === yVals[yVals.length - 1] ? `${bpTick(v)} bp` : bpTick(v));
+    m.left = Math.ceil(textWidth(svg, yVals.map(yTick))) + 10;
+    const tagSize = W < 300 ? '9px' : W < 420 ? '10px' : null;
+    const tagW = textWidth(svg, months.map(tagOf).filter(Boolean), tagSize);
+    const ends = lines.map((l) => wrapLines(svg, l.label, W < 420 ? 60 : 160));
+    m.right = Math.max(Math.ceil(textWidth(svg, ends.flat())) + 14, Math.ceil(Math.max(textWidth(svg, [monthShort(latest)]), tagW) / 2) + 2);
+    const x = d3.scalePoint(months, [m.left + 14, W - m.right]);
+    const tickOf = (c) => (c === latest || x.step() < 72 ? monthShort(c) : monthLabel(months)(c));
+    const every = Math.max(1, Math.ceil(Math.max(textWidth(svg, months.map(tickOf)) + (W < 420 ? 6 : 10), tagW + 4) / x.step()));
+    const shown = months.filter((c, i) => (months.length - 1 - i) % every === 0);
+    const at = months.indexOf(GRID_NOTE.month);
+    const noteX = at >= 0 && at < months.length - 1 ? (x(months[at]) + x(months[at + 1])) / 2 : null;
+    const note = noteX == null ? [] : wrapLines(svg, GRID_NOTE.text, noteX - 6);
+    m.top = 12 + Math.max(1, note.length) * 15;
+    y.range([H - m.bottom, m.top]);
+    yAxis(svg, y, yTick, m.left, W - m.right, yVals);
+    svg.append('line').attr('x1', m.left).attr('x2', W - m.right).attr('y1', y(0)).attr('y2', y(0)).attr('stroke', 'var(--cds-chart-axis)').attr('stroke-width', 1.5);
+    if (noteX != null) {
+      svg.append('line').attr('x1', noteX).attr('x2', noteX).attr('y1', 4).attr('y2', H - m.bottom).attr('stroke', 'var(--cds-chart-reference)').attr('stroke-dasharray', '3 3');
+      textLines(svg, note, noteX - 5, 4 + (note.length * 15) / 2, 'end');
+    }
+    const xf = (r) => x(r.close);
+    lines.forEach((l, i) => {
+      const off = lines.length > 1 ? (i ? 4 : -4) : 0;
+      for (const r of l.pts.filter((d) => isNum(d.dot_raw) && isNum(d.lo_raw) && isNum(d.hi_raw))) {
+        const h = Math.max(3, yAt(r.lo_raw) - yAt(r.hi_raw));
+        const bar = svg.append('rect').attr('y', (yAt(r.lo_raw) + yAt(r.hi_raw) - h) / 2).attr('height', h).attr('rx', 3);
+        if (hollow(r)) bar.attr('x', xf(r) + off - 2.5).attr('width', 5).attr('fill', 'none').attr('stroke', l.color).attr('stroke-width', 1);
+        else bar.attr('x', xf(r) + off - 3).attr('width', 6).attr('fill', l.color).attr('fill-opacity', 0.55);
+      }
+    });
+    for (const l of lines) {
+      l.pts.forEach((r, i) => {
+        const a = l.pts[i - 1];
+        if (!a || !isNum(a.dot_raw) || !isNum(r.dot_raw)) return;
+        const dashed = hollow(r) || hollow(a);
+        svg.append('line').attr('x1', xf(a)).attr('y1', yAt(a.dot_raw)).attr('x2', xf(r)).attr('y2', yAt(r.dot_raw)).attr('stroke', l.color).attr('stroke-width', 2)
+          .attr('stroke-linecap', dashed ? 'butt' : 'round').attr('stroke-dasharray', dashed ? '4 4' : null);
+      });
+    }
+    for (const l of lines) {
+      const pts = l.pts.filter((r) => isNum(r.dot_raw));
+      svg.append('g').selectAll('circle').data(pts).join('circle').attr('cx', xf).attr('cy', (r) => yAt(r.dot_raw)).attr('r', 5)
+        .attr('fill', (r) => (hollow(r) ? 'var(--color-panel)' : l.color)).attr('stroke', 'var(--color-panel)').attr('stroke-width', 2);
+      svg.append('g').selectAll('circle').data(pts.filter(hollow)).join('circle').attr('cx', xf).attr('cy', (r) => yAt(r.dot_raw)).attr('r', 3.5)
+        .attr('fill', 'var(--color-panel)').attr('stroke', l.color).attr('stroke-width', 2);
+    }
+    // A hollow month off the firm months' scale sits at the edge and says its figure, stepping in from the edge where both lines are off it, and left of the point at the end labels. A bar end cut at the edge says its figure the same way.
+    months.forEach((c) => {
+      for (const sign of [1, -1]) {
+        const past = (v) => isNum(v) && (sign > 0 ? v > yHi : v < yLo);
+        lines.map((l) => l.pts.find((r) => r.close === c)).map((r) => (past(r.dot_raw) ? r.dot_raw : past(sign > 0 ? r.hi_raw : r.lo_raw) ? (sign > 0 ? r.hi_raw : r.lo_raw) : null)).filter(isNum).forEach((v, i) => {
+          svg.append('text').attr('class', 'ra-halo').attr('x', x(c) + (c === latest ? -10 : 10)).attr('y', yAt(v) + sign * i * 15).attr('dy', '0.35em').attr('text-anchor', c === latest ? 'end' : 'start').text(bpText(nearBp(v)));
+        });
+      }
+    });
+    // End labels name the lines by group. Two that would meet move apart, with a leader back to each line.
+    const lastAt = lines.map((l) => [...l.pts].reverse().find((r) => isNum(r.dot_raw)));
+    const spots = lines.map((l, i) => ({ i, from: yAt(lastAt[i].dot_raw), h: ends[i].length * 15 })).sort((a, b) => a.from - b.from);
+    spots.forEach((s) => { s.to = s.from; });
+    if (spots.length === 2 && spots[1].from - spots[0].from < (spots[0].h + spots[1].h) / 2 + 2) {
+      const mid = (spots[0].from + spots[1].from) / 2, half = (spots[0].h + spots[1].h) / 4 + 1;
+      spots[0].to = mid - half;
+      spots[1].to = mid + half;
+    }
+    const nudge = Math.max(0, m.top + spots[0].h / 2 - spots[0].to) - Math.max(0, spots[spots.length - 1].to + spots[spots.length - 1].h / 2 - (H - m.bottom));
+    for (const s of spots) {
+      s.to += nudge;
+      const px = xf(lastAt[s.i]), labelX = x(latest) + 14;
+      if (Math.abs(s.to - s.from) > 3 || px !== x(latest)) svg.append('line').attr('x1', px + 8).attr('y1', s.from).attr('x2', labelX - 2).attr('y2', s.to).attr('stroke', 'var(--cds-chart-reference)');
+      textLines(svg, ends[s.i], labelX, s.to);
+    }
+    svg.append('g').attr('transform', `translate(0,${H - m.bottom + 8})`).call(d3.axisBottom(x).tickValues(shown).tickFormat(tickOf).tickSize(0)).call(styleAxis);
+    for (const c of shown.filter(tagOf)) svg.append('text').attr('x', x(c)).attr('y', H - 24).attr('text-anchor', 'middle').style('font-size', tagSize).text(tagOf(c));
+    svg.append('text').attr('x', (m.left + W - m.right) / 2).attr('y', H - 4).attr('text-anchor', 'middle').text('VS4 minus FICO, by closing month');
+    const tip = tooltip(box);
+    const rule = svg.append('line').attr('y1', m.top).attr('y2', H - m.bottom).attr('stroke', 'var(--cds-chart-axis)').attr('opacity', 0);
+    const hide = () => { rule.attr('opacity', 0); tip.hide(); };
+    const show = (event) => {
+      const px = d3.pointer(event, svg.node())[0];
+      const near = d3.least(months, (c) => Math.abs(x(c) - px));
+      const tag = tagOf(near);
+      rule.attr('x1', x(near)).attr('x2', x(near)).attr('opacity', 1);
+      tip.show(event, monthYear(near), [...(tag ? [[null, `${tag.startsWith('under') ? 'Under' : 'About'} ${tag.replace(/^under /, '').replace(' in', '')} of the month's loans are in this chart`]] : []),
+        ...lines.map((l) => [l, l.pts.find((r) => r.close === near)]).filter(([, r]) => isNum(r.dot_raw))
+          .map(([l, r]) => [l.color, l.label, [isNum(r.dot) ? bpText(r.dot) : '—', isNum(r.spread_lo) && isNum(r.spread_hi) ? `3 methods ${bpText(r.spread_lo)} to ${bpText(r.spread_hi)}` : null, isNum(r.n) ? `${int(r.n)} loans` : null, r.thin ? 'few lender-weeks' : null].filter(Boolean).join(', ')])]);
+    };
+    hits(svg.append('rect').attr('x', m.left).attr('y', m.top).attr('width', W - m.left).attr('height', H - m.top - m.bottom), show, hide);
+    tapOff(box, 'ratesnumber', hide);
+  }
+
+  // Which FICO has paid the same rate as a VS4 score: a dumbbell from the VS4 number to the FICO that pays the same rate, with the FICO these borrowers show apart from it.
+  const EQ_COLOR = col(1), EQ_SHOWN = 'var(--color-fg)';
+  function drawRateEqual() {
+    const read = rateRead();
+    const { st, all, meta } = read;
+    const [statLead, statRest] = leadSplit(meta.equivalent_stat);
+    rateText('re-stat', st, statLead);
+    rateText('re-stat-rest', st === 'loading' ? 'ok' : st, statRest, new Map(TERM_WORDS));
+    rateLine('re-caption', 'equivalent_caption', read);
+    const items = all.filter((r) => r.view === 'equivalent' && r.band && isNum(r.vs_mean)).sort((a, b) => a.order - b.order);
+    const key = document.getElementById('re-legend');
+    legend(key, [[EQ_SHOWN, 'FICO these borrowers show', 'diamond'], [EQ_COLOR, 'FICO that pays the same rate (line: does not resample lenders, so too narrow)', 'box'], [C_VS4, 'VS4 number', 'dot']]);
+    key.hidden = st !== 'loading' && !items.length;
+    const box = document.getElementById('re-chart');
+    box.hidden = st === 'ok' && !items.length;
+    document.getElementById('rate-equal').hidden = box.hidden;
+    if (box.hidden || !prep(box, st)) return;
+    const W = box.clientWidth, rowH = 30, narrow = W < 520, tiny = W < 300;
+    const m = { top: 22, right: 14, bottom: 42, left: 0 };
+    const eqAt = (r) => !r.use_bp && isNum(r.eq);
+    const eqSpan = (r) => (isNum(r.eq_lo) && isNum(r.eq_hi) ? ` (${score(r.eq_lo)} to ${score(r.eq_hi)})` : '');
+    const pointsText = (r) => `${int(r.points)} ${Math.abs(r.points) === 1 ? 'point' : 'points'}`;
+    const FLAT = 'rate barely moves with score here';
+    const svg = svgFor(box, W, 10, `Which FICO has paid the same rate as a VS4 score, by VS4 band. ${items.map((r) => `${rangeDash(r.band)}: ${[`VS4 number ${score(r.vs_mean)}`, r.use_bp ? FLAT : isNum(r.eq) ? `the FICO that pays the same rate ${score(r.eq)}${eqSpan(r)}` : null, isNum(r.fico_mean) ? `the FICO these borrowers show ${score(r.fico_mean)}` : null, isNum(r.points) ? `VS4 ${pointsText(r)} above that FICO` : null].filter(Boolean).join(', ')}`).join('. ')}.`);
+    m.left = Math.ceil(textWidth(svg, [...items.map((r) => rangeDash(r.band)), 'VS4 band'])) + 12;
+    const H = m.top + items.length * rowH + m.bottom;
+    svg.attr('viewBox', `0 0 ${W} ${H}`);
+    box.style.minHeight = `${H}px`;
+    const vals = items.flatMap((r) => [r.vs_mean, r.fico_mean, ...(eqAt(r) ? [r.eq, r.eq_lo, r.eq_hi] : [])]).filter(isNum);
+    const x = d3.scaleLinear([d3.min(vals), d3.max(vals)], [m.left + 8, W - m.right - 8]).nice();
+    const ticks = x.ticks(Math.max(3, Math.min(10, Math.floor((W - m.left - m.right) / 60))));
+    svg.append('g').selectAll('line').data(ticks).join('line').attr('x1', (v) => x(v)).attr('x2', (v) => x(v)).attr('y1', m.top).attr('y2', H - m.bottom).attr('stroke', 'var(--cds-chart-grid)');
+    svg.append('g').attr('transform', `translate(0,${H - m.bottom + 6})`).call(d3.axisBottom(x).tickValues(ticks.filter((v, i) => i % 2 === 0)).tickFormat(score).tickSize(0)).call(styleAxis);
+    svg.append('text').attr('x', (x.range()[0] + x.range()[1]) / 2).attr('y', H - 4).attr('text-anchor', 'middle').text('Credit score');
+    textLines(svg, ['VS4 band'], 0, (m.top - 6) / 2);
+    const g = svg.append('g').selectAll('g').data(items).join('g').attr('transform', (r, i) => `translate(0,${m.top + i * rowH})`);
+    const cy = rowH / 2;
+    const dr = narrow ? 5.5 : 7, sq = tiny ? 3 : narrow ? 4 : 5, vr = tiny ? 4 : narrow ? 5 : 6, ring = tiny ? 2 : 4;
+    const diamond = (sel) => sel.append('path').attr('d', `M0,${-dr}L${dr},0L0,${dr}L${-dr},0Z`).attr('transform', (r) => `translate(${x(r.fico_mean)},${cy})`).attr('stroke', EQ_SHOWN).attr('stroke-width', 1.5);
+    g.append('text').attr('x', 0).attr('y', cy).attr('dy', '0.35em').style('fill', 'var(--color-fg)').text((r) => rangeDash(r.band));
+    g.filter(eqAt).append('line').attr('x1', (r) => x(r.vs_mean)).attr('x2', (r) => x(r.eq)).attr('y1', cy).attr('y2', cy).attr('stroke', 'var(--cds-chart-axis)');
+    const span = g.filter((r) => eqAt(r) && isNum(r.eq_lo) && isNum(r.eq_hi));
+    span.append('line').attr('x1', (r) => x(r.eq_lo)).attr('x2', (r) => x(r.eq_hi)).attr('y1', cy).attr('y2', cy).attr('stroke', EQ_COLOR).attr('stroke-width', 1.5);
+    if (!narrow) for (const k of ['eq_lo', 'eq_hi']) span.append('line').attr('x1', (r) => x(r[k])).attr('x2', (r) => x(r[k])).attr('y1', cy - 4).attr('y2', cy + 4).attr('stroke', EQ_COLOR).attr('stroke-width', 1.5);
+    const shown = g.filter((r) => isNum(r.fico_mean));
+    diamond(shown).attr('fill', 'var(--color-panel)');
+    g.filter(eqAt).append('rect').attr('x', (r) => x(r.eq) - sq).attr('y', cy - sq).attr('width', 2 * sq).attr('height', 2 * sq).attr('rx', 2).attr('fill', EQ_COLOR).attr('stroke', 'var(--color-panel)').attr('stroke-width', narrow ? 1 : 2);
+    diamond(shown).attr('fill', 'none');
+    g.append('circle').attr('cx', (r) => x(r.vs_mean)).attr('cy', cy).attr('r', vr).attr('fill', C_VS4).attr('stroke', 'var(--color-panel)').attr('stroke-width', ring).style('paint-order', 'stroke');
+    // Where the rate barely moves there is no FICO to mark, and the row says so left of its marks, or right of them where the left has no room.
+    g.filter((r) => r.use_bp).each(function (r) {
+      const ends = [r.vs_mean, r.fico_mean].filter(isNum).map((v) => x(v));
+      const words = narrow ? 'rate barely moves' : FLAT;
+      const leftRoom = Math.min(...ends) - dr - 6 - m.left, rightRoom = W - Math.max(...ends) - dr - 6;
+      const toLeft = leftRoom >= rightRoom;
+      textLines(d3.select(this), wrapLines(svg, words, Math.max(leftRoom, rightRoom)), toLeft ? Math.min(...ends) - dr - 6 : Math.max(...ends) + dr + 6, cy, toLeft ? 'end' : 'start').forEach((t) => t.attr('class', 'ra-halo'));
+    });
+    const tip = tooltip(box);
+    const show = (event, r) => tip.show(event, `VS4 ${rangeDash(r.band)}`, [
+      [C_VS4, 'VS4 number', score(r.vs_mean)],
+      ...(r.use_bp ? [[null, 'Rate barely moves with score here']] : isNum(r.eq) ? [[EQ_COLOR, 'FICO that pays the same rate', `${score(r.eq)}${eqSpan(r)}`]] : []),
+      ...(isNum(r.fico_mean) ? [[EQ_SHOWN, 'FICO these borrowers show, where shown', score(r.fico_mean)]] : []),
+      ...(isNum(r.fico_rare) ? [[null, 'At lenders that rarely use VS4, FICO', `${score(r.fico_rare)}${isNum(r.fico_rare_n) ? ` on ${int(r.fico_rare_n)} loans` : ''}`]] : []),
+      ...(isNum(r.n) ? [[null, 'Loans', int(r.n)]] : [])]);
+    hits(g.append('rect').attr('width', W).attr('height', rowH), show, () => tip.hide());
+    tapOff(box, 'ratesequal', () => tip.hide());
+  }
+
+  // Each lender's three figures in rows, with one scale across the columns. A row that does not compare like for like is left out of the panels and gets a line of its own under them.
+  const LENDER_READS = [['same_fico', 'Same FICO'], ['same_llpa', 'Same FICO, same LLPA'], ['same_number', 'Same score number under 820']];
+  const lenderCell = (r, k) => ({ r, dot: r[`${k}_dot`], lo: r[`${k}_lo`], hi: r[`${k}_hi`], rough: r[`${k}_rough`], n: r[`${k}_n`], weeks: r[`${k}_weeks`], read5: r[`${k}_read5`], read_tier: r[`${k}_read_tier`] });
+  const lenderWords = (c) => (isNum(c.dot) ? readText(c.dot, c.lo, c.hi) : TOO_FEW);
+  // When each lender prices on VS4, from its own loans: a lead while one keeps to a switch point and the other uses VS4 almost whenever it is higher, then the shares: the 20+ share over every week with the indicator, both GSEs; the 1 to 19 share in the latest weeks; and, where it shows both on few of its loans, how few.
+  const BOTH_FEW = 0.75;
+  const keepsSwitch = (l) => isNum(l.above) && isNum(l.below_late) && l.above >= 0.9 && l.below_late < 0.2;
+  const usesWhenever = (l) => isNum(l.above) && isNum(l.below_late) && l.above >= 0.75 && l.below_late >= 0.75;
+  function lenderRules() {
+    const stages = rowsOf('lender_stage').filter((r) => r.view === 'lender');
+    const read = ['rocket-mortgage', 'united-wholesale-mortgage'].map((id) => stages.find((r) => r.id === id)).filter((l) => l && l.short && (isNum(l.above) || isNum(l.below_late)));
+    if (!read.length) return [];
+    const out = [];
+    const keeper = read.find(keepsSwitch), user = read.find(usesWhenever);
+    if (keeper && user) {
+      const first = document.createElement('p');
+      first.className = 'ra-lead';
+      first.append(`They differ in when they use VS4: ${keeper.short} at 20+ points above FICO${keeper.rule === 'moving' ? ', starting to dip below 20 on its newest loans' : ''}; ${user.short} almost whenever it is higher.`);
+      out.push(first);
+    }
+    const above = read.filter((l) => isNum(l.above)), below = read.filter((l) => isNum(l.below_late));
+    const shares = (list, field) => list.map((l) => `${l.short} ${pct0(l[field])}`).join(', ');
+    const body = document.createElement('p');
+    body.className = 'vx-sub';
+    body.append(above.length ? `Share priced on VS4, on loans showing both scores: at 20+ above FICO, ${shares(above, 'above')}${below.length ? `; at 1 to 19 above, in the latest weeks, ${shares(below, 'below_late')}` : ''}.` : `Share priced on VS4, on loans showing both scores, at 1 to 19 above FICO, in the latest weeks: ${shares(below, 'below_late')}.`);
+    for (const l of read) if (isNum(l.both_late) && l.both_late < BOTH_FEW) body.append(` ${l.short}'s rests on the ${pct0(l.both_late)} of its latest${l.both_at === 'FNMA' ? ' Fannie' : ''} loans showing both; the rest's VS4 is unknown.`);
+    out.push(body);
+    return out;
+  }
+  function drawRateLender() {
+    const read = rateRead();
+    const { st, all, meta } = read;
+    document.getElementById('rl-rules').replaceChildren(...lenderRules());
+    rateText('rl-rates', st === 'loading' ? 'ok' : st, meta.lender_rates);
+    const rows = all.filter((r) => r.view === 'lender' && r.scope === 'group' && r.label).sort((a, b) => a.order - b.order);
+    const like = rows.filter((r) => !r.not_like_for_like), apart = rows.filter((r) => r.not_like_for_like);
+    const anyRough = like.some((r) => LENDER_READS.some(([k]) => { const c = lenderCell(r, k); return c.rough && isNum(c.dot); }));
+    const key = document.getElementById('rl-legend');
+    legend(key, [SAME_MARKS, ...(anyRough ? [roughKey] : [])]);
+    key.hidden = st !== 'loading' && !like.some((r) => LENDER_READS.some(([k]) => isNum(lenderCell(r, k).dot)));
+    document.getElementById('rate-lender').hidden = st === 'ok' && !rows.length;
+    rateText('rl-apart', st, apart.map((r) => `${r.label} is left out as not like for like${meta.rc_reason ? ` (${meta.rc_reason})` : ''}${isNum(r.same_number_dot) ? `: ${bpText(r.same_number_dot)} at the same score number` : ''}.`).join(' '));
+    document.getElementById('rl-note').hidden = st !== 'ok' || !like.length;
+    document.getElementById('rl-few').hidden = !anyRough || !!meta.lender_rates;
+    const box = document.getElementById('rl-chart');
+    box.hidden = st === 'ok' && !like.length;
+    if (box.hidden || !prep(box, st)) return;
+    const W = box.clientWidth;
+    const svg = svgFor(box, W, 10, `VS4 minus FICO by lender and channel, bp of note rate. ${like.map((r) => `${r.label}: ${LENDER_READS.map(([k, title]) => { const c = lenderCell(r, k); return `${title} ${lenderWords(c)}${c.rough && isNum(c.dot) ? ', few lender-weeks' : ''}`; }).join(', ')}`).join('. ')}.`);
+    const vals = like.flatMap((r) => LENDER_READS.flatMap(([k]) => { const c = lenderCell(r, k); return isNum(c.dot) ? [c.dot, c.lo, c.hi] : []; })).filter(isNum);
+    const dom = d3.scaleLinear(vals.length ? [Math.min(0, d3.min(vals)), Math.max(0, d3.max(vals))] : [-1, 1], [0, 1]).nice(4).domain();
+    const allLabel = Math.ceil(textWidth(svg, like.map((r) => r.label))) + 12;
+    const gap = 18, edge = Math.max(8, Math.ceil(textWidth(svg, [bpTick(dom[1])]) / 2) + 1);
+    const cw = (W - allLabel - 2 * gap) / 3;
+    // Where three columns will not fit they stack, and as on the first chart each row's label takes its own line above its plot, with the grid only beside the plots.
+    const stack = cw < 130 || textWidth(svg, like.filter((r) => !isNum(r.same_fico_dot) && isNum(r.same_fico_n)).map((r) => `${TOO_FEW} (${int(r.same_fico_n)})`)) > cw + gap - 2;
+    const axisNote = 'VS4 minus FICO, bp';
+    const rowH = stack ? 42 : 28, tickH = stack ? 40 : 24;
+    // The first column's figures carry its loans, as More cuts does. The other two columns' bases differ, and their tips say so.
+    const inLoans = (k) => k === LENDER_READS[0][0];
+    const heads = LENDER_READS.map(([k, title]) => {
+      const head = inLoans(k) ? `${title}: ${FOREST_HEAD}` : title;
+      return stack ? [head] : wrapLines(svg, head, cw / 1.08);  // the medium weight runs wider than the text it is measured in
+    });
+    const noteLines = stack ? [] : wrapLines(svg, axisNote, allLabel - 8);
+    const headH = 15 * Math.max(noteLines.length, d3.max(heads, (h) => h.length)) + 6;
+    const panelH = headH + like.length * rowH + (like.length ? tickH : 0);
+    const H = stack ? 3 * panelH + 2 * 16 : panelH;
+    svg.attr('viewBox', `0 0 ${W} ${H}`);
+    box.style.minHeight = `${H}px`;
+    textLines(svg, noteLines, 0, headH / 2 - 3);
+    const tip = tooltip(box);
+    const lift = (event, c, title) => {
+      const compared = comparedLine(c, int);
+      const counts = [!compared.length && isNum(c.n) ? `${int(c.n)} loans` : null, weeksWords(c.weeks, c.rough && isNum(c.dot))].filter(Boolean).join(', ');
+      tip.show(event, `${c.r.label}: ${title}`, [
+        ...(isNum(c.dot) ? [[C_DOT, 'Estimate', bpFigure(c.dot)], ...spanLine(C_VS4, RANGE_WORDS, c.lo, c.hi)] : [[null, TOO_FEW]]),
+        ...compared, ...(counts ? [[null, counts]] : [])]);
+    };
+    LENDER_READS.forEach(([k, title], j) => {
+      const oy = stack ? j * (panelH + 16) : 0;
+      const pl = stack ? 0 : allLabel + j * (cw + gap);
+      const pw = stack ? W : cw;
+      const px = d3.scaleLinear(dom, stack ? [Math.max(12, edge), W - Math.max(12, edge)] : [pl + 8, pl + pw - edge]);
+      const ticks = px.ticks(Math.max(2, Math.floor((px.range()[1] - px.range()[0]) / 44)));
+      // A column's estimates sit past the bar's right end, leaning into the gap beside it if need be, or past its left end where they would run off the column or onto the zero line.
+      const room = stack ? W : pl + pw + (j < 2 ? gap - 4 : 0);
+      textLines(svg, heads[j], stack ? 0 : pl, oy + headH / 2 - 3).forEach((t) => t.style('fill', 'var(--color-fg)').style('font-weight', 'var(--cds-font-weight-medium)'));
+      like.forEach((r, i) => {
+        const c = lenderCell(r, k), top = oy + headH + i * rowH, plotTop = stack ? top + 16 : top, plotEnd = stack ? top + 34 : top + rowH;
+        const mid = (plotTop + plotEnd) / 2, labelY = stack ? top + 8 : mid;
+        const label = r.label, loans = inLoans(k) && isNum(c.n) ? ` (${int(c.n)})` : '';
+        if (stack || j === 0) svg.append('text').attr('x', 0).attr('y', labelY).attr('dy', '0.35em').style('fill', 'var(--color-fg)').text(label);
+        if (isNum(c.dot)) {
+          svg.append('g').selectAll('line').data(ticks).join('line').attr('x1', (v) => px(v)).attr('x2', (v) => px(v)).attr('y1', plotTop).attr('y2', plotEnd).attr('stroke', 'var(--cds-chart-grid)');
+          svg.append('line').attr('x1', px(0)).attr('x2', px(0)).attr('y1', plotTop).attr('y2', plotEnd).attr('stroke', 'var(--cds-chart-axis)').attr('stroke-width', 1.5);
+          estimateMark(svg, px, mid, c, 10, 4.5);
+          const ends = [c.dot, c.lo, c.hi].filter(isNum), value = `${bpText(c.dot)}${loans}`, w = textWidth(svg, [value]);
+          const right = px(d3.max(ends)) + 7, left = px(d3.min(ends)) - 7;
+          const onZero = right < px(0) && right + w > px(0) - 2;
+          const leftFits = left - w >= (stack || j ? pl : textWidth(svg, [label]) + 6);
+          const start = onZero ? px(0) + 5 : right;  // with no room left of the bar, it starts clear of the zero line
+          const fits = start + w <= room;
+          const toLeft = leftFits && (onZero || !fits);
+          svg.append('text').attr('class', 'ra-halo').attr('x', toLeft ? left : fits ? start : room).attr('y', mid).attr('dy', '0.35em').attr('text-anchor', toLeft || !fits ? 'end' : 'start').style('fill', 'var(--color-fg)').text(value);
+        } else if (stack) {
+          const words = `${TOO_FEW}${loans}`;  // beside the label, or on the plot's line where it will not fit
+          svg.append('text').attr('x', W).attr('y', textWidth(svg, [label]) + 8 + textWidth(svg, [words]) > W ? mid : labelY).attr('dy', '0.35em').attr('text-anchor', 'end').text(words);
+        } else {
+          svg.append('text').attr('x', pl + 8).attr('y', mid).attr('dy', '0.35em').text(`${TOO_FEW}${loans}`);
+        }
+        hits(svg.append('rect').attr('x', stack ? 0 : pl).attr('y', top).attr('width', stack ? W : pw).attr('height', rowH), (event) => lift(event, c, title), () => tip.hide());
+      });
+      const axisY = oy + headH + like.length * rowH + 4;
+      if (like.some((r) => isNum(lenderCell(r, k).dot))) {
+        svg.append('g').attr('transform', `translate(0,${axisY})`).call(d3.axisBottom(px).tickValues(px.ticks(2)).tickFormat(bpTick).tickSize(0)).call(styleAxis);
+        if (stack) svg.append('text').attr('x', (px.range()[0] + px.range()[1]) / 2).attr('y', axisY + 32).attr('text-anchor', 'middle').text(axisNote);
+      }
+    });
+    tapOff(box, 'rateslender', () => tip.hide());
+  }
+
+  // The first chart's grammar for the description rows, with the figure and its loans at the right of each row. The figures in a fold share one scale, one left column and one right column; a thin line past the axis stops at its edge with an arrow.
+  const forestMarked = (r) => isNum(r.dot) && !r.text;
+  const forestVals = (r) => [r.dot, r.spread_lo, r.spread_hi, r.tl, r.th].filter(isNum);
+  const forestIndent = (r) => (r.dim === 'purpose' && (r.key === 'C' || r.key === 'R') ? 12 : 0);
+  const forestWords = (r) => r.text || (isNum(r.dot) ? readText(r.dot, r.spread_lo, r.spread_hi) : TOO_FEW);
+  const forestLoans = (r) => (isNum(r.pool) ? r.pool : r.n);  // every loan in the row, where the row also counts those with a model figure
+  const forestFigure = (r) => [forestMarked(r) ? bpText(r.dot) : null, isNum(forestLoans(r)) ? `(${int(forestLoans(r))})` : null].filter(Boolean).join(' ');
+  const FOREST_REACH = 20, FOREST_HEAD = 'bp (loans)';
+  const forestDomain = (vals) => d3.scaleLinear(vals.length ? [Math.max(-FOREST_REACH, Math.min(0, d3.min(vals))), Math.min(FOREST_REACH, Math.max(0, d3.max(vals)))] : [-1, 1], [0, 1]).nice(6).domain();
+  function forestLabel(r) {
+    const label = String(r.label);
+    if (r.dim === 'ltv') return label.replace(/^(\d+) or less$/, '$1% or less').replace(/^(\d+)(?:\.\d+)?-(\d+)$/, '$1–$2%').replace(/^Over (\d+)$/, 'Over $1%');
+    if (r.view === 'fico_gap' || r.scope === 'gapband') return label.replace(/^VS4 /, '').replace(/ FICO$/, '');
+    return rangeDash(label);
+  }
+  function drawForest(box, st, blocks, frame, aria) {
+    if (box.hidden || !prep(box, st)) return;
+    // Under about 520 px a row's label and figure take a line above its plot, as on the first chart.
+    const W = box.clientWidth, narrow = W < 520, rowH = 22, plotH = narrow ? 38 : rowH, headH = 26;
+    const ariaOf = (r) => `${forestLabel(r)}: ${forestWords(r).replace(/\.$/, '')}${forestMarked(r) && isNum(r.tl) && isNum(r.th) ? `, 95% range, approximate, ${thinText(r)}` : ''}${r.thin && isNum(r.dot) ? ', few lender-weeks' : ''}${isNum(forestLoans(r)) ? `, ${int(forestLoans(r))} loans` : ''}`;
+    const svg = svgFor(box, W, 10, `${aria} ${blocks.flatMap((b) => b.rows.map((r) => `${b.head ? `${b.head}, ` : ''}${ariaOf(r)}`)).join('. ')}.`);
+    const figureW = Math.ceil(textWidth(svg, [...frame.rows.map(forestFigure), FOREST_HEAD]));
+    const left = narrow ? 0 : Math.ceil(d3.max(frame.rows, (r) => forestIndent(r) + textWidth(svg, [forestLabel(r)]))) + 12;
+    const [dLo, dHi] = forestDomain(frame.vals);
+    const x = d3.scaleLinear([dLo, dHi], narrow ? [12, W - 12] : [left + 8, W - figureW - 16]);
+    const inside = (v) => x(Math.max(dLo, Math.min(dHi, v)));
+    const ticks = x.ticks(Math.max(3, Math.min(5, Math.floor((x.range()[1] - x.range()[0]) / 52))));
+    const stride = ticks.length > 1 ? Math.ceil((textWidth(svg, ticks.map(bpTick)) + 6) / (x(ticks[1]) - x(ticks[0]))) : 1;
+    const labelled = ticks.filter((v, i) => (i - ticks.indexOf(0)) % stride === 0);
+    const tip = tooltip(box);
+    const show = (event, r, head) => {
+      const compared = isNum(r.dot) && !r.text ? comparedLine(r, int) : [];
+      const counts = [!compared.length && isNum(forestLoans(r)) ? `${int(forestLoans(r))} loans` : null, weeksWords(r.lender_weeks, r.thin)].filter(Boolean).join(', ');
+      tip.show(event, `${head ? `${head}: ` : ''}${forestLabel(r)}`, [
+        ...(r.text ? [[null, r.text]] : !isNum(r.dot) ? [[null, TOO_FEW]] : [[C_DOT, 'Estimate', bpFigure(r.dot)], ...spanLine(C_VS4, RANGE_WORDS, r.spread_lo, r.spread_hi), ...(isNum(r.tl) && isNum(r.th) ? [[C_THIN, THIN_WORDS, thinText(r)]] : [])]),
+        ...compared, ...(counts ? [[null, counts]] : [])]);
+    };
+    const hide = () => tip.hide();
+    tapOff(box, box.id, hide);
+    const figureAt = (y, text) => svg.append('text').attr('x', W).attr('y', y).attr('dy', '0.35em').attr('text-anchor', 'end').text(text);
+    let at = 0;
+    blocks.forEach((b, i) => {
+      if (b.head) {
+        svg.append('text').attr('x', 0).attr('y', at + headH - 8).style('fill', 'var(--color-fg)').style('font-weight', 'var(--cds-font-weight-medium)').text(b.head);
+        if (!i) svg.append('text').attr('x', W).attr('y', at + headH - 8).attr('text-anchor', 'end').text(FOREST_HEAD);
+        at += headH;
+      }
+      for (const r of b.rows) {
+        const indent = forestIndent(r), marked = forestMarked(r), label = forestLabel(r), figure = forestFigure(r);
+        const labelEnd = indent + textWidth(svg, [label]);
+        const labelY = at + rowH / 2;
+        let h = marked ? plotH : rowH;
+        svg.append('text').attr('x', indent).attr('y', labelY).attr('dy', '0.35em').style('fill', 'var(--color-fg)').text(label).each(function () { clip(this, narrow ? W - figureW - 8 - indent : left - 6 - indent); });
+        if (marked) {
+          figureAt(labelY, figure);
+          const mid = narrow ? at + 28 : labelY, top = narrow ? at + 18 : at, end = at + plotH;
+          svg.append('g').selectAll('line').data(ticks).join('line').attr('x1', (v) => x(v)).attr('x2', (v) => x(v)).attr('y1', top).attr('y2', end).attr('stroke', 'var(--cds-chart-grid)');
+          svg.append('line').attr('x1', x(0)).attr('x2', x(0)).attr('y1', top).attr('y2', end).attr('stroke', 'var(--cds-chart-axis)').attr('stroke-width', 1.5);
+          if (isNum(r.tl) && isNum(r.th)) {
+            svg.append('line').attr('x1', inside(r.tl)).attr('x2', inside(r.th)).attr('y1', mid).attr('y2', mid).attr('stroke', C_THIN).attr('stroke-width', 1.5);
+            for (const v of [r.tl, r.th]) {
+              if (v >= dLo && v <= dHi) svg.append('line').attr('x1', x(v)).attr('x2', x(v)).attr('y1', mid - 3).attr('y2', mid + 3).attr('stroke', C_THIN).attr('stroke-width', 1.5);
+              else svg.append('path').attr('class', 'ra-past').attr('d', `M${inside(v) - (v > dHi ? 5 : -5)},${mid - 4}L${inside(v)},${mid}L${inside(v) - (v > dHi ? 5 : -5)},${mid + 4}`).attr('fill', 'none').attr('stroke', C_THIN).attr('stroke-width', 1.5);
+            }
+          }
+          estimateMark(svg, inside, mid, { dot: r.dot, lo: r.spread_lo, hi: r.spread_hi, rough: r.thin }, 10, 4);
+        } else {
+          // Words take the plot's place, or a line of their own under the label where they will not fit.
+          const words = forestWords(r);
+          if (narrow) {
+            const line = `${words} ${figure}`.trim();
+            const alone = labelEnd + 8 + textWidth(svg, [line]) > W;
+            if (alone) svg.append('text').attr('x', indent).attr('y', labelY + rowH - 4).attr('dy', '0.35em').text(line);
+            else figureAt(labelY, line);
+            h = alone ? 2 * rowH - 4 : rowH;
+          } else {
+            const alone = left + 8 + textWidth(svg, [words]) > W - figureW - 16;
+            svg.append('text').attr('x', alone ? indent : left + 8).attr('y', alone ? labelY + rowH - 4 : labelY).attr('dy', '0.35em').text(words);
+            figureAt(labelY, figure);
+            h = alone ? 2 * rowH - 4 : rowH;
+          }
+        }
+        hits(svg.append('rect').attr('x', 0).attr('y', at).attr('width', W).attr('height', h), (event) => show(event, r, b.head), hide);
+        at += h;
+      }
+    });
+    svg.append('g').attr('transform', `translate(0,${at + 4})`).call(d3.axisBottom(x).tickValues(labelled).tickFormat(bpTick).tickSize(0)).call(styleAxis);
+    at += 24;
+    svg.append('text').attr('x', (x.range()[0] + x.range()[1]) / 2).attr('y', at + 8).attr('text-anchor', 'middle').text('VS4 minus FICO, bp');
+    at += 16;
+    const H = Math.ceil(at) + 2;
+    svg.attr('viewBox', `0 0 ${W} ${H}`);
+    box.style.minHeight = `${H}px`;
+  }
+
+  const CUT_BLOCKS = [['ltv', 'LTV'], ['size', 'Loan size'], ['fico', 'FICO band'], ['purpose', 'Purpose']];
+  function drawRateFolds() {
+    const read = rateRead();
+    const { st, all } = read;
+    const byOrder = (a, b) => a.order - b.order;
+    rateLine('rq-dated', 'dated', read);
+    document.getElementById('rq-dated-line').hidden = !read.meta.dated;
+    document.getElementById('rate-quote').hidden = !rateList('rq-list', st, all.filter((r) => r.view === 'quote').sort(byOrder).map((r) => r.text)) && st !== 'loading';
+    const cuts = all.filter((r) => r.view === 'cut' && r.label && !r.not_like_for_like).sort(byOrder);
+    const ficoGaps = all.filter((r) => r.view === 'fico_gap' && r.label).sort(byOrder);
+    const gaps = all.filter((r) => r.view === 'same_number' && r.scope === 'gapband' && r.label).sort(byOrder);
+    const blocks = CUT_BLOCKS.map(([dim, head]) => ({ head, rows: cuts.filter((r) => r.dim === dim) })).filter((b) => b.rows.length);
+    const gapBlocks = [{ head: 'Same FICO', rows: ficoGaps }, { head: 'Same score number', rows: gaps }].filter((b) => b.rows.some(forestMarked));
+    const firstRows = blocks.flatMap((b) => b.rows), gapRows = gapBlocks.flatMap((b) => b.rows);
+    const anyFirst = firstRows.some(forestMarked), anyGaps = gapRows.length > 0;
+    const fold = document.getElementById('rate-cuts');
+    fold.hidden = st === 'ok' && !anyFirst && !anyGaps;
+    if (fold.open) {  // a chart in a closed fold has no width, and the fold's toggle draws it
+      const firstBox = document.getElementById('rc-chart'), gapBox = document.getElementById('rc-gap');
+      const key = document.getElementById('rc-legend');
+      legend(key, [[null, 'Dot, bar and thin line as above.'], ...(firstRows.concat(gapRows).some((r) => r.thin && forestMarked(r)) ? [roughKey] : [])]);
+      key.hidden = st !== 'loading' && !anyFirst && !anyGaps;
+      (st === 'ok' && !anyFirst ? gapBox : firstBox).before(key);  // the legend goes with the figure left to read it
+      for (const id of ['rc-first-h', 'rc-note']) document.getElementById(id).hidden = st === 'ok' && !anyFirst;
+      firstBox.hidden = st === 'ok' && !anyFirst;
+      gapBox.hidden = document.getElementById('rc-gap-h').hidden = st === 'ok' && !anyGaps;
+      rateText('rc-gap-line', st, anyGaps ? leadSplit(read.meta.gap_line)[0] : null);
+      rateText('rc-gap-note', st === 'loading' ? 'ok' : st, gapBlocks.some((b) => b.rows === gaps) ? 'Same number: VS4 loans under 820 showing a FICO.' : null);
+      const frame = { rows: [...(anyFirst ? firstRows : []), ...gapRows], vals: [...firstRows, ...gapRows].filter(forestMarked).flatMap(forestVals) };
+      drawForest(firstBox, st, blocks, frame, 'Same FICO, same LLPA, VS4 minus FICO in bp of note rate, by loan type, as description.');
+      drawForest(gapBox, st, gapBlocks, frame, 'VS4 minus FICO in bp of note rate, by how far VS4 sits above FICO, same FICO and same score number.');
+    }
+    const rate = all.filter((r) => r.view === 'llpa_rate' && r.label && (isNum(r.lower_dot) || isNum(r.same_dot))).sort(byOrder);
+    const table = document.getElementById('llpa-rate-table');
+    document.getElementById('llpa-rate-card').hidden = document.getElementById('llpa-first').hidden = st !== 'loading' && !rate.length;
+    table.closest('.vx-tablebox').classList.toggle('dash-skeleton', st === 'loading');
+    const body = table.tBodies[0];
+    body.replaceChildren();
+    const bpLoans = (v, n) => (isNum(v) ? `${bpText(v)}${isNum(n) ? ` (${int(n)})` : ''}` : TOO_FEW);
+    for (const r of rate) {
+      const tr = body.insertRow();
+      tr.dataset.key = ['llpa_rate', r.key].map(keyPart).join(',');
+      [[`${r.label}${r.not_like_for_like ? ', not like for like' : ''}`, 'vx-l vx-name'], [r.purpose ?? '', 'vx-l'], [bpLoans(r.lower_dot, r.lower_n)], [bpLoans(r.same_dot, r.same_n)]].forEach(([text, cls]) => {
+        const td = tr.insertCell();
+        td.textContent = text;
+        if (cls) td.className = cls;
+      });
+    }
+    // Every cell here is a midpoint on few lender-weeks, so the caption says so once, rather than each row.
+    const rough = rate.flatMap((r) => [...(isNum(r.lower_dot) ? [!!r.lower_rough] : []), ...(isNum(r.same_dot) ? [!!r.same_rough] : [])]);
+    const note = document.getElementById('llpa-rate-note');
+    note.replaceChildren(...(rough.some(Boolean) ? [`${rough.every(Boolean) ? 'All' : 'Some'} rows are `, termSpan('thin', 'rough'), '. '] : []), 'Rows do not add: each is a midpoint on the loans that find a match.');
+    rateLine('llpa-sum', 'llpa_sum', read);
+    rateLine('llpa-share', 'llpa_share', read);
+  }
+
+  // The build's checks, listed on Method: they warn and stop nothing. Beside them, why Rocket correspondent has its own line and what this tab replaced.
+  function drawRateChecks() {
+    const read = rateRead();
+    const { st, all, meta } = read;
+    rateLine('ra-changed', 'changed', read);
+    rateText('ra-rc-reason', st, meta.rc_reason);
+    document.getElementById('ra-rc-wrap').hidden = !meta.rc_reason;
+    rateLine('ra-sample', 'sample', read);
+    const rows = all.filter((r) => r.view === 'check').sort((a, b) => a.order - b.order);
+    const passed = rows.filter((r) => r.pass === true).length;
+    rateText('ra-check-head', st, rows.length ? `This build: ${int(passed)} of ${int(rows.length)} checks passed.${passed === rows.length ? ' They show the methods agree within a few bp on the rows they test, not that the estimates are right.' : ''}` : null);
+    const state = (r) => (r.pass === true ? '' : r.pass === false ? ', missed' : ', could not be read');
+    // A miss prints past its limit, so the line cannot read as its own contradiction.
+    const shown = (r) => (r.pass === false && Math.abs(nearBp(r.value)) <= r.limit ? Math.sign(r.value) * Math.ceil(Math.abs(r.value) * 2) / 2 : nearBp(r.value));
+    const inLoans = (r) => r.unit === 'loans';
+    rateList('ra-checks', st, rows.filter((r) => r.label).map((r) => [`${r.label}: ${!isNum(r.value) ? '—' : inLoans(r) ? int(r.value) : bpFigure(shown(r))}${isNum(r.limit) ? `, limit ${d3.format('~g')(r.limit)}${inLoans(r) ? '' : ' bp'}` : ''}${state(r)}.`, r.detail].filter(Boolean).join(' ')));
   }
 
   // Dollars at any size: $0, $420, $48k, $2.1m, $3.4bn, $2.1tn. Under $100k it reads in thousands, so a small amount never shows as $0.0m.
@@ -2038,9 +2784,17 @@
     const text = a >= 999.95e9 ? `$${one(a / 1e12)}tn` : a >= 999.95e6 ? `$${one(a / 1e9)}bn` : a >= 1e5 ? `$${one(a / 1e6)}m` : a >= 1e3 ? `$${d3.format('.0f')(a / 1e3)}k` : money(a);
     return v <= -0.5 ? `−${text}` : text;
   };
+  // A yearly figure scaled up from one part month reads no finer than it is: to the nearest $50m from $100m, the nearest $10m under that. Under $10m, or from $1bn, it reads as any other.
+  const aboutUsd = (v) => {
+    if (v < 1e7 || v >= 1e9) return `About ${usdM(v)}`;
+    const step = v >= 1e8 ? 5e7 : 1e7, near = Math.round(v / step) * step;
+    return `About ${near < 1e9 ? `$${int(near / 1e6)}m` : usdM(near)}`;
+  };
 
   function drawFees() {
     const st = dash.data('fees').status;
+    document.getElementById('fee-sec').hidden = st !== 'ok' && st !== 'loading';
+    document.getElementById('fee-fail').hidden = st === 'ok' || st === 'loading';
     const rows = rowsOf('fees');
     const m = rows.find((r) => r.view === 'market' && r.key === 'All') || {};
     const mw = 'view=market&key=All';
@@ -2049,8 +2803,22 @@
     mark('.fe-month-s', 'month', mw, st, val('month', monthShort));
     mark('.fe-avg', 'saving_avg_usd', mw, st, val('saving_avg_usd', money));
     mark('.fe-share', 'saving_share', mw, st, val('saving_share', pct1));
-    mark('.fe-taken', 'taken_annual_usd', mw, st, val('taken_annual_usd', usdM));
-    mark('.fe-taken-m', 'taken_all_usd', mw, st, val('taken_all_usd', usdM));
+    mark('.fe-taken', 'taken_annual_usd', mw, st, val('taken_annual_usd', aboutUsd));
+    mark('.fe-taken-m', 'taken_usd', mw, st, val('taken_usd', usdM));
+    mark('.fe-scale', null, null, st, isNum(m.taken_annual_usd) && m.taken_usd > 0 ? `scaled about ${int(Math.round(m.taken_annual_usd / m.taken_usd))} times` : 'scaled up');
+    const aei = rowsOf('statements').find((r) => r.check === 'fees' && String(r.who).includes('AEI') && r.statement);
+    const aeiLine = document.getElementById('fe-aei');
+    aeiLine.replaceChildren();
+    if (aei) aeiLine.append(` ${aei.statement.split('. ')[0]}. `);
+    if (aei && aei.url) {
+      const a = document.createElement('a');
+      a.className = 'vx-link';
+      a.href = aei.url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.textContent = aei.source;
+      aeiLine.append('Source: ', a, '.');
+    }
     const lenders = rows.filter((r) => r.view === 'lender' && r.priced_loans >= 20).sort((a, b) => b.taken_usd - a.taken_usd);
     const table = document.getElementById('fee-table');
     table.closest('.vx-tablebox').classList.toggle('dash-skeleton', st === 'loading');
@@ -2072,7 +2840,7 @@
     const scopes = [...new Map(gse.map((r) => [r.scope, r.scope_label])).entries()];
     const gt = document.getElementById('gse-score-table');
     const gh = gt.tHead.rows[0];
-    gh.replaceChildren(...['Score band'].concat(scopes.map(([, l]) => l), ['Better VS4, same FICO']).map((text, i) => {
+    gh.replaceChildren(...['Score band'].concat(scopes.map(([, l]) => l), ['VS4 a tier better, same FICO tier']).map((text, i) => {
       const th = document.createElement('th');
       th.scope = 'col';
       if (!i) th.className = 'vx-l';
@@ -2144,12 +2912,18 @@
       drawProfile(p);
     } else if (current === 'pricing') {
       drawRateAnswer();
+      drawRateNumber();
+      drawRateEqual();
+      drawRateLender();
+      drawRateFolds();
       drawFees();
+    } else if (current === 'method') {
+      drawRateChecks();
     }
     (window.vx.hooks[current] || []).forEach((fn) => fn(p));
     window.vx.after.forEach((fn) => fn());
   }
-  window.vx = { root, rowsOf, statusOf, int, pct1, money, usdM, ptsSigned, inkOn, olName, olPct, openSeller, entityOf, monthShort, monthYear, monthLabel, shortDay, prep, svgFor, bandFrame, yAxis, bandAxis, bandHover, legend, tooltip, textWidth,
+  window.vx = { root, rowsOf, rateRows, statusOf, int, pct1, money, usdM, ptsSigned, readText, LENDER_READS, inkOn, olName, olPct, openSeller, entityOf, monthShort, monthYear, monthLabel, shortDay, prep, svgFor, bandFrame, yAxis, bandAxis, bandHover, legend, tooltip, textWidth,
     MIX_GROUPS, ADOPT_FROM, AG_NAME, show, col, mark, redraw: draw, after: [], hooks: { overview: [], outlook: [], lenders: [], scores: [], borrowers: [], pricing: [], market: [], method: [] } };
 
   // A link names a page (#lenders) or a seller (#seller-rocket-mortgage); the page opens it as it loads.
@@ -2167,6 +2941,12 @@
     if (h.startsWith('seller-') && !(current === 'lenders' && params().seller === h.slice('seller-'.length))) openSeller(h.slice('seller-'.length));
     else if (TABS.includes(h) && h !== current) { place(h); draw(); }
   });
-  root.addEventListener('toggle', (event) => { if (event.target.matches('details.vx-more')) draw(); }, true);
+  // The words link leaves its tab's name on the entry it leaves, so one Back returns there on a host whose setLink leaves this frame's URL alone. A host that moves the URL needs no more than the hash.
+  window.addEventListener('popstate', (event) => { if (event.state && event.state.tab && event.state.tab !== current) show(event.state.tab); });
+  // A fold of plain text has nothing to measure, so opening it leaves a selection or a focused term alone.
+  root.addEventListener('toggle', (event) => { if (event.target.matches('details.vx-more') && event.target.querySelector('.vx-chart, table, .vx-note, .vx-sec-h')) draw(); }, true);
+  // A chart is drawn for the width it has, so a print draws at a page's width and then back. The width goes on the page's own box, which is there on any host.
+  window.addEventListener('beforeprint', () => { root.style.width = '680px'; draw(); });
+  window.addEventListener('afterprint', () => { root.style.width = ''; draw(); });
   dash.onData(draw);
 })();

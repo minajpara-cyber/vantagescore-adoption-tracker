@@ -11,11 +11,11 @@
       <span class="vx-num h-cur-share dash-skeleton" data-source="summary" data-field="current_vs4_share" data-where="agency=All">—</span>
       of
       <span class="h-cur-month dash-skeleton" data-source="summary" data-field="current_month" data-where="agency=All">—</span>
-      so far</span>. Two lenders deliver
+      so far</span>. <span class="h-top2" data-source="summary" data-field="top2_sellers" data-where="agency=All">Two lenders</span> deliver
       <span class="vx-num s-top2 dash-skeleton" data-source="summary" data-field="top2_share_of_vs4" data-where="agency=All">—</span>
       of those loans. At least
       <span class="vx-num h-fico dash-skeleton" data-source="score_mix" data-field="fico_share">—</span>
-      of loans have a Classic FICO.
+      of <span class="mx-month" data-source="score_mix" data-field="start">—</span> loans have a Classic FICO.
     </p>
     <div class="vx-bar">
       <nav class="vx-tabs" role="tablist" aria-label="Pages">
@@ -352,7 +352,7 @@
         <div><div class="vx-lbl">Bought from correspondents</div><div class="vx-stat-v sx-corr dash-skeleton" data-source="sellers" data-field="corr_share_recent">—</div></div>
         <div><div class="vx-lbl">Shows both scores</div><div class="vx-stat-v sx-pull dash-skeleton" data-source="choice" data-field="both_share">—</div></div>
       </div>
-      <div id="co-read" data-source="lender_stage lender_mix closing statements score_mix seller_weekly seller_monthly">
+      <div id="co-read" data-source="lender_stage lender_mix closing statements score_mix seller_weekly seller_monthly rates">
         <p class="co-line" id="co-line"></p>
         <div id="co-body">
           <div class="co-grid">
@@ -380,6 +380,13 @@
               <h3>Where it stands, on loans disclosed with every score</h3>
               <div class="vx-tablebox">
                 <table class="vx-table" id="co-facts"><tbody></tbody></table>
+              </div>
+              <div id="co-rate-box">
+                <h3>Rate against comparable FICO loans, bp</h3>
+                <div class="vx-tablebox">
+                  <table class="vx-table" id="co-rate"><tbody></tbody></table>
+                </div>
+                <p class="vx-sub" id="co-rate-note"></p>
               </div>
             </div>
           </div>
@@ -679,7 +686,7 @@
           <h2 id="choice-h">When lenders price on VS4</h2>
           <select class="vx-select" id="choice-scope" aria-label="Lender" data-source="choice"></select>
         </div>
-        <p>Loans that show both scores. A lender that orders both can price on either, and its rule shows up in score points. For MBS issued before October 1, 2026, the GSEs applied FICO's fee tiers to VS4 at 20 points higher, so VS4 had to beat FICO by 20 points just to match it. Since then one grid covers both scores, and loans priced for it have been reaching the files since mid-October. A single lender covers both GSEs, and its figures need 20 or more loans.</p>
+        <p>Loans that show both scores. A lender that orders both can price on either, and its rule shows up in score points. For MBS issued before October 1, 2026, the GSEs applied FICO's fee tiers to VS4 at 20 points higher, so VS4 had to beat FICO by 20 points just to match it. Since then one grid covers both scores. A lender can change its pick at once, but rates on loans locked since then take weeks to reach the files. A single lender covers both GSEs, and its figures need 20 or more loans.</p>
       </header>
       <div class="vx-grid">
         <div class="vx-card" id="rule-curve-card">
@@ -784,34 +791,125 @@
   <template id="tpl-pricing">
     <section class="vx-card" id="rate-answer" aria-labelledby="rate-answer-h">
       <h2 id="rate-answer-h">At the same FICO, does a VS4 loan get a different rate?</h2>
-      <p class="vx-takeaway dash-skeleton" id="ra-answer" data-source="rate_readout" data-field="answer" data-where="view=meta">—</p>
+      <div class="dash-skeleton" id="ra-answer" data-source="rates"></div>
+      <p id="ra-selected" data-source="rates" data-field="text" data-where="view=limit&amp;key=selected" hidden></p>
       <div class="vx-legend" id="ra-legend"></div>
-      <div class="vx-chart dash-skeleton" id="ra-chart" data-source="rate_readout"></div>
-      <p class="vx-sub dash-skeleton" id="ra-stamp" data-source="rate_readout" data-field="stamp" data-where="view=meta">—</p>
-      <p class="vx-sub">Words: <span data-term="llpa">LLPA</span>, <span data-term="bp">bp</span>, <span data-term="channel">channel</span>, <span data-term="gse">GSE</span>. The rest are in <button type="button" class="vx-link" data-go="method">What the words mean</button>.</p>
-      <ul class="vx-list dash-skeleton" id="ra-limits" data-source="rate_readout"></ul>
-      <p class="vx-sub" id="ra-dated-line"><span class="dash-skeleton" id="ra-dated" data-source="rate_readout" data-field="dated" data-where="view=meta">—</span> <span class="dash-skeleton" id="ra-changed" data-source="rate_readout" data-field="changed" data-where="view=meta">—</span></p>
+      <div class="vx-chart dash-skeleton" id="ra-chart" data-source="rates"></div>
+      <p class="vx-sub dash-skeleton" id="ra-stamp" data-source="rates" data-field="stamp" data-where="view=meta">—</p>
+      <ul class="vx-list dash-skeleton" id="ra-points" data-source="rates"></ul>
+      <p class="vx-sub" id="ra-offset">The <span data-term="oldrule">old rule</span>: for MBS issued before Oct 1, 2026, the LLPA grid counted VS4 as 20 points lower. Since then both scores use one grid<span id="ra-offset-tail" data-source="rates" data-field="offset_tail" data-where="view=meta"></span>.</p>
+      <ul class="vx-list dash-skeleton" id="ra-limits" data-source="rates"></ul>
+      <details class="vx-more" id="ra-score">
+        <summary>Is the gap the score itself?</summary>
+        <ul class="vx-list" id="ra-score-list" data-source="rates"></ul>
+      </details>
+      <details class="vx-more" id="ra-firm">
+        <summary>How firm are these numbers?</summary>
+        <div id="ra-steps-wrap">
+          <h3 id="ra-steps-h">What the controls do to the raw gap</h3>
+          <div class="vx-chart" id="ra-steps" data-source="rates"></div>
+          <p class="vx-sub" id="ra-steps-note"></p>
+        </div>
+        <ul class="vx-list" id="ra-firm-list" data-source="rates"></ul>
+      </details>
+      <p class="vx-sub" id="ra-dated-line"><span class="dash-skeleton" id="ra-dated" data-source="rates" data-field="dated" data-where="view=meta">—</span></p>
     </section>
+    <section class="vx-card" id="rate-number" aria-labelledby="rate-number-h">
+      <h2 id="rate-number-h">At the same score number, does a VS4 loan carry a higher rate?</h2>
+      <p class="ra-lead dash-skeleton" id="rn-stat" data-source="rates" data-field="text" data-where="view=answer&amp;key=same_number">—</p>
+      <p class="vx-sub" id="rn-rest" data-source="rates" data-field="text" data-where="view=answer&amp;key=same_number" hidden></p>
+      <p class="vx-sub" id="rn-sub">VS4 640–819, by the month each loan closed.</p>
+      <div class="vx-legend" id="rn-legend"></div>
+      <div class="vx-chart dash-skeleton" id="rn-chart" data-source="rates"></div>
+      <ul class="vx-list dash-skeleton" id="rn-notes" data-source="rates"></ul>
+      <details class="vx-more" id="rn-more">
+        <summary id="rn-more-h">Milliman's figure beside this one</summary>
+        <p class="vx-sub" id="rn-said" data-source="statements"></p>
+        <p class="vx-sub" id="rn-line" data-source="rates" data-field="milliman_line" data-where="view=meta">—</p>
+      </details>
+    </section>
+    <section class="vx-card" id="rate-equal" aria-labelledby="rate-equal-h">
+      <h2 id="rate-equal-h">Which FICO has paid the same rate as a VS4 score so far?</h2>
+      <p class="ra-lead dash-skeleton" id="re-stat" data-source="rates" data-field="equivalent_stat" data-where="view=meta">—</p>
+      <p class="vx-sub" id="re-stat-rest" data-source="rates" data-field="equivalent_stat" data-where="view=meta" hidden></p>
+      <div class="vx-legend" id="re-legend"></div>
+      <div class="vx-chart dash-skeleton" id="re-chart" data-source="rates"></div>
+      <p class="vx-sub dash-skeleton" id="re-caption" data-source="rates" data-field="equivalent_caption" data-where="view=meta">—</p>
+    </section>
+    <section class="vx-card" id="rate-lender" aria-labelledby="rate-lender-h">
+      <h2 id="rate-lender-h">Do Rocket and UWM treat VS4 differently?</h2>
+      <div id="rl-rules" data-source="lender_stage"></div>
+      <p class="vx-sub" id="rl-rates" data-source="rates" data-field="lender_rates" data-where="view=meta" hidden></p>
+      <div class="vx-legend" id="rl-legend"></div>
+      <div class="vx-chart dash-skeleton" id="rl-chart" data-source="rates"></div>
+      <p class="vx-sub" id="rl-apart" data-source="rates"></p>
+      <p class="vx-sub" id="rl-note"><span id="rl-few">Few weeks of loans. </span>Lender gaps under about 3 bp (same number) or 5 bp (same FICO) are too small to call.</p>
+    </section>
+    <details class="vx-more" id="rate-quote">
+      <summary>What to quote</summary>
+      <p class="vx-sub" id="rq-dated-line" hidden><span id="rq-dated" data-source="rates" data-field="dated" data-where="view=meta">—</span> Rebuilt each week, so date what you quote.</p>
+      <ul class="vx-list" id="rq-list" data-source="rates"></ul>
+    </details>
+    <details class="vx-more" id="rate-cuts">
+      <summary>More cuts</summary>
+      <section class="vx-card">
+        <h3 id="rc-first-h"><span data-term="samefico">Same FICO</span>, same <span data-term="llpa">LLPA</span>, by loan type</h3>
+        <p class="vx-note" id="rc-note" data-clamp="0">Small groups, so treat these as a description.</p>
+        <div class="vx-legend" id="rc-legend"></div>
+        <div class="vx-chart" id="rc-chart" data-source="rates"></div>
+        <h3 class="ra-gap" id="rc-gap-h">By how far VS4 sits above FICO</h3>
+        <div class="vx-chart" id="rc-gap" data-source="rates"></div>
+        <p class="vx-sub" id="rc-gap-line" data-source="rates" data-field="gap_line" data-where="view=meta" hidden></p>
+        <p class="vx-sub" id="rc-gap-note" hidden></p>
+      </section>
+    </details>
+    <details class="vx-more" id="rate-open">
+      <summary>Still open</summary>
+      <ul class="vx-list">
+        <li>Does the gap fade or hold on loans locked after the announcement? That takes closings from November on, at the same gap between VS4 and FICO.</li>
+        <li>Can same FICO reach loans issued before Oct 1? Only if the monthly file shows both scores on older loans.</li>
+        <li>What are points and lender credits doing? HMDA's 2026 file, about June 2027, carries them by lender and score model.</li>
+        <li>How do these loans perform? The first data are months off.</li>
+      </ul>
+    </details>
     <details class="vx-more" id="llpa-more">
       <summary>A separate question: what VS4 saves in LLPAs</summary>
-      <p class="vx-note" data-clamp="0">Nothing here feeds a rate figure. These are charges the GSEs set, not what a borrower sees.</p>
+      <p class="vx-note" data-clamp="0">The dollar figures in this section play no part in the rate figures above.<span id="llpa-first"> Its first table splits those same rate figures by lender.</span></p>
+      <div class="vx-card" id="llpa-rate-card">
+        <h2>How the rate differs by LLPA, by lender and channel, in bp</h2>
+        <div class="vx-tablebox">
+          <table class="vx-table" id="llpa-rate-table" data-source="rates" data-row-key="view,key">
+            <thead><tr>
+              <th scope="col" class="vx-l vx-name" data-field="label">Lender</th>
+              <th scope="col" class="vx-l">Purpose</th>
+              <th scope="col">Lower LLPA on VS4: bp (loans)</th>
+              <th scope="col">Same LLPA: bp (loans)</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="vx-sub" id="llpa-rate-note" data-source="rates"></p>
+        <p class="vx-sub" id="llpa-sum" data-source="rates" data-field="llpa_sum" data-where="view=meta">—</p>
+        <p class="vx-sub" id="llpa-share" data-source="rates" data-field="llpa_share" data-where="view=meta">—</p>
+      </div>
+    <p class="vx-fail-line" id="fee-fail" hidden>Failed to load</p>
     <section class="vx-sec" id="fee-sec" aria-label="What VS4 saves in LLPAs">
-      <p class="vx-note" data-clamp="0">The <span data-term="llpa">LLPA</span> depends on a loan's credit score, LTV and purpose, so a lender that has both scores can price on the one with the lower LLPA. Loans issued in <span class="fe-month" data-source="fees" data-field="month" data-where="view=market&amp;key=All">—</span>, records with every score, terms over 15 years. LLPAs from <a class="vx-link" href="https://guide.freddiemac.com/app/guide/exhibit/19" target="_blank" rel="noopener noreferrer">Freddie Mac Exhibit 19</a>, which match <a class="vx-link" href="https://singlefamily.fanniemae.com/media/9391/display" target="_blank" rel="noopener noreferrer">Fannie Mae's matrix of Sep 30, 2026</a>.</p>
+      <p class="vx-note" data-clamp="0">LLPAs are charges the GSEs set, not what a borrower sees. The <span data-term="llpa">LLPA</span> depends on a loan's credit score, LTV and purpose, so a lender that has both scores can price on the one with the lower LLPA. Loans issued in <span class="fe-month" data-source="fees" data-field="month" data-where="view=market&amp;key=All">—</span>, records with every score, terms over 15 years. LLPAs from <a class="vx-link" href="https://guide.freddiemac.com/app/guide/exhibit/19" target="_blank" rel="noopener noreferrer">Freddie Mac Exhibit 19</a>, which match <a class="vx-link" href="https://singlefamily.fanniemae.com/media/9391/display" target="_blank" rel="noopener noreferrer">Fannie Mae's matrix of Sep 30, 2026</a>.</p>
       <div class="vx-tiles">
         <div class="vx-card">
           <div class="vx-lbl">LLPA saved on a VS4 loan with a lower LLPA</div>
           <div class="vx-val fe-avg dash-skeleton" data-source="fees" data-field="saving_avg_usd" data-where="view=market&amp;key=All">—</div>
-          <div class="vx-sub"><span class="fe-share" data-source="fees" data-field="saving_share" data-where="view=market&amp;key=All">—</span> of VS4 loans with both scores have a lower LLPA on VS4; this is the average on those</div>
+          <div class="vx-sub">Of VS4 loans showing both scores, <span class="fe-share" data-source="fees" data-field="saving_share" data-where="view=market&amp;key=All">—</span> have a lower LLPA on VS4; this is the average on those.</div>
         </div>
         <div class="vx-card">
-          <div class="vx-lbl">LLPA saved a year at today's VS4 use</div>
+          <div class="vx-lbl">LLPA saved a year at today's VS4 use, an estimate from one part month</div>
           <div class="vx-val fe-taken dash-skeleton" data-source="fees" data-field="taken_annual_usd" data-where="view=market&amp;key=All">—</div>
-          <div class="vx-sub"><span class="fe-taken-m" data-source="fees" data-field="taken_all_usd" data-where="view=market&amp;key=All">—</span> on <span class="fe-month-s" data-source="fees" data-field="month" data-where="view=market&amp;key=All">—</span> loans so far, scaled up for VS4 loans that show one score; the table below counts only loans showing both</div>
+          <div class="vx-sub"><span class="fe-taken-m" data-source="fees" data-field="taken_usd" data-where="view=market&amp;key=All">—</span> on <span class="fe-month-s" data-source="fees" data-field="month" data-where="view=market&amp;key=All">—</span> VS4 loans showing both scores, <span class="fe-scale" data-source="fees">—</span> for VS4 loans that show one score and to a year at the GSEs' recent volume.<span id="fe-aei" data-source="statements"></span></div>
         </div>
       </div>
       <div class="vx-card" id="fee-lender-card">
         <h2>Lender by lender</h2>
-        <p class="vx-note" data-clamp="0">Lenders with 20 or more VS4 loans showing both scores, most saved first: the share with a lower LLPA on VS4, the average saved on that share, and the net total on all of them. The total leaves out VS4 loans showing one score, which the tile above scales up for.</p>
+        <p class="vx-note" data-clamp="0">Lenders with 20 or more VS4 loans showing both scores, most saved first: the share with a lower LLPA on VS4, the average saved on that share, and the net total on all of them. The total leaves out VS4 loans showing one score, which the yearly estimate above scales up for.</p>
         <div class="vx-tablebox">
           <table class="vx-table" id="fee-table" data-source="fees" data-row-key="view,id">
             <thead><tr>
@@ -827,7 +925,7 @@
       </div>
       <div class="vx-card" id="gse-score-card">
         <h2>How the GSEs' own scores see these loans</h2>
-        <p class="vx-note" data-clamp="0">The GSEs disclose a score of their own on each loan, not used for pricing. First columns: VS4-priced loans minus FICO-priced loans in the same LLPA tier, at the same lender and GSE; below zero, the VS4 loans rank lower than their LLPA tier would suggest. Last column: at the same Classic FICO, loans with VS4 a tier or more better minus loans with VS4 in the same tier. Neither measures how the loans will perform.</p>
+        <p class="vx-note" data-clamp="0">The GSEs disclose a score of their own on each loan, not used for pricing. First columns: VS4-priced loans minus FICO-priced loans in the same LLPA tier, at the same lender and GSE; below zero, the VS4 loans rank lower than their LLPA tier would suggest. Last column: in the same Classic FICO tier, loans with VS4 a tier or more better minus loans with VS4 in the same tier. Neither measures how the loans will perform.</p>
         <div class="vx-tablebox">
           <table class="vx-table" id="gse-score-table" data-source="fees"><thead><tr></tr></thead><tbody></tbody></table>
         </div>
@@ -1201,7 +1299,7 @@
         <ul>
         <li>The GSEs' upfront fees step at nine credit score buckets: 639 or less, 20-point steps from 640 to 779, and 780 and over. For MBS issued before Oct 1, 2026 those tiers applied to VS4 at 20 points higher (the top tier was 780 and over for Classic FICO, 800 and over for VS4). Since then one grid has covered both. For a loan that shows both scores, the bucket gap is its VS4 bucket minus its Classic FICO bucket on today's grid; the point gap is its VS4 score minus its Classic FICO.</li>
         <li>LLPAs: base grids from Freddie Mac Guide Exhibit 19 (Bulletin 2026-K), which apply to either score for settlement from Oct 1, 2026 and match <a class="vx-link" href="https://singlefamily.fanniemae.com/media/9391/display" target="_blank" rel="noopener noreferrer">Fannie Mae's matrix of Sep 30, 2026</a>. Loans in HFA, HomeReady, Home Possible, RefiNow and Refi Possible programs count as paying no base LLPA; first-time buyers' income caps cannot be seen here, so some savings are overstated. Other add-ons (second homes, condos and so on) do not depend on the score. Yearly figures scale the month's to the GSEs' balance at the pace of their final months.</li>
-        <li>A lender's rule is read from its loans with both scores, by point gap, by the week each loan first appeared in an intraday file. These views take every record that carries the Pricing Indicator, including loans for issue months after the current one, since the newest loans show a rule moving. Rates are locked well before delivery, so a change in a lender's rule shows in these files weeks later.</li>
+        <li>A lender's rule is read from its loans with both scores, by point gap, by the week each loan first appeared in an intraday file. These views take every record that carries the Pricing Indicator, including loans for issue months after the current one, since the newest loans show a rule moving. A lender can pick the score as late as delivery, so a change in its rule can show at once on loans already locked; a change that goes with the rate shows weeks later.</li>
         <li>The what-if of VS4 wherever its score is higher counts loans that show both scores as they are, VS4-priced loans that show no Classic FICO as VS4, and gives each loan that shows only a Classic FICO the rate at which VS4 is higher among loans with both scores in its Classic FICO bucket, purpose, channel and GSE (its bucket and GSE, or its bucket alone, where fewer than 30 such loans). It assumes VS4 relates to Classic FICO the same way in every month and at every lender. A loan whose VS4 exists but does not show is treated the same way.</li>
         <li>Records from before Oct 19, 2026 show only the score that priced the loan, so that what-if would overstate lenders already choosing between scores: every VS4 loan would count as higher, and their Classic FICO loans would take a rate that ignores that they passed on VS4. Months made up of such records are therefore estimates. A lender that delivered a VS4 loan that month takes its own rate on loans disclosed with every score (in that GSE, else both GSEs, with at least 30 such loans; failing that, its VS4 loans take the rate over all such VS4 loans). Other lenders' loans follow the rules above. This assumes a lender's borrowers change little from month to month.</li>
         </ul>
@@ -1209,12 +1307,17 @@
       <details class="vx-more">
         <summary>Rate model</summary>
         <ul>
-        <li>What is compared: the note rate on 30-year fixed VS4 loans against FICO loans, at both GSEs. A VS4 loan is one that used VS4: stated by the Pricing Indicator on loans first disclosed from late September, read from the one score shown before that. Same FICO sets a VS4 loan that shows a FICO against FICO loans at that FICO. Same score number sets its VS4 number against FICO loans at that same number. A score that does not show is unknown, so a VS4 loan showing no FICO is left out of same FICO.</li>
-        <li>What is held equal: lender, channel, week first disclosed, estimated closing month, GSE, purpose, LTV band and score band, either 5 points wide or one LLPA tier wide. The fuller methods are those comparisons plus versions that also take out occupancy, loan size, DTI, state and other loan traits. Same LLPA and lower LLPA come from the grid in force since Oct 1, 2026, at each loan's own scores, LTV and purpose. They show where a gap sits, not that the LLPA caused it.</li>
-        <li>What cannot be held equal: discount points, lender credits and lock dates are not disclosed, so a difference in rate can be offset by points or credits these files do not show, and the week and closing month only stand in for the lock date. A lender can pick the score after the rate is set, so VS4 loans may be a selected group. This shows where a gap sits, not what choosing VS4 is worth.</li>
-        <li>How to read the chart: the dot is the central figure, the bar is the spread across the fuller methods, and the thin line is a rough 95% range from redrawing lenders and channels at random.</li>
-        <li>This is a one-off read, dated on the Rates tab. A version that rebuilds each week is coming.</li>
+        <li>What is compared: the note rate on 30-year fixed VS4 loans against FICO loans, at both GSEs. A VS4 loan is one the Pricing Indicator says priced on VS4 or, on records before the indicator, one whose only score shown is VS4. Same FICO sets a VS4 loan showing a FICO against FICO loans at that FICO; one showing no FICO is unknown and left out. Same score number sets its VS4 number against FICO loans at that number.</li>
+        <li>What is held equal: lender, channel, week first disclosed, estimated closing month, GSE, purpose, LTV range and score (within 5 points or one LLPA tier).</li>
+        <li>Three methods: exact match with a 5-point score band; exact match with one LLPA tier as the band (20 points under 640); and a model fitted on FICO loans, by lender and channel where possible, that also controls for occupancy, units, property type, second liens, loan size, DTI, mortgage insurance, state, first-time buyers, number of borrowers and loan program. One FICO loan in five is held out of the model to test it.</li>
+        <li>On the charts: the dot is the midpoint of the two exact-match methods, the bar how far all three disagree, and the thin line an approximate 95% range for that estimate, from resampling lender and channel groups. The range on the Which FICO chart does not resample lenders, so it can run narrower than the 95% range on other charts. Rocket correspondent is left out of all-lender rows and shown on its own line<span id="ra-rc-wrap" hidden>: <span id="ra-rc-reason" data-source="rates" data-field="rc_reason" data-where="view=meta">—</span></span>.</li>
+        <li>What cannot be held equal: discount points, lender credits and lock dates are not disclosed, and week and closing month only stand in for the lock date. A lender can pick the score after the rate is set, so VS4 loans are a selected group.</li>
         </ul>
+        <p class="vx-sub" id="ra-changed" data-source="rates" data-field="changed" data-where="view=meta">—</p>
+        <p class="vx-sub" id="ra-sample" data-source="rates" data-field="sample" data-where="view=meta">—</p>
+        <p class="vx-sub">Each weekly rebuild runs these checks. A failed check shows a warning here and does not stop the build.</p>
+        <p class="vx-sub" id="ra-check-head" data-source="rates">—</p>
+        <ul id="ra-checks" data-source="rates"></ul>
       </details>
       <details class="vx-more">
         <summary>Outlook</summary>

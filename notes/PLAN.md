@@ -89,7 +89,7 @@ local in notes/ANALYTICS_PLAN.md)
 2. Score choice and FICO exposure, from loans with both scores (Oct 19 onward). Done Oct 29, 2026 on the
    private dashboard: which scores loans carry, by GSE and week (the GSEs differ because of what each
    collects or discloses, not the lenders), and the score-group toggle (all loans / both scores /
-   VantageScore only) on the Borrowers and Pricing tabs. Also done Oct 29 (src/gsescore/scores.py, Score
+   VantageScore only) on the Borrowers tab. Also done Oct 29 (src/gsescore/scores.py, Score
    choice tab): the rule lenders use to pick a score, by how many LLPA buckets VS4 sits above or below
    FICO, for all lenders and each large one; and the ceiling, VS4's share if every lender priced on the
    better score (or wherever VS4 is no worse), with loans that carry only a Classic FICO given the rate
@@ -98,12 +98,11 @@ local in notes/ANALYTICS_PLAN.md)
    records that show only one score are estimates (Oct 30, 2026): a lender that delivered a VS4 loan that
    month takes its own ceiling from records with every score, since counting its VS4 loans as better and
    its FICO loans at the market rate overstates a lender already choosing between scores.
-3. Pricing. Done Oct 29, 2026 on the private dashboard (src/gsescore/pricing.py): a model of FICO-priced
-   30-year fixed loans' note rates (additive effects for lender and channel by week, LLPA cell, loan and
-   borrower traits; fitted on four in five, checked on the fifth) gives each VS4 loan the rate a FICO
-   loan like it would carry, at the same headline score and, with both scores, at the borrower's own
-   Classic FICO; by week, seller and loan type. Upfront fees: see Phase 3, item 4. Next: note rate minus
-   pass-through rate (retained servicing). Points and lender credits are not disclosed.
+3. Pricing. Done Oct 29, 2026 on the private dashboard; rebuilt Oct 31, 2026, when the first version's rate
+   figures were withdrawn. src/gsescore/pricing.py writes the dashboard-only dataset rates: how a VS4 loan's
+   note rate compares with comparable FICO loans, at the same FICO and at the same score number, by three
+   methods. Its docstring describes the sample, the methods and each view. Upfront fees: see Phase 3, item 4.
+   Next: note rate minus pass-through rate (retained servicing). Points and lender credits are not disclosed.
 4. Borrowers. Done Oct 29, 2026 on the private dashboard (src/gsescore/borrowers.py): 19 breakdowns by
    score group, each VS4 share next to the share expected from its lenders' own FICO loans, and averages
    by score group. Next: where the VS4 lift over FICO is largest, and the valuation and special-program
@@ -121,9 +120,8 @@ that day with everything else.
 **Phase 3: built for covering the companies** (agreed Oct 30, 2026; public since that day)
 1. Done Oct 30, 2026: the framing. For MBS issued before Oct 1, 2026, FICO's fee tiers applied to VS4 at 20
    points higher; one grid since. Lender rules are now read in score points by week (src/gsescore/scores.py,
-   dataset rules), the scenarios are rules on the one grid (saves a fee, score higher, no worse), the outlook is
-   rebuilt on them, and the rate model compares in the same fee tier, adds seller x purpose, and shows how much of
-   a better tier reaches the rate.
+   dataset rules), the scenarios are rules on the one grid (saves a fee, score higher, no worse), and the outlook is
+   rebuilt on them. The rate comparison is the dataset rates (item 3 of the phase above).
 2. Done Oct 30, 2026: the front page. Which scores loans carry (FICO only, both priced either way, VS4 only) by
    GSE and week (dataset score_mix), loans with a Classic FICO, the latest weeks' pace, what changed, calendar quarters. Loans carrying VS4 runs back to April by issue month and to July by week as
    VS4-priced loans, a floor until the files show every score, with the same weeks at a steady mix of lenders.
@@ -132,11 +130,11 @@ that day with everything else.
    some, both scores shown, a trace, FICO only), its rule, an early-warning list of lenders whose both-score share is rising, lender types by
    hand in reference/sellers.csv, use inside a lender by loan trait, and dated company statements with links (reference/statements.csv), each
    checked against the loan files where it can be.
-4. Done Oct 30, 2026: pricing and economics (src/gsescore/fees.py, src/gsescore/fee_grid.py, dataset fees). How much of a lower fee reaches the rate is measured against each lender and channel's
-   own FICO-priced loans with both scores (src/gsescore/pricing.py, view value). The grid in reference/llpa.csv is
+4. Done Oct 30, 2026: pricing and economics (src/gsescore/fees.py, src/gsescore/fee_grid.py, dataset fees). How the rate differs by LLPA, by lender and channel, is in the dataset rates
+   (src/gsescore/pricing.py, view llpa_rate). The grid in reference/llpa.csv is
    Freddie Mac Guide Exhibit 19 (Bulletin 2026-K); Fannie Mae's matrix was taken to match it until Oct 31, 2026, when all 207 cells were checked against its matrix of Sep 30, 2026, and matched. Fee saved per loan and in dollars by
-   lender; what lenders with both scores left; an estimate for loans with only a Classic FICO; the same scaled to a year's balance; the fee
-   against what reaches the rate; the GSEs' own scores on these loans.
+   lender; what lenders with both scores left; an estimate for loans with only a Classic FICO; the same scaled to a year's balance; the
+   GSEs' own scores on these loans.
 5. Done Oct 30, 2026: analyst tools. On the Lenders tab, a read for each company with a row of tickers: its score split by GSE, its rule, fees, rates, questions
    to ask and what it has said. On the Outlook tab, your scenario by lender and FICO's exposure on GSE loans (src/gsescore/exposure.py, reference/assumptions.csv, in
    site/dashboard/tools.js). On the Overview, this week's note with an archive (src/gsescore/notes.py, `gsescore note`). The Excel workbook (src/gsescore/export.py,
@@ -153,7 +151,7 @@ that day with everything else.
 7. Done Oct 30, 2026: what the files can say, and which date a loan sits on. A score that shows and the Pricing Indicator are facts; a score that does not show is unknown. So priced on VS4 is exact, a score
    showing is a floor on loans that have it, and showing only one score is a ceiling on loans that have only that one; the page and the workbook say which is which. Each clock has its job: issue month for
    headline share, GSE volume and the fee grid; week first disclosed for news, read with the lender mix frozen; closing month (first payment month less two; src/gsescore/closing.py, dataset closing) for how
-   a lender's behavior is changing, read lender by lender or at fixed weights because recent months are still arriving. The rate model now has closing month and lender x channel x closing month as well as the week.
+   a lender's behavior is changing, read lender by lender or at fixed weights because recent months are still arriving. The rate comparison reads week first disclosed and closing month together (src/gsescore/pricing.py).
 8. Beyond Fannie and Freddie, started Oct 30, 2026. As on the GSE tabs, a named model is a fact and the rest is unknown. Both views are on the Whole market tab.
    Done: every kind of loan by year from HMDA, 2018 on (src/gsescore/hmda.py; `gsescore hmda <year>` loads a year's public files into data/hmda/ and deletes them). It is annual, so a baseline and a yearly census, not a monitor. The form's list of models grew in 2022 and 2024, so Classic FICO is the one line that compares across all years.
    Done: private-label deals from SEC Form ABS-15G due diligence reports, January 2025 on, updated weekly (src/gsescore/edgar.py; `gsescore edgar`), since no residential deals file ABS-EE. Its requests declare the contact in data/edgar/contact.txt, which stays out of the repo. It reads three report layouts: tables, tables with headings broken across lines, and fixed-width text blocks.
