@@ -898,7 +898,8 @@ def rate_row(rates, rules, fees, lenders, keeps_it, note_rate, inputs, top_share
         bits.append(f"Executed rate fits {retail['label']}, where the rate follows whichever score priced the loan")
     if not_other:
         lead = "it does not yet fit" if bits else "Executed rate does not yet fit"
-        bits.append(f"{lead} {other['label']}, which collects {_whole(got)} of the LLPA saving while its note rate moves about {abs(other['same_fico_dot']):g} bp, so the saving goes to points, credits, insurance or margin, and these files cannot say which")
+        moves = f"moves about {abs(other['same_fico_dot']):g} bp" if other["same_fico_dot"] else "barely moves"  # a gap that rounds to zero is not "about 0 bp"
+        bits.append(f"{lead} {other['label']}, which collects {_whole(got)} of the LLPA saving while its note rate {moves}, so the saving goes to points, credits, insurance or margin, and these files cannot say which")
     if bits:
         joined = "; ".join(bits)
         said = f"{said} {joined}." if said else f"Dollars per score or executed rate? {joined}."
