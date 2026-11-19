@@ -46,6 +46,20 @@ SCORE_MODEL_SQL = """CASE
 INTRADAY_ISSUE_MONTH_SQL = """COALESCE(date_trunc('month', s.issue_date)::DATE,
                       date_add(r.first_pay_date, to_months(r.loan_age - 1))::DATE,
                       date_trunc('month', r.first_intraday_date)::DATE)"""
+WEEK_TO_FRIDAY = 4  # days from a week's Monday to its Friday: a week is whole once the files reach that day (notes.py reads `partial` the same way)
+
+
+def register_through(con) -> None:
+    """data_through: the last day each GSE's files reach, and for 'All' the earlier of the two, since a week of both GSEs is not whole until both are in. Needs the loans view."""
+    con.execute("""
+        CREATE OR REPLACE TEMP TABLE data_through AS
+        WITH a AS (SELECT agency, max(first_intraday_date) AS through FROM loans GROUP BY agency)
+        SELECT agency, through FROM a UNION ALL SELECT 'All', min(through) FROM a""")
+
+
+def week_whole_sql(week: str, agency: str = "'All'") -> str:
+    """SQL for a week's complete flag: tested against the data's last day, never today's date. Needs data_through."""
+    return f"{week} + {WEEK_TO_FRIDAY} <= (SELECT through FROM data_through WHERE agency = {agency})"
 
 
 def _glob(level: str) -> str:

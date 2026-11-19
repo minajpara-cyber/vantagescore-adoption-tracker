@@ -23,7 +23,8 @@ def cmd_refresh(args):
     from .bundle import unpack_bundle
     from .export import build_workbook
     from .ingest import ingest_paths
-    from .site import build_site, contract_warnings, rate_read_status
+    from .market import market_warnings
+    from .site import build_site, contract_warnings, front_warnings, rate_read_status
     from .warehouse import refresh_db
     report = {"bundles": [], "kept_in_inbox": []}
     for b in sorted(p for p in args.downloads.glob("*.zip") if BUNDLE.match(p.name)):
@@ -50,7 +51,7 @@ def cmd_refresh(args):
     report.update({k: meta[k] for k in ("loans", "last_issue_month", "last_disclosed")})
     report["workbook"] = str(build_workbook().relative_to(paths.ROOT))
     report["rate_read_as_of"], rate_warnings = rate_read_status()
-    report["warnings"] = contract_warnings() + rate_warnings
+    report["warnings"] = contract_warnings() + rate_warnings + market_warnings() + front_warnings()
     print(json.dumps(report, indent=1))
 
 
@@ -128,6 +129,9 @@ def cmd_ginnie(args):
     print(json.dumps(ingest(args.files), indent=1))
     rows = build_datasets(connect())["ginnie_va"]
     (paths.SITE_DATA / "ginnie_va.json").write_text(json.dumps({"rows": rows}, separators=(",", ":")))
+    from .market import build_datasets as build_market
+    for name, market_rows in build_market().items():  # the VA figures and their date sit there too
+        (paths.SITE_DATA / f"{name}.json").write_text(json.dumps({"rows": market_rows}, separators=(",", ":")))
     print(f"ginnie_va: {len(rows)} rows")
 
 
@@ -145,7 +149,7 @@ def cmd_build(args):
     from .warehouse import refresh_db
     meta = build()
     refresh_db()
-    print(json.dumps({k: meta[k] for k in ("loans", "first_issue_month", "last_issue_month", "first_disclosed", "last_disclosed", "datasets")}, indent=1))
+    print(json.dumps({k: meta[k] for k in ("loans", "first_issue_month", "last_issue_month", "first_disclosed", "last_disclosed", "front_error", "datasets")}, indent=1))
 
 
 def cmd_export(args):

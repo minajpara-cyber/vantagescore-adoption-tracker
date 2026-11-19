@@ -1,9 +1,9 @@
-// The visual summaries: out of every 100 loans, why the weeks jump, how far VS4 could go, where every lender stands,
+// The visual summaries: the first screen and the VS4-only card, out of every 100 loans, why the weeks jump, where every lender stands,
 // how lenders decide, plus plain-word definitions of the terms the page uses.
 // Runs after the main script and tools.js; what they share is on window.vx.
 (() => {
   const vx = window.vx;
-  const { root, rowsOf, statusOf, int, pct1, inkOn, olName, openSeller, shortDay, prep, svgFor, bandFrame, yAxis, bandAxis, bandHover, legend, tooltip, textWidth, MIX_GROUPS, AG_NAME, show, col } = vx;
+  const { root, rowsOf, statusOf, int, pct1, inkOn, olName, openSeller, shortDay, prep, svgFor, bandFrame, yAxis, bandAxis, bandHover, legend, tooltip, textWidth, MIX_GROUPS, AG_NAME, show, col, mark, monthYear } = vx;
   const pct0 = d3.format('.0%');
   const node = (tag, cls, text) => {
     const e = document.createElement(tag);
@@ -67,7 +67,7 @@
         const li = node('li');
         const sw = node('span', 'vx-sw');
         sw.style.background = group(g)[2];
-        li.append(sw, node('b', null, pct1(shares[i])), `${group(g)[1]}${g === 'fico_only' || g === 'vs_only' ? ', a ceiling' : ''}`);
+        li.append(sw, node('b', null, pct1(shares[i])), `${group(g)[1]}${g === 'fico_only' ? ', at most' : ''}`);
         list.append(li);
       });
       const sum = (label, v) => {
@@ -75,7 +75,7 @@
         li.append(node('b', null, pct1(v)), label);
         return li;
       };
-      list.append(sum('Shows Classic FICO, a floor', r[`fico${k}_share`] || 0), sum('Shows VS4, a floor', r[`vs${k}_share`] || 0), sum('Priced on VS4, exact', r[`vs4_priced${k}_share`] || 0));
+      list.append(sum('Shows Classic FICO, at least', r[`fico${k}_share`] || 0), sum('Shows VS4, at least', r[`vs${k}_share`] || 0), sum('Priced on VS4, exact', r[`vs4_priced${k}_share`] || 0));
       wrap.append(grid, list);
       return wrap;
     }));
@@ -90,14 +90,14 @@
   function drawWho(p) {
     const box = document.getElementById('who-chart');
     if (!box) return;
-    const st = statusOf('lender_mix', 'score_mix');
-    const covered = vx.coveredWeek(p.agency);
+    const st = statusOf('lender_mix', 'score_mix', 'weekly');
+    const covered = vx.coveredWeek(p.agency), open = vx.openWeek(p.agency);
     const weeks = rowsOf('score_mix').filter((r) => r.view === 'week' && r.agency === p.agency && covered(r)).sort(asc('start'));
     const top = topUsers();
     const names = new Map(rowsOf('lender_stage').filter((r) => r.view === 'lender').map((r) => [r.id, r.short]));
     const label = top.map((id) => names.get(id) || id).join(' and ');
     const note = document.getElementById('who-note');
-    note.textContent = top.length ? `${label}'s share of each week's loans. When they deliver more, the market number jumps, even if no lender changed what it does.` : '';
+    note.textContent = top.length ? `${label}'s share of each week's loans. When they deliver more, the market number jumps, even if no lender changed what it does.${weeks.some((w) => open(w.start)) ? ' Fainter: week not over.' : ''}` : '';
     if (!prep(box, st) || !weeks.length) return;
     const mix = rowsOf('lender_mix').filter((r) => r.view === 'week' && r.agency === p.agency && top.includes(r.id));
     const data = weeks.map((w) => ({ key: w.start, v: d3.sum(mix.filter((r) => r.start === w.start), (r) => r.n) / (w.loans || 1), loans: w.loans }));
@@ -109,23 +109,23 @@
     svg.append('line').attr('x1', m.left).attr('x2', W - m.right).attr('y1', y(0)).attr('y2', y(0)).attr('stroke', 'var(--cds-chart-axis)');
     for (const d of data) {
       const h = Math.max(0, y(0) - y(d.v));
-      svg.append('path').attr('d', capped(x(d.key) + off, y(d.v), bw, h)).attr('fill', 'var(--cds-chart-muted)');
+      svg.append('path').attr('d', capped(x(d.key) + off, y(d.v), bw, h)).attr('fill', 'var(--cds-chart-muted)').attr('fill-opacity', open(d.key) ? vx.OPEN_FILL : 1);
       svg.append('text').attr('x', x(d.key) + x.bandwidth() / 2).attr('y', y(d.v) - 4).attr('text-anchor', 'middle').text(pct0(d.v));
       svg.append('text').attr('x', x(d.key) + x.bandwidth() / 2).attr('y', H - 6).attr('text-anchor', 'middle').text(shortDay(d.key));
     }
-    bandHover(svg, box, x, data, 'key', m, H, (d) => [`Week of ${shortDay(d.key)}, ${int(d.loans)} loans`, [['var(--cds-chart-muted)', label, pct1(d.v)]]]);
+    bandHover(svg, box, x, data, 'key', m, H, (d) => [`Week of ${shortDay(d.key)}${open(d.key) ? ' so far' : ''}, ${int(d.loans)} loans`, [['var(--cds-chart-muted)', label, pct1(d.v)]]]);
   }
 
   function drawFrozen(p) {
     const box = document.getElementById('frozen-chart');
     if (!box) return;
-    const st = dash.data('score_mix').status;
+    const st = statusOf('score_mix', 'weekly');
     const priced = col(0), onFico = group('both_fico')[2];
     const ghost = 'color-mix(in srgb, var(--color-fg) 30%, transparent)';
-    legend(document.getElementById('frozen-legend'), [[priced, 'Priced on VS4', 'box'], [onFico, 'Carrying VS4, priced on FICO', 'box'], [ghost, 'As delivered', 'box']]);
-    if (!prep(box, st)) return;
-    const covered = vx.coveredWeek(p.agency);
+    const covered = vx.coveredWeek(p.agency), open = vx.openWeek(p.agency);
     const weeks = rowsOf('score_mix').filter((r) => r.view === 'week' && r.agency === p.agency && r.steady_carrying != null && covered(r)).sort(asc('start'));
+    legend(document.getElementById('frozen-legend'), [[priced, 'Priced on VS4', 'box'], [onFico, 'Carrying VS4, priced on FICO', 'box'], [ghost, 'As delivered', 'box'], ...(weeks.some((r) => open(r.start)) ? [[vx.OPEN_KEY, 'Fainter: week not over', 'box']] : [])]);
+    if (!prep(box, st)) return;
     if (!weeks.length) return;
     const W = box.clientWidth, H = 150, m = { top: 18, right: 6, bottom: 24, left: 6 };
     const svg = svgFor(box, W, H, 'Loans carrying VS4 each week with the lender mix frozen, against the weeks as delivered');
@@ -138,35 +138,317 @@
       svg.append('path').attr('d', capped(bx - 3, y(r.vs_share || 0), bw + 6, Math.max(0, y(0) - y(r.vs_share || 0)))).attr('fill', ghost);
       const low = r.steady_priced || 0, topV = r.steady_carrying;
       const lowH = Math.max(0, y(0) - y(low));
-      svg.append('rect').attr('x', bx).attr('width', bw).attr('y', y(low)).attr('height', lowH).attr('fill', priced);
+      const faint = open(r.start) ? vx.OPEN_FILL : 1;
+      svg.append('rect').attr('x', bx).attr('width', bw).attr('y', y(low)).attr('height', lowH).attr('fill', priced).attr('fill-opacity', faint);
       const upH = Math.max(0, y(low) - y(topV) - 2);
-      svg.append('path').attr('d', capped(bx, y(topV), bw, upH)).attr('fill', onFico);
+      svg.append('path').attr('d', capped(bx, y(topV), bw, upH)).attr('fill', onFico).attr('fill-opacity', faint);
       svg.append('text').attr('x', bx + bw / 2).attr('y', y(topV) - 4).attr('text-anchor', 'middle').style('fill', 'var(--color-fg)').text(pct0(topV));
       svg.append('text').attr('x', bx + bw / 2).attr('y', H - 6).attr('text-anchor', 'middle').text(shortDay(r.start));
     }
-    bandHover(svg, box, x, weeks, 'start', m, H, (r) => [`Week of ${shortDay(r.start)}`, [[onFico, 'Carrying VS4, lender mix frozen', pct1(r.steady_carrying)], [priced, 'Priced on VS4, lender mix frozen', pct1(r.steady_priced)],
+    bandHover(svg, box, x, weeks, 'start', m, H, (r) => [`Week of ${shortDay(r.start)}${open(r.start) ? ' so far' : ''}`, [[onFico, 'Carrying VS4, lender mix frozen', pct1(r.steady_carrying)], [priced, 'Priced on VS4, lender mix frozen', pct1(r.steady_priced)],
       [ghost, 'Carrying VS4, as delivered', pct1(r.vs_share || 0)]]]);
   }
 
-  // ---- How far could it go ----
-  function drawReach() {
-    const box = document.getElementById('reach-bars');
-    if (!box) return;
-    box.classList.toggle('dash-skeleton', statusOf('outlook') === 'loading');
-    const ladder = rowsOf('outlook').filter((r) => r.view === 'ladder');
-    const rung = (key, rule) => ladder.find((r) => r.key === key && (!rule || r.rule === rule));
-    const items = [['Priced on VS4 today', rung('today'), true], ['Latest two weeks, lender mix frozen', rung('recent'), true], ['If every lender used VS4 wherever its score is higher', rung('all', 'higher')]].filter((d) => d[1]);
-    box.replaceChildren(...items.map(([label, r, actual]) => {
-      const row = node('div', 'hb');
-      row.append(node('div', 'hb-l', label), node('div', 'hb-v', pct1(r.value)));
-      const track = node('div', 'hb-t');
-      const fill = node('span');
-      fill.style.width = `${Math.min(100, r.value * 100)}%`;
-      fill.style.background = actual ? col(0) : `color-mix(in srgb, ${col(0)} 40%, transparent)`;
-      track.append(fill);
-      row.append(track);
-      return row;
+  // ---- The first screen ----
+  // Five rows, each one number, one line and one small picture, and the card on loans that show VS4 only. Every sentence and figure comes from the front and vs4_only datasets; here is only the drawing.
+  const inOrder = (rows) => rows.slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  const frontOf = (view) => inOrder(rowsOf('front').filter((r) => r.view === view));
+  const voOf = (view) => inOrder(rowsOf('vs4_only').filter((r) => r.view === view));
+  const voSaid = (key) => (voOf('sentence').find((r) => r.key === key) || {}).text;
+  const picOf = (key) => frontOf('pic').filter((r) => r.key === key);
+  const vsOnly = () => group('vs_only')[2];
+  const FR_H = 78, OPEN = 0.6;  // a row's picture; how strongly a month or a week not over is drawn, as on the main charts
+  const SHORT = { tu_pull_share: 'TransUnion pulls', du_app_share: 'DU applications', shows: 'Shows VS4', priced: 'Priced on VS4', vs_only: 'Shows VS4 only', gse: 'GSEs', rest: 'Other' };
+
+  // The header, on every tab.
+  function drawFrontLine() {
+    const m = frontOf('meta')[0] || {}, st = dash.data('front').status, text = [m.line, m.dated].filter(Boolean).join(' ');
+    mark('#front-line', 'line', 'view=meta', st, text);
+    if (st !== 'loading' && !text) document.getElementById('front-line').textContent = '';  // no dash under the title
+  }
+
+  // Share priced on VS4 by issue month, each bar's figure on it, with everyone outside the two largest VS4 lenders beside it in grey.
+  function frMonths(box, st, rows) {
+    if (!box || !prep(box, st) || !rows.length) return;
+    const W = box.clientWidth, H = FR_H, last = rows[rows.length - 1];
+    const side = W >= 240 && last.outside != null ? 74 : 0;
+    const m = { top: 16, right: 1 + side, bottom: 17, left: 1 };
+    const svg = svgFor(box, W, H, `${rows.map((r) => `${r.label} ${r.text}`).join(', ')}${last.outside != null ? `; everyone else ${pct1(last.outside)}` : ''}`);
+    const x = d3.scaleBand(rows.map((r) => r.x), [m.left, W - m.right]).paddingInner(0.2);
+    const y = d3.scaleLinear([0, d3.max(rows, (r) => r.v) || 0.01], [H - m.bottom, m.top]);
+    const bw = Math.min(18, x.bandwidth() * 0.6), tw = 5;
+    svg.append('line').attr('x1', m.left).attr('x2', W - m.right).attr('y1', y(0)).attr('y2', y(0)).attr('stroke', 'var(--cds-chart-axis)');
+    for (const r of rows) {
+      const x0 = x(r.x) + (x.bandwidth() - bw - tw - 2) / 2, cx = x0 + bw / 2;
+      svg.append('path').attr('d', capped(x0, y(r.v), bw, Math.max(0, y(0) - y(r.v)))).attr('fill', col(0)).attr('fill-opacity', r.open ? OPEN : 1);
+      if (r.outside != null) svg.append('rect').attr('x', x0 + bw + 2).attr('width', tw).attr('y', y(r.outside)).attr('height', Math.max(1, y(0) - y(r.outside))).attr('fill', 'var(--cds-chart-muted)');
+      svg.append('text').attr('x', cx).attr('y', y(r.v) - 4).attr('text-anchor', 'middle').style('fill', 'var(--color-fg)').text(r.text);
+      const month = svg.append('text').attr('x', cx).attr('y', H - 4).attr('text-anchor', 'middle').text(r.open ? `${r.label} so far` : r.label);
+      if (month.node().getComputedTextLength() > x.step()) month.text(r.label);
+    }
+    if (side) {
+      svg.append('rect').attr('x', W - side + 6).attr('y', y(0) - 26).attr('width', 8).attr('height', 8).attr('rx', 2).attr('fill', 'var(--cds-chart-muted)');
+      svg.append('text').attr('x', W - side + 18).attr('y', y(0) - 18).text('Everyone');
+      svg.append('text').attr('x', W - side + 6).attr('y', y(0) - 4).text(`else ${pct1(last.outside)}`);
+    }
+  }
+
+  // From credit pull to loan: one bar a row, each on its own base.
+  function frFunnel(box, st, rows) {
+    if (!box || !prep(box, st) || !rows.length) return;
+    const W = box.clientWidth, H = FR_H, rowH = (H - 2) / rows.length, barH = Math.min(9, rowH - 4);
+    const name = (r) => r.short || SHORT[r.x] || r.label;
+    const svg = svgFor(box, W, H, rows.map((r) => `${r.label} ${r.text}`).join(', '));
+    const left = Math.ceil(textWidth(svg, rows.map(name))) + 6, right = Math.ceil(textWidth(svg, rows.map((r) => r.text))) + 6;
+    const x = d3.scaleLinear([0, d3.max(rows, (r) => r.v) || 1], [left, Math.max(left + 8, W - right)]);
+    rows.forEach((r, i) => {
+      const cy = 1 + rowH * i + rowH / 2;
+      svg.append('text').attr('x', 0).attr('y', cy).attr('dy', '0.35em').style('fill', r.only ? 'var(--color-fg)' : null).text(name(r));
+      svg.append('rect').attr('x', left).attr('width', Math.max(1.5, x(r.v) - left)).attr('y', cy - barH / 2).attr('height', barH).attr('rx', 2).attr('fill', r.only ? vsOnly() : col(0));
+      svg.append('text').attr('x', W).attr('y', cy).attr('dy', '0.35em').attr('text-anchor', 'end').style('fill', r.only ? 'var(--color-fg)' : null).text(r.text);
+    });
+  }
+
+  // One bar of 100: each piece named above it and sized below it, where the words fit.
+  function frShare(box, st, rows) {
+    if (!box || !prep(box, st) || !rows.length) return;
+    const W = box.clientWidth, H = FR_H, top = 22, h = 24;
+    const svg = svgFor(box, W, H, rows.map((r) => `${r.label} ${r.text}`).join(', '));
+    const fills = vx.PIECE_FILL || {}, tones = [col(0), col(2), col(3)];  // the Rest of market tab's colors, once market.js has loaded
+    const x = d3.scaleLinear([0, d3.sum(rows, (r) => r.v) || 1], [0, W]);
+    let at = 0;
+    rows.forEach((r, i) => {
+      const x0 = x(at), w = x(at + r.v) - x0;
+      at += r.v;
+      svg.append('rect').attr('x', x0).attr('width', Math.max(0, w - 2)).attr('y', top).attr('height', h).attr('rx', 2).attr('fill', fills[r.x] || tones[i] || 'var(--cds-chart-muted)');
+      const fit = (t) => t.node().getComputedTextLength() <= w - 2;
+      const piece = svg.append('text').attr('x', x0).attr('y', top - 6).text(r.label);
+      if (!fit(piece) && SHORT[r.x]) piece.text(SHORT[r.x]);
+      if (!fit(piece)) piece.remove();
+      const size = svg.append('text').attr('x', x0).attr('y', top + h + 15).style('fill', 'var(--color-fg)').text(r.text);
+      if (!fit(size)) size.text(pct0(r.v));
+      if (!fit(size)) size.remove();
+    });
+  }
+
+  // A dot and its 95% range about a zero line, one row each.
+  function frDots(box, st, rows) {
+    if (!box || !prep(box, st) || !rows.length) return;
+    const W = box.clientWidth, H = FR_H, rowH = 22, top = 13;
+    const svg = svgFor(box, W, H, rows.map((r) => `${r.label} ${r.text}`).join(', '));
+    const left = Math.ceil(textWidth(svg, rows.map((r) => r.label))) + 8, right = Math.ceil(textWidth(svg, rows.map((r) => r.text))) + 8;
+    const far = d3.max(rows, (r) => Math.max(Math.abs(r.dot), Math.abs(r.tl ?? r.dot), Math.abs(r.th ?? r.dot))) || 1;
+    const x = d3.scaleLinear([-far, far], [left, Math.max(left + 8, W - right)]);
+    const base = top + rows.length * rowH - 8;
+    svg.append('line').attr('x1', x(0)).attr('x2', x(0)).attr('y1', 0).attr('y2', base).attr('stroke', 'var(--cds-chart-axis)');
+    rows.forEach((r, i) => {
+      const cy = top + i * rowH;
+      svg.append('text').attr('x', 0).attr('y', cy).attr('dy', '0.35em').text(r.label);
+      if (r.tl != null && r.th != null) svg.append('line').attr('x1', x(r.tl)).attr('x2', x(r.th)).attr('y1', cy).attr('y2', cy).attr('stroke', 'var(--color-fg-muted)').attr('stroke-width', 1.5);
+      svg.append('circle').attr('cx', x(r.dot)).attr('cy', cy).attr('r', 4).attr('fill', col(0));
+      svg.append('text').attr('x', W).attr('y', cy).attr('dy', '0.35em').attr('text-anchor', 'end').style('fill', 'var(--color-fg)').text(r.text);
+    });
+    const y = base + 13;
+    svg.append('text').attr('x', x(0)).attr('y', y).attr('text-anchor', 'middle').text('0');
+    if (x(0) - left >= 64) {
+      svg.append('text').attr('x', x(0) - 10).attr('y', y).attr('text-anchor', 'end').text('VS4 lower');
+      svg.append('text').attr('x', x(0) + 10).attr('y', y).text('VS4 higher');
+    }
+  }
+
+  // A number line of FICO's price: today's above it, the most keeping FICO pays at each number of pulls below it.
+  function frPrice(box, st, rows) {
+    const marks = rows.filter((r) => !r.ref), ref = rows.find((r) => r.ref);
+    if (!box || !prep(box, st) || !marks.length) return;
+    const W = box.clientWidth, H = FR_H, axis = 28;
+    const svg = svgFor(box, W, H, rows.map((r) => `${r.label} ${r.text}`).join(', '));
+    const vals = rows.map((r) => r.v), lo = d3.min(vals), hi = d3.max(vals), pad = (hi - lo) * 0.12 || 1;
+    const x = d3.scaleLinear([lo - pad, hi + pad], [0, W]);
+    const place = (t, at) => {
+      const w = t.node().getComputedTextLength();
+      t.attr('x', Math.max(w / 2, Math.min(W - w / 2, at)));
+    };
+    svg.append('line').attr('x1', 0).attr('x2', W).attr('y1', axis).attr('y2', axis).attr('stroke', 'var(--cds-chart-axis)');
+    for (const r of marks) {
+      svg.append('line').attr('x1', x(r.v)).attr('x2', x(r.v)).attr('y1', axis - 5).attr('y2', axis + 5).attr('stroke', col(0)).attr('stroke-width', 2);
+      place(svg.append('text').attr('y', axis + 19).attr('text-anchor', 'middle').style('fill', 'var(--color-fg)').text(r.text), x(r.v));
+      place(svg.append('text').attr('y', axis + 34).attr('text-anchor', 'middle').text(r.label), x(r.v));
+    }
+    if (ref) {
+      svg.append('line').attr('x1', x(ref.v)).attr('x2', x(ref.v)).attr('y1', axis - 9).attr('y2', axis + 5).attr('stroke', col(1)).attr('stroke-width', 2);
+      place(svg.append('text').attr('y', axis - 13).attr('text-anchor', 'middle').style('fill', 'var(--color-fg)').text(ref.text), x(ref.v));
+    }
+  }
+
+  function drawFront() {
+    const st = dash.data('front').status;
+    root.querySelectorAll('.fr[data-key]').forEach((el) => {
+      const key = el.dataset.key, r = frontOf('row').find((d) => d.key === key) || {};
+      if (r.go) el.dataset.go = r.go;
+      if (r.label) el.querySelector('.fr-l').textContent = r.label;
+      for (const [cls, field] of [['fr-n', 'number'], ['fr-what', 'what'], ['fr-line', 'line'], ['fr-cap', 'cap']]) mark(`.fr[data-key="${key}"] .${cls}`, field, `view=row&key=${key}`, st, r[field]);
+      if (st !== 'loading') for (const [cls, field] of [['fr-what', 'what'], ['fr-line', 'line'], ['fr-cap', 'cap']]) if (!r[field]) el.querySelector(`.${cls}`).textContent = '';  // words whose guard failed leave their place empty, with no dash
+      const num = el.querySelector('.fr-n');  // a screen reader can skip an arrow, so the row's name says it in a word
+      if (st === 'ok' && String(r.number ?? '').includes('→')) {
+        num.setAttribute('role', 'img');
+        num.setAttribute('aria-label', String(r.number).replace(/\s*→\s*/, ' then '));
+      } else {
+        num.removeAttribute('role');
+        num.removeAttribute('aria-label');
+      }
+    });
+    frMonths(document.getElementById('fr-pic-adoption'), st, picOf('adoption'));
+    frFunnel(document.getElementById('fr-pic-vs4_only'), st, picOf('vs4_only'));
+    frShare(document.getElementById('fr-pic-market'), st, picOf('market'));
+    frDots(document.getElementById('fr-pic-rate'), st, picOf('rate'));
+    frPrice(document.getElementById('fr-pic-price'), st, picOf('price'));
+    // More in words, row by row. The one line of LLPA dollars has its own place on the Rate tab.
+    const said = document.getElementById('front-said');
+    said.replaceChildren(...frontOf('row').flatMap((r) => {
+      const lines = frontOf('sentence').filter((s) => s.row === r.key && !s.place);
+      if (!lines.length) return [];
+      const list = node('ul', 'vx-list');
+      list.append(...lines.map((s) => node('li', null, s.text)));
+      return [node('h3', null, r.label), list];
     }));
+  }
+
+  // The one line of LLPA dollars, in the labelled place on the Rate tab.
+  function drawFrontLlpa() {
+    const el = document.getElementById('llpa-working');
+    if (!el) return;
+    const said = frontOf('sentence').find((s) => s.place === 'rate');
+    el.textContent = said ? said.text : '';
+    el.hidden = !said;
+  }
+
+  // ---- Shows VS4 only, at most: the card at the top of VS4 only and outlook ----
+  // Counts by week first disclosed. The first week most loans could show both scores stands apart, in grey; a week not over is fainter. Each chart has its own scale.
+  function voBars(box, st, rows, f, label, hover) {
+    if (!box || !prep(box, st) || !rows.length) return;
+    const W = box.clientWidth, H = 150;
+    const svg = svgFor(box, W, H, `${label}: ${rows.map((r) => `${r.label} ${int(f(r))}`).join(', ')}`);
+    const half = Math.ceil(textWidth(svg, rows.map((r) => r.label)) / 2);
+    const m = { top: 16, right: Math.max(1, half - 2), bottom: 18, left: Math.max(1, half - 2) };
+    const keys = rows.flatMap((r, i) => (r.first && i + 1 < rows.length ? [r.week, 'apart'] : [r.week]));
+    const x = d3.scaleBand(keys, [m.left, W - m.right]).paddingInner(0.3);
+    const y = d3.scaleLinear([0, Math.max(d3.max(rows, f), 1)], [H - m.bottom, m.top]);
+    const bw = Math.min(30, x.bandwidth());
+    const room = x.step() >= textWidth(svg, [int(d3.max(rows, f))]) + 6;
+    svg.append('line').attr('x1', m.left).attr('x2', W - m.right).attr('y1', y(0)).attr('y2', y(0)).attr('stroke', 'var(--cds-chart-axis)');
+    let right = -Infinity;
+    rows.forEach((r, i) => {
+      const cx = x(r.week) + x.bandwidth() / 2, v = f(r);
+      svg.append('path').attr('d', capped(cx - bw / 2, y(v), bw, Math.max(0, y(0) - y(v)))).attr('fill', r.first ? 'var(--cds-chart-muted)' : vsOnly()).attr('fill-opacity', r.partial ? OPEN : 1);
+      if (room || i === 0 || i === rows.length - 1) svg.append('text').attr('x', cx).attr('y', y(v) - 4).attr('text-anchor', 'middle').style('fill', 'var(--color-fg)').text(int(v));
+      const t = svg.append('text').attr('x', cx).attr('y', H - 4).attr('text-anchor', 'middle').text(r.label);
+      const w = t.node().getComputedTextLength();
+      if (cx - w / 2 < right + 6) t.remove();
+      else right = cx + w / 2;
+    });
+    bandHover(svg, box, x, rows, 'week', m, H, hover);
+  }
+
+  function drawVoCard() {
+    if (!document.getElementById('vo-card')) return;
+    const st = dash.data('vs4_only').status;
+    const meta = voOf('meta')[0] || {}, lead = meta.lead_label || 'the small lender', noLead = st !== 'loading' && !meta.lead_label;
+    const gse = voOf('gse'), freddie = gse.find((r) => r.key === 'fhlmc') || {};
+    mark('#vo-lead', 'text', 'view=sentence&key=lead', st, voSaid('lead'));
+    if (st !== 'loading' && !voSaid('lead')) document.getElementById('vo-lead').textContent = '';  // a sentence whose guard failed leaves its place empty
+    for (const [id, key] of [['vo-allowed', 'allowed'], ['vo-rare-text', 'why_rare'], ['vo-pull-text', 'pull'], ['vo-lender-note', 'lenders'], ['vo-band-note', 'bands']]) {
+      const el = document.getElementById(id), text = voSaid(key);
+      el.textContent = text || '';
+      el.hidden = !text;
+    }
+    document.getElementById('vo-rare').hidden = !voSaid('why_rare');
+    // Whichever month the data's headline is, the card's tables say so. Freddie Mac's column has its own month-end file, so it says so itself.
+    const issued = meta.month ? `, loans issued in ${monthYear(meta.month)}${meta.final === false ? ' so far' : ''}` : '';
+    document.getElementById('vo-lender-h').textContent = `By lender, Fannie Mae${issued}`;
+    document.getElementById('vo-band-h').textContent = `Shows VS4 only, at most, by VS4 score, Fannie Mae${issued}`;
+    // Fannie Mae first, then Freddie Mac beside it, labelled.
+    const tops = document.getElementById('vo-gse');
+    tops.classList.toggle('dash-skeleton', st === 'loading');
+    tops.replaceChildren(...gse.map((r) => {
+      const c = node('div');
+      c.append(node('div', 'vx-lbl', r.label), node('div', 'nc-v', r.number), node('div', 'nc-d', r.tag ? `${r.what}. ${r.tag}` : r.what));
+      return c;
+    }));
+    // Where a figure in the pull-to-loan line came from.
+    const sources = document.getElementById('vo-pull-from');
+    sources.replaceChildren(...voOf('funnel').filter((r) => r.url && voSaid('pull')).flatMap((r, i) => {
+      const a = node('a', 'vx-link', r.source || 'Source');
+      a.href = r.url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      return i ? [', ', a] : ['Sources: ', a];
+    }));
+    // By week: with and without the one lender, and Freddie Mac beside them.
+    const fn = voOf('week').filter((r) => r.agency === 'FNMA'), fh = voOf('week').filter((r) => r.agency === 'FHLMC');
+    legend(document.getElementById('vo-week-legend'), !fn.length && !fh.length ? [] : [...(fn.concat(fh).some((r) => r.first) ? [['var(--cds-chart-muted)', voSaid('first') || 'First week most loans could show both scores', 'box']] : []), [vsOnly(), 'Weeks after it', 'box'],
+      ...(fn.concat(fh).some((r) => r.partial) ? [[`color-mix(in srgb, ${vsOnly()} ${OPEN * 100}%, transparent)`, 'Fainter: week not over', 'box']] : [])]);
+    document.getElementById('vo-week-ex-h').textContent = `Fannie Mae, without ${lead}`;
+    document.getElementById('vo-week-ex').parentElement.hidden = noLead;  // with no lender set apart, this chart would repeat the one beside it
+    const tag = document.getElementById('vo-fh-tag');
+    tag.textContent = freddie.tag || meta.fh_tag || '';
+    tag.hidden = !tag.textContent;
+    const tip = (f, n, part) => (r) => [`Week of ${r.label}${r.partial ? ', so far' : ''}`, [[null, 'Shows VS4 only, at most', int(f(r))], [null, 'Loans that could show both scores', int(n(r))], [null, 'Share of those loans', d3.format('.2%')(part(r))]]];
+    voBars(document.getElementById('vo-week-fn'), st, fn, (r) => r.vo, 'Fannie Mae, loans a week that show VS4 and no FICO', tip((r) => r.vo, (r) => r.n, (r) => r.share));
+    if (!noLead) voBars(document.getElementById('vo-week-ex'), st, fn, (r) => r.vo_without, `Fannie Mae without ${lead}, loans a week that show VS4 and no FICO`, tip((r) => r.vo_without, (r) => r.n - r.n_lead, (r) => r.share_without));
+    voBars(document.getElementById('vo-week-fh'), st, fh, (r) => r.vo, 'Freddie Mac, loans a week that show VS4 and no FICO', tip((r) => r.vo, (r) => r.n, (r) => r.share));
+    const notes = document.getElementById('vo-notes');
+    notes.classList.toggle('dash-skeleton', st === 'loading');
+    notes.replaceChildren(...['weeks', 'trend', 'freddie', 'ties'].map(voSaid).filter(Boolean).map((text) => node('li', null, text)));
+    // By lender. A row that is one lender opens it on FHFA adoption.
+    const lenders = document.getElementById('vo-lenders');
+    lenders.closest('.vx-tablebox').classList.toggle('dash-skeleton', st === 'loading');
+    lenders.tHead.rows[0].cells[6].textContent = `Freddie Mac: shows VS4 only, share of its loans${meta.final_fh === false ? ' so far' : ''}`;
+    const openable = new Set(rowsOf('sellers').map((s) => s.id));
+    const pctOr = (v) => (v == null ? '—' : pct1(v));
+    const lbody = lenders.tBodies[0];
+    lbody.replaceChildren();
+    for (const r of voOf('lender')) {
+      const tr = lbody.insertRow();
+      if (r.total) tr.className = 'lm-all';
+      if (r.total || r.rest) tr.dataset.pin = '';
+      if (openable.has(r.id)) {
+        tr.dataset.key = r.id;
+        tr.tabIndex = 0;
+      }
+      [[r.short, 'vx-l vx-name'], [int(r.fn_n), 'vx-opt'], [int(r.fn_priced), 'vx-opt'], [int(r.fn_vo)], [pctOr(r.fn_own_share)], [pctOr(r.fn_fico_share), 'vx-opt'], [pctOr(r.fh_own_share)]].forEach(([text, cls]) => {
+        const td = tr.insertCell();
+        td.textContent = text;
+        if (cls) td.className = cls;
+      });
+    }
+    // By VS4 score, in counts, the one lender's part fainter.
+    const bands = voOf('band'), most = d3.max(bands, (r) => r.vo) || 1;
+    const faint = `color-mix(in srgb, ${vsOnly()} 40%, transparent)`;
+    legend(document.getElementById('vo-band-legend'), bands.length && !noLead ? [[vsOnly(), `Without ${lead}`, 'box'], [faint, lead, 'box']] : []);
+    const btable = document.getElementById('vo-bands');
+    btable.closest('.vx-tablebox').classList.toggle('dash-skeleton', st === 'loading');
+    btable.tHead.rows[0].cells[3].textContent = `Without ${lead}`;
+    btable.tHead.rows[0].cells[3].hidden = noLead;
+    const bbody = btable.tBodies[0];
+    bbody.replaceChildren();
+    for (const r of bands) {
+      const tr = bbody.insertRow();
+      const name = tr.insertCell();
+      name.className = 'vx-l';
+      name.textContent = String(r.label).replace(/(\d)-(\d)/, '$1–$2');
+      const bar = node('div', 'lm-bar');
+      [[r.vo_without, vsOnly()], [r.vo_lead, faint]].forEach(([v, color]) => {
+        const seg = node('span');
+        seg.style.width = `${(v / most) * 100}%`;
+        seg.style.background = color;
+        bar.append(seg);
+      });
+      const cell = tr.insertCell();
+      cell.className = 'vx-l';
+      cell.append(bar);
+      for (const v of [r.vo, r.vo_without, r.vo_fthb]) tr.insertCell().textContent = int(v);
+      tr.cells[3].hidden = noLead;
+    }
   }
 
   // ---- Where every lender stands ----
@@ -197,7 +479,7 @@
         svg.append('text').attr('x', m.left - 6).attr('y', y(t)).attr('dy', '0.32em').attr('text-anchor', 'end').text(pct0(t));
       }
     }
-    svg.append('text').attr('x', (x(0) + x(1)) / 2).attr('y', H - 4).attr('text-anchor', 'middle').text('Share of its loans showing VS4, a floor');
+    svg.append('text').attr('x', (x(0) + x(1)) / 2).attr('y', H - 4).attr('text-anchor', 'middle').text(W < 260 ? 'Loans showing VS4, a floor' : 'Share of its loans showing VS4, a floor');
     svg.append('text').attr('transform', `translate(11,${(y(0) + y(topY)) / 2}) rotate(-90)`).attr('text-anchor', 'middle').text('Share priced on VS4');
     svg.append('line').attr('x1', x(0)).attr('y1', y(0)).attr('x2', x(topY)).attr('y2', y(topY)).attr('stroke', 'var(--cds-chart-reference)');
     const taken = [];
@@ -248,7 +530,7 @@
         const d = pick(event);
         event.currentTarget.style.cursor = d && openable.has(d.id) ? 'pointer' : null;
         if (!d) return tip.hide();
-        tip.show(event, d.name, [[null, 'Carrying VS4', pct1(d.carrying)], [null, 'Priced on VS4', pct1(d.priced)], [null, 'Shows VS4 only', pct1(d.only)], [null, 'Loans', int(d.n)]]);
+        tip.show(event, d.name, [[null, 'Carrying VS4', pct1(d.carrying)], [null, 'Priced on VS4', pct1(d.priced)], [null, 'Shows VS4 only, at most', pct1(d.only)], [null, 'Loans', int(d.n)]]);
       })
       .on('pointerleave', () => tip.hide())
       .on('click', (event) => {
@@ -336,7 +618,7 @@
     ['priced', 'Priced on VS4', 'VS4 was the score that set the loan\'s LLPA. On records from Oct 19, 2026, which reach back to loans first disclosed in late September, the GSEs state this; before that it comes from the one score shown.'],
     ['carrying', 'Carrying VS4', 'The loan shows a VS4 score, whichever score priced it. A lender can carry VS4 and still price on FICO. The share is a floor: a loan can have a VS4 that does not show.'],
     ['both', 'Both scores', 'The GSE file shows both a Classic FICO and a VS4 on the loan. One of them priced it.'],
-    ['only', 'FICO only, VS4 only', 'The file shows just that one score. That does not mean the other was never pulled: lenders deliver one score, and at Freddie Mac some lenders\' loans often show only the one that priced them. So these shares are ceilings on loans with only one score.'],
+    ['only', 'Shows VS4 only, at most', 'The file shows a VS4 and no Classic FICO, and the same way round for shows FICO only. That does not mean the other score was never pulled: lenders deliver one score, and at Freddie Mac some lenders\' loans often show only the one that priced them. So the share is the most it can be: loans that really have only that score are at most this many. A thin-file borrower may have had no FICO to buy, and a lender can cut FICO pulls early and still show a FICO at funding.'],
     ['floor', 'Floor, ceiling, exact', 'A score that does not show is unknown, not absent. So the share showing a score is a floor on loans that have it: the true share is at least this. The share showing only one score is a ceiling on loans that have only that one: the true share is at most this. The share priced on VS4 is exact: the GSEs state it on records with the Pricing Indicator, and before that the one score shown names it.'],
     ['every', 'Records that show every score', 'Since Oct 19, 2026 the GSE files show every score the GSE has on a loan and which one priced it. Before that they showed only the score that priced the loan, so older bars are a floor.'],
     ['frozen', 'Lender mix frozen', 'Each week different lenders deliver different amounts. Freezing the mix gives each lender a fixed weight, its share of all the weeks shown, so only changes in what lenders do can move the number.'],
@@ -368,6 +650,9 @@
     ['classic', 'Classic FICO', 'The older FICO versions the GSEs have long required: Equifax Beacon 5.0, Experian Fair Isaac v2 and TransUnion FICO Classic 04 or 98.'],
     ['ficonew', 'Newer FICO', 'FICO 8, FICO 9, FICO 10 and FICO 10T. Still FICO, but not the versions the GSEs have long required.'],
     ['unnamed', 'Model not named', 'The lender said it relied on more than one model, or on another model, without saying which. It could be FICO or VantageScore, so it counts as neither.'],
+    ['firstlien', 'First-lien', 'The loan with first claim on the home. Lines of credit and second liens count apart as home equity, and multifamily and reverse mortgages are left out.'],
+    ['othconf', 'Other conforming size', 'Loans under the conforming limit that are not FHA, VA, USDA or business purpose and do not reach Fannie or Freddie: bank and credit union portfolio loans, private label and others. It is what is left of HMDA\'s conforming-size rows after the GSEs\' own count, so it is an estimate.'],
+    ['follow', 'If FHA and VA follow', 'An assumption: FHA and VA reach the same level of VS4 only as the GSEs. No file can show VS4 only on FHA or VA.'],
     ['noscore', 'No score reported', 'The lender marked the field not applicable, or it is exempt from reporting it. Some loans, such as streamlined refinances, may use no score at all. It does not mean FICO.'],
   ];
   const termOf = new Map(TERMS.map((t) => [t[0], t]));
@@ -429,7 +714,7 @@
     if (el) return showPop(el);
     if (popFor && !(event.target.closest('.vx-pop') && String(getSelection()))) hidePop();  // a tap on it closes it, as anywhere; a drag that selected its words does not
     const go = event.target.closest('[data-go]');
-    if (go) {  // a link reads as a link, so Back comes back here, whether or not a host's setLink moves this frame's URL. A host can refuse the entries.
+    if (go && !(go.classList.contains('fr') && event.detail && String(getSelection()))) {  // a drag across a row's words selects them and opens nothing. A link reads as a link, so Back comes back here, whether or not a host's setLink moves this frame's URL. A host can refuse the entries.
       try {
         history.replaceState({ tab: root.querySelector('.vx-tabs [aria-selected="true"]').dataset.tab }, '', location.href);
         history.pushState({ tab: go.dataset.go }, '', location.href);
@@ -437,7 +722,11 @@
       show(go.dataset.go);
       window.scrollTo(0, 0);
       const goTab = document.getElementById(`tab-${go.dataset.go}`);  // the keyboard goes on from the tab it landed on, not from the top of the page
-      if (goTab) goTab.focus({ preventScroll: true });
+      const goCard = go.dataset.at && document.getElementById(go.dataset.at);  // or from the card a row lands on
+      if (goCard) goCard.focus({ preventScroll: true });
+      else if (goTab) goTab.focus({ preventScroll: true });
+      landing = go.dataset.at || null;  // a row can open its tab at one card
+      land();
     }
     const more = event.target.closest('.vx-more-note');
     if (more) {
@@ -452,6 +741,19 @@
       capRows(box.querySelector('table'));
       if (showing) all.scrollIntoView({ block: 'end' });
     }
+  });
+
+  // The tab's data may still be on its way, and the card moves down as it arrives, so the page lands again until nothing shown is waiting, or the reader moves first.
+  let landing = null;
+  function land() {
+    const at = landing && document.getElementById(landing);
+    if (!at) return;
+    at.scrollIntoView({ block: 'start' });
+    if (![...root.querySelectorAll('.vx-panel:not([hidden]) .dash-skeleton')].some((e) => e.getClientRects().length)) landing = null;
+  }
+  for (const type of ['wheel', 'touchstart', 'pointerdown', 'keydown']) window.addEventListener(type, () => { landing = null; }, { passive: true, capture: true });
+  root.addEventListener('keydown', (event) => {  // a row on the first screen opens by Enter, as a link does
+    if (event.key === 'Enter' && event.target.matches('.fr[data-go]')) event.target.click();
   });
 
   // Long notes show two lines, with the rest a tap away. A More costs a line, so a note that would hide only one line shows in full.
@@ -509,9 +811,11 @@
     });
   }
 
-  vx.hooks.overview.push(drawWaffles, drawWho, drawFrozen, drawReach);
+  vx.hooks.overview.push(drawFront, drawWaffles, drawWho, drawFrozen);
+  vx.hooks.outlook.push(drawVoCard);
+  vx.hooks.pricing.push(drawFrontLlpa);
   vx.hooks.scores.push(drawMap, drawDecide);
   vx.hooks.method.push(drawGlossary);
-  vx.after.push(tidy);
+  vx.after.push(drawFrontLine, tidy, land);
   vx.redraw();
 })();

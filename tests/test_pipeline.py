@@ -123,6 +123,7 @@ gsescore.scores.MIN_N = gsescore.scores.MIN_CHOICE = 1
 meta = build(home / "site" / "data")
 daily = json.loads((home / "site" / "data" / "daily.json").read_text())
 assert meta["loans"] == 42 and len(daily["rows"]) == 14, (meta, daily)  # 7 days x (one GSE + All)
+assert meta["front_error"] is None, meta["front_error"]
 monthly = json.loads((home / "site" / "data" / "monthly.json").read_text())["rows"]
 everyone = next(r for r in monthly if r["agency"] == "All" and r["month"] == "2026-07-01")
 assert (everyone["scored_loans"], everyone["vs4_loans"], everyone["final"]) == (25, 4, False), everyone
@@ -145,6 +146,12 @@ for k, want in [("d_total", 2 / 6 - 4 / 25), ("d_new", 2 / 6), ("d_within", with
     assert abs(ad[k] - want) < 1e-6, (k, ad[k], want)
 jul = next(r for r in rows("series") if r["period"] == "month" and r["agency"] == "All" and r["start"] == "2026-07-01")
 assert abs(jul["actual"] - 4 / 25) < 1e-6 and abs(jul["ex_top2"] - 1 / 9) < 1e-6, jul  # without UWM and Wells
+# A week is whole once the files reach its Friday, whatever day the build runs. Freddie's files here stop on Tuesday Oct 20, Fannie's on Thursday Oct 15, and both GSEs count from the earlier day.
+complete_at = {(r["week"], r["agency"]): r["complete"] for r in rows("weekly")}
+assert complete_at == {("2026-08-10", "All"): True, ("2026-08-10", "FNMA"): True, ("2026-08-31", "All"): True, ("2026-08-31", "FHLMC"): True, ("2026-09-14", "All"): True, ("2026-09-14", "FNMA"): True,
+                       ("2026-10-12", "All"): False, ("2026-10-12", "FNMA"): False, ("2026-10-19", "All"): False, ("2026-10-19", "FHLMC"): False}, complete_at
+assert {(r["start"], r["agency"]): r["complete"] for r in rows("series") if r["period"] == "week"} == complete_at, rows("series")
+assert {r["agency"]: r["data_through"] for r in rows("summary")} == {"FNMA": "2026-10-15"}, rows("summary")  # Fannie's own last day, not Freddie's later Oct 20: only Fannie has a month-end file here, and the summary has a row only for a GSE with one
 h = rows("highlights")[0]
 assert (h["data_through"], h["new_7d"], h["new_30d"], "mover_id" in h) == ("2026-10-20", 1, 1, False), h
 # First month over each threshold, by GSE: UWM at Freddie in July and Fannie in October; Wells Fargo only at Freddie.
@@ -186,6 +193,16 @@ assert abs(fre["share"] - 0.75) < 1e-6 and abs(fre["expected"] - 39 / 56) < 1e-6
 prof = {(r["cover"], r["grp"]): r for r in rows("borrower_profile")}
 assert (prof[("both", "vs4")]["loans"], prof[("both", "vs4")]["wa_fico"], prof[("both", "vs4")]["avg_gap"]) == (3, 745, 20), prof
 assert rows("rates") == [] and not (home / "site" / "data" / "pricing.json").exists(), "too few FICO loans here to fit the rate model, and the old rate file is no longer written"
+assert rows("market_size")[0]["view"] == "meta" and not rows("market_size")[0]["ok"] and any(r["view"] == "warning" and "input file is missing" in r["text"] for r in rows("market_size")), "no input file stops nothing"
+# The first screen on the pipeline's own build: no rate read, no private file, a headline month with no Fannie row and no VS4-only loan. Every row still builds, the totals tie and nothing claims a thing the data does not hold.
+fr_rows, vo_rows = rows("front"), rows("vs4_only")
+fr_row = {r["key"]: r for r in fr_rows if r["view"] == "row"}
+assert list(fr_row) == ["adoption", "vs4_only", "market", "rate", "price"] and [r["order"] for r in fr_row.values()] == [0, 1, 2, 3, 4], fr_row
+fr_price = next(r["value"] for r in rows("assumptions") if r["key"] == "price_per_score")
+assert fr_row["adoption"]["number"] and fr_row["vs4_only"]["number"] is None and fr_row["rate"]["line"] == "Too few to compare yet." and fr_row["price"]["number"] == f"${fr_price:g}" and fr_row["price"]["line"] == "Too few to compare yet.", fr_row
+assert {"meta", "week", "lender", "band", "check"} <= {r["view"] for r in vo_rows} and set(r["key"] for r in vo_rows if r["view"] == "check" and not r["pass"]) == {"inputs", "gse_thin"}, vo_rows
+vo_week = next(r for r in vo_rows if r["view"] == "week")
+assert (vo_week["agency"], vo_week["week"], vo_week["n"], vo_week["partial"], vo_week["days"]) == ("FHLMC", "2026-10-19", 10, True, 2) and next(r for r in vo_rows if r["view"] == "lender" and r.get("total"))["fh_vo"] == 0, vo_rows  # Freddie's files here stop on Tuesday Oct 20
 
 # Score choice: UWM's Oct 20 loans carry FICO 745 (bucket 740-759) and VS4 765 (760-779), one bucket better; 3 of 10 priced on VS4.
 rule = {(r["scope"], r["agency"], r["key"]): r for r in rows("choice") if r["view"] == "rule"}
@@ -227,6 +244,10 @@ assert (st["stage"], st["both_share"], st["uses_higher"], st["rule"], st["kind"]
 stg = {r["key"]: r for r in ls2 if r["view"] == "stage"}
 assert set(stg) == {"both"} and (stg["both"]["lenders"], stg["both"]["share"], stg["both"]["vs4_share"]) == (1, 1.0, 0.3), stg
 assert rows("statements") and all(r["url"].startswith("https://") and r["statement"] and r["date"] for r in rows("statements")), "every statement has a date and a link"
+said_rows = rows("statements")
+assert len({(r["date"], r["who"], r["source"]) for r in said_rows}) == len(said_rows), "the page keys a row on these"
+assert [r["date"] for r in said_rows] == sorted((r["date"] for r in said_rows), reverse=True), "newest first"
+assert {r["check"] for r in said_rows} <= {None, "seller", "fico", "lenders", "pricing", "fees", "august", "gse_q3"} and all(r["seller_id"] for r in said_rows if r["check"] == "seller"), said_rows
 
 # Fees on the same loans carry through the build (planted answers below).
 mk = next(r for r in rows("fees") if r["view"] == "market" and r["key"] == "All")
@@ -236,11 +257,27 @@ from gsescore.fee_grid import load_grid  # noqa: E402
 g = load_grid()
 assert (g[("purchase", 8, 4)], g[("purchase", 4, 5)], g[("cash_out", 0, 4)], g[("rate_term", 2, 5)], len(g)) == (0.375, 1.5, 5.125, 3.0, 9 * 9 + 9 * 9 + 9 * 5), g
 
+import duckdb  # noqa: E402
+
+# The same flag on its own: a Friday reached by one GSE does not make the week whole for both, and a November week works the same. No complete flag reads today's date.
+from gsescore.warehouse import register_through, week_whole_sql  # noqa: E402
+import gsescore.aggregate  # noqa: E402
+
+w = duckdb.connect()
+FN, FH = "'FNMA'", "'FHLMC'"
+for fnma, fhlmc, week, want in (("2026-10-20", "2026-10-20", "2026-10-19", (False, False, False)), ("2026-10-23", "2026-10-20", "2026-10-19", (True, False, False)),
+                                ("2026-10-23", "2026-10-23", "2026-10-19", (True, True, True)), ("2026-11-06", "2026-11-03", "2026-11-02", (True, False, False))):
+    w.execute(f"CREATE OR REPLACE TABLE loans AS SELECT * FROM (VALUES ('FNMA', DATE '{fnma}'), ('FHLMC', DATE '{fhlmc}')) t(agency, first_intraday_date)")
+    register_through(w)
+    day = f"DATE '{week}'"
+    assert w.execute(f"SELECT {week_whole_sql(day, FN)}, {week_whole_sql(day, FH)}, {week_whole_sql(day)}").fetchone() == want, (fnma, fhlmc, week)
+for m in (gsescore.aggregate, gsescore.lenders):
+    assert "<= current_date" not in Path(m.__file__).read_text(), m.__name__
+assert 'week_whole_sql("week")' in Path(gsescore.lenders.__file__).read_text() and 'week_whole_sql("start", "tw.agency")' in Path(gsescore.lenders.__file__).read_text()
+
 # Outlook on planted tables, October 2026: VS4 on 40, 30, 2, 0 and 0 loans of 100, 100, 100, 200 and 50 (550). VS4 saves a fee
 # on 50%, 50%, 40%, 30% and 50% of them and is higher on 70%, 60%, 60%, 60% and 80%. A's latest two weeks show 30 of 60 on VS4;
 # B's show too few to count. A and B are heavy (VS4 at half or more of the fee-saving share), C is a light user, D stopped in April.
-import duckdb  # noqa: E402
-
 from gsescore import outlook  # noqa: E402
 
 o = duckdb.connect()
@@ -300,12 +337,12 @@ c2.execute("CREATE TABLE entity_names AS SELECT id, upper(id) AS short FROM sell
 c2.execute("""CREATE TABLE monthly AS SELECT *, 100 AS scored_loans, 1000000.0 AS scored_upb, 10 AS vs4_loans, 100000.0 AS vs4_upb FROM (VALUES (DATE '2026-09-01', 'All', true),
               (DATE '2026-09-01', 'FHLMC', true), (DATE '2026-10-01', 'All', false), (DATE '2026-10-01', 'FHLMC', false)) t(month, agency, final)""")
 c2.execute("""CREATE TABLE loans (agency VARCHAR, issue_month DATE, upb DOUBLE, score_model VARCHAR, seller VARCHAR, purpose VARCHAR,
-              channel VARCHAR, classic_fico INT, vs4 INT, pricing_indicator VARCHAR, first_intraday_date DATE, ltv INT, mi_pct DOUBLE, special_program VARCHAR)""")
+              channel VARCHAR, classic_fico INT, vs4 INT, pricing_indicator VARCHAR, first_intraday_date DATE, ltv INT, mi_pct DOUBLE, special_program VARCHAR, fthb VARCHAR)""")
 planted_loans = [("2026-10-01", "R", "V", 700, 720, 30), ("2026-10-01", "R", "C", 700, 720, 20), ("2026-10-01", "R", "V", 700, 705, 10),
                  ("2026-10-01", "R", "C", 700, 705, 40), ("2026-10-01", "N", "C", 700, None, 100), ("2026-09-01", "R", "V", None, 720, 30),
                  ("2026-09-01", "R", "C", 700, None, 70), ("2026-09-01", "N", "C", 700, None, 100), ("2026-09-01", "M", "V", None, 720, 10),
                  ("2026-09-01", "M", "C", 700, None, 30)]
-c2.executemany("INSERT INTO loans VALUES ('FHLMC', ?, 100000, ?, ?, 'P', 'R', ?, ?, ?, '2026-10-20', 80, 0, '7')",
+c2.executemany("INSERT INTO loans VALUES ('FHLMC', ?, 100000, ?, ?, 'P', 'R', ?, ?, ?, '2026-10-20', 80, 0, '7', 'N')",
                [(day, model, seller, fico, vs, model if day == "2026-10-01" else None)
                 for day, seller, model, fico, vs, k in planted_loans for _ in range(k)])
 from gsescore.aggregate import _rows  # noqa: E402
@@ -442,7 +479,7 @@ c4 = duckdb.connect()
 c4.execute("CREATE MACRO seller_key(x) AS x")
 c4.execute("CREATE TABLE seller_map AS SELECT * FROM (VALUES ('R', 'r'), ('N', 'n')) t(key, id)")
 c4.execute("CREATE TABLE entity_names AS SELECT id, upper(id) AS short, upper(id) AS name, NULL::VARCHAR AS ticker FROM seller_map")
-c4.execute("CREATE TABLE loans AS SELECT * FROM (VALUES ('R', 'V', DATE '2026-10-06', DATE '2026-10-01'), ('N', 'C', DATE '2026-10-14', DATE '2026-10-01')) t(seller, score_model, first_intraday_date, issue_month)")
+c4.execute("CREATE TABLE loans AS SELECT * FROM (VALUES ('FNMA', 'R', 'V', DATE '2026-10-06', DATE '2026-10-01'), ('FNMA', 'N', 'C', DATE '2026-10-14', DATE '2026-10-01')) t(agency, seller, score_model, first_intraday_date, issue_month)")
 c4.execute("""CREATE TABLE scw (agency VARCHAR, week DATE, is_v BOOLEAN, seller_id VARCHAR, has_fico BOOLEAN, has_vs4 BOOLEAN, gap INT, upb DOUBLE DEFAULT 100000,
               channel VARCHAR DEFAULT 'R', fico INT DEFAULT 700, ltv INT DEFAULT 80, purpose VARCHAR DEFAULT 'P', mi BOOLEAN DEFAULT false, program VARCHAR DEFAULT '7', month DATE DEFAULT DATE '2026-10-01')""")
 for wk, v in (("2026-10-05", 10), ("2026-10-12", 30)):
@@ -452,6 +489,20 @@ said = [{"date": "2026-10-13", "who": "Z", "statement": "Said something.", "sour
 wn = notes.build_datasets(c4, said)["week_note"]
 wk = {r["week"]: r for r in wn if r["view"] == "week"}
 assert (wk["2026-10-05"]["partial"], wk["2026-10-05"]["latest"], wk["2026-10-12"]["partial"], wk["2026-10-12"]["latest"], wk["2026-10-12"]["label"]) == (False, True, True, False, "Oct 12 to Oct 14"), wk
+# One GSE's files stop early: a week of both is not whole until the earlier GSE reaches its Friday, whatever the other has, and the note opens on the last week that is.
+c4.execute("INSERT INTO loans VALUES ('FHLMC', 'N', 'C', DATE '2026-10-06', DATE '2026-10-01')")
+wk_lag = {r["week"]: r for r in notes.build_datasets(c4, said)["week_note"] if r["view"] == "week"}
+assert (wk_lag["2026-10-05"]["partial"], wk_lag["2026-10-12"]["partial"], wk_lag["2026-10-12"]["latest"], wk_lag["2026-10-12"]["label"]) == (True, True, True, "Oct 12 to Oct 14"), wk_lag
+c4.execute("DELETE FROM loans WHERE agency = 'FHLMC'")
+# "Whose files show both scores more fully" only while they do, in that week: with Fannie alone in a week the claim has nothing to stand on, and a Freddie week showing them more fully flips it.
+fannie_line = lambda wk: next(r["text"] for r in notes.build_datasets(c4, said)["week_note"] if r["view"] == "line" and r["week"] == wk and r["text"].startswith("At Fannie Mae"))  # noqa: E731
+assert fannie_line("2026-10-12").startswith("At Fannie Mae: priced on VS4"), fannie_line("2026-10-12")
+c4.executemany("INSERT INTO scw (agency, week, is_v, seller_id, has_fico, has_vs4, gap) VALUES ('FHLMC', ?, false, 'n', true, ?, ?)", [("2026-10-12", False, None)] * 400)
+assert fannie_line("2026-10-12").startswith("At Fannie Mae, whose files show both scores more fully: priced on VS4"), fannie_line("2026-10-12")
+c4.execute("DELETE FROM scw WHERE agency = 'FHLMC'")
+c4.executemany("INSERT INTO scw (agency, week, is_v, seller_id, has_fico, has_vs4, gap) VALUES ('FHLMC', ?, false, 'n', true, ?, ?)", [("2026-10-12", True, 0)] * 400)
+assert fannie_line("2026-10-12").startswith("At Fannie Mae: priced on VS4"), fannie_line("2026-10-12")
+c4.execute("DELETE FROM scw WHERE agency = 'FHLMC'")
 lines = {r["kind"]: r for r in wn if r["view"] == "line" and r["week"] == "2026-10-12"}
 mix_text = next(r["text"] for r in wn if r["view"] == "line" and r["week"] == "2026-10-12" and r["order"] == 0)
 assert mix_text == "150 loans first disclosed Oct 12 to Oct 14, so far: priced on VS4 20.0% (6.7% the week before), both scores show on 100.0% (66.7% the week before), only VS4 shows on 0.0% (0.0% the week before).", mix_text
@@ -485,6 +536,7 @@ planted_inputs = [{**r, "value": {"gse_loans_year": 1e6, "borrowers_per_loan": 1
 planted_inputs = [r for r in planted_inputs if r["key"] != "no_fico_fnma"] + [{**ass["gse_loans_year"], "key": "no_fico_fnma", "value": 0.01}]
 (home / "site" / "data" / "assumptions.json").write_text(json.dumps({"rows": planted_inputs}))
 assert all(r["url"].startswith("https://") for r in ass.values() if r["kind"] == "source"), ass
+assert gsescore.exposure.PULL_CASES[0] == ass["pulls_per_loan"]["value"] and {"fico_total_q", "fico_shares_q", "fico_tax_rate"} <= set(ass) and not {"gse_own_q3_share", "price_enrolled_2027", "perf_funded_fee"} & set(ass), ass  # what FICO reports is public; a private input stays out of this file
 ns = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 values, formulas = {}, {}
 with zipfile.ZipFile(build_workbook()) as z:
@@ -526,7 +578,7 @@ assert abs(by_label["A lender's saving per funded loan if it drops FICO ($)"] - 
 from gsescore.export import SCENARIO_NO_FICO  # noqa: E402
 
 STATEMENTS = [r["statement"] for r in rows("statements")]
-WORKBOOK_GONE = ("eaches the rate", "No FICO today", "Your no FICO", "Missed", "Potential", "Left", "Estimated", "Fees left", "Fees estimated", "saves a fee", "Saves a fee", "Standard error", "model's miss", "against the FICO model", "taken to match", "unchecked", "being rebuilt", "replacement comes next", "Shows in the rate", "single-grid", "no sign of", "Used VS4", "20-point line", "pick is worth", "Better VS4", "Blank under 100 VS4", "score has priced like")
+WORKBOOK_GONE = ("Shows no FICO", "eaches the rate", "No FICO today", "Your no FICO", "Missed", "Potential", "Left", "Estimated", "Fees left", "Fees estimated", "saves a fee", "Saves a fee", "Standard error", "model's miss", "against the FICO model", "taken to match", "unchecked", "being rebuilt", "replacement comes next", "Shows in the rate", "single-grid", "no sign of", "Used VS4", "20-point line", "pick is worth", "Better VS4", "Blank under 100 VS4", "score has priced like")
 
 
 def workbook_says(found):
@@ -534,8 +586,8 @@ def workbook_says(found):
 
 
 assert not workbook_says(strings), workbook_says(strings)
-assert {"Shows no FICO, at most", "Lender drops FICO (your assumption)", "Of those, lower LLPA on VS4", "Saved, net, on all of those (bp of balance)", "Saved per loan with a lower LLPA ($)", "What the pick saves in LLPAs: the upfront fee as bp of balance"} <= set(strings), strings[:40]
-assert {"Blue: inputs to change. Black: figures from the data, and formulas. Green: links to another sheet. Yellow fill: judgment calls these files cannot test.", "Cost or rate: what lenders pick when they hold both scores, by what VS4 would do to the fee, and what the pick saves in LLPAs."} <= set(strings), "the Read me's colours and what Cost or rate holds"
+assert {"Shows VS4 only, at most", "Lender drops FICO (your assumption)", "Of those, lower LLPA on VS4", "Saved, net, on all of those (bp of balance)", "Saved per loan with a lower LLPA ($)", "What choosing the better score saves in LLPAs: the upfront fee as bp of balance"} <= set(strings), strings[:40]
+assert {"Blue: inputs to change. Black: figures from the data, and formulas. Green: links to another sheet. Yellow fill: judgment calls these files cannot test.", "Cost or rate: what lenders pick when they hold both scores, by what VS4 would do to the fee, and what choosing the better score saves in LLPAs."} <= set(strings), "the Read me's colours and what Cost or rate holds"
 assert any(t.endswith("A year's figures scale the month's to the GSE's balance, an estimate from one part month.") for t in strings), "the year's figures are an estimate"
 assert "Rates" not in names and not any("How the rate differs by LLPA" in t for t in strings) and "Same FICO: estimate" in strings, names  # too few loans here for a rate read: no sheet and no LLPA table, and the Lenders columns stay, blank
 assert any(t.startswith("Rates: how a VS4 loan's note rate compares") for t in strings) and any(t.startswith("Lenders:") and "rate figures" in t for t in strings) and any(t.startswith("The Rates sheet is a like-for-like comparison, not a test of cause.") for t in strings), "the Read me says what the sheet is"
@@ -1465,7 +1517,9 @@ assert next(r for r in rate_views(pricing.build_rates(rate_con(late_few, "x_late
 early_fico = [{**r, "first_intraday_date": "2026-07-06"} if r["score_model"] == "C" and r["first_intraday_date"] in window_weeks else r for r in rate_book(gap=4)]
 assert " its window, and about " in rate_views(pricing.build_rates(rate_con(early_fico, "x_early_fico")))["meta"][0]["milliman_line"], "no comparable loan from Jul 20 and no VS4 loan reaching back: nothing"
 assert next(r for r in views["milliman"] if r["key"] == "window")["reaches_back"] is False and next(r for r in views["milliman"] if r["key"] == "window_plain")["label"] == "May to August, no channel in the cell, VS4 820+ and Rocket correspondent kept" and next(r for r in views["milliman"] if r["key"] == "window_late")["label"] == "Rocket and UWM, closed and issued May to August, first disclosed from Jul 20", views["milliman"]
-assert meta_a["said_check"] == milliman_two + " Same score number under 820 is about +4 bp, data through Oct 19. See Rates.", meta_a["said_check"]
+assert meta_a["said_check"] == milliman_two + " Same score number under 820 is about +4 bp, data through Oct 19. See the Rate tab.", meta_a["said_check"]
+assert pricing._through_words({"FNMA": "2026-10-19", "FHLMC": "2026-10-13"}, "2026-10-19") == "Oct 19 at Fannie, Oct 13 at Freddie" and pricing._through_words({"FNMA": "2026-10-19", "FHLMC": "2026-10-13"}, "2026-10-19", True) == "Oct 19, 2026 at Fannie, Oct 13 at Freddie" and pricing._through_words({"FNMA": "2026-10-19", "FHLMC": "2026-10-19"}, "2026-10-19", True) == "Oct 19, 2026" and pricing._through_words({"FHLMC": "2026-10-13"}, "2026-10-13") == "Oct 13", "one GSE's files stop earlier, and only then two dates"
+assert '"dated": f"Data through {_through_words(lasts, as_of, True)}."' in Path(pricing.__file__).read_text() and 'data through {_through_words(lasts, as_of)}. See the Rate tab."' in Path(pricing.__file__).read_text(), "both of the Rate tab's dates go through it"
 no_rc_line = rate_views(pricing.build_rates(rate_con([r for r in rate_book(gap=4) if (r["seller"], r["channel"]) != ("rocket-mortgage", "C")], "no_rc_line")))["meta"][0]["milliman_line"]
 assert "with VS4 820+ kept, about " in no_rc_line and "Rocket correspondent" not in no_rc_line, no_rc_line
 uwm_only_views = rate_views(pricing.build_rates(rate_con([r for r in rate_book(gap=4) if r["seller"] != "rocket-mortgage"], "uwm_only")))
@@ -2501,6 +2555,7 @@ assert seg["jumbo"]["multi"] == 1 and seg["jumbo"]["unnamed"] == 1 and seg["priv
 assert seg["all"]["n"] == 24 and seg["first"]["n"] == 19, (seg["all"]["n"], seg["first"]["n"])
 assert abs(sum(seg["all"][k] for k in hmda.SHARES) - 1) < 1e-5
 assert seg["gse"]["first_lien"] and not seg["equity"]["first_lien"]
+assert seg["gse"]["label"] == "Sold straight to Fannie or Freddie that year" and wm_trend[(2025, "gse")]["label"] == seg["gse"]["label"] and "Sold to Fannie or Freddie" not in json.dumps(wm), seg["gse"]["label"]  # the row's words; tests and pages key on "gse", never on these
 h_meta = next(r for r in wm if r["view"] == "meta")
 assert h_meta["year"] == 2025 and h_meta["records"] == len(planted) and h_meta["n"] == 26 and h_meta["lenders"] == 3, h_meta
 model = {r["code"]: r for r in wm if r["view"] == "model"}
@@ -2687,6 +2742,241 @@ assert {"lead_retail", "lead_own", "second", "all"} == set(g_range) and g_range[
 with zipfile.ZipFile(build_workbook()) as z:
     assert 'name="VA loans at 830+"' in z.read("xl/workbook.xml").decode()
 
+from gsescore import market  # noqa: E402
+from gsescore.exposure import fico_dollars, fico_per_loan, usd_price  # noqa: E402
+
+# market_size on planted rows: the pieces add up, the residual moves with the year on both sides, the follow table is the one sum, and every sentence flips with its guard. Round numbers, none of them real.
+MS_N = {"gse": 200000, "fha": 200000, "va": 120000, "usda": 10000, "jumbo": 30000, "private": 10000, "other_buyer": 160000, "not_sold": 200000, "business": 70000, "equity": 500000}
+MS_USD = {"gse": 60.0, "fha": 54.0, "va": 36.0, "usda": 3.0, "jumbo": 30.0, "private": 3.0, "other_buyer": 48.0, "not_sold": 66.0, "business": 21.0, "equity": 50.0}
+
+
+def ms_year(year, fico=0.9, vs4=0.002, scale=1):
+    keys = {k: {"n": v * scale, "usd_bn": MS_USD[k] * scale} for k, v in MS_N.items()}
+    first = [k for k in keys if k != "equity"]
+    keys["first"] = {"n": sum(keys[k]["n"] for k in first), "usd_bn": sum(keys[k]["usd_bn"] for k in first)}
+    keys["all"] = {"n": keys["first"]["n"] + keys["equity"]["n"], "usd_bn": keys["first"]["usd_bn"] + keys["equity"]["usd_bn"]}
+    return [{"view": "trend", "year": year, "key": k, "label": {"gse": "Sold straight to Fannie or Freddie that year"}.get(k, k), **v, "fico": fico, "vs4": vs4, "unknown": 1 - fico - vs4, "none": 1 - fico - vs4} for k, v in keys.items()]
+
+
+def ms_input(kind, key, year=None, value=None, text=None, when=None, after=None, order=0):
+    return {"kind": kind, "key": key, "year": year, "value": value, "unit": None, "text": text, "when": when, "after": after, "source": "Planted source", "url": "https://example.org/planted", "date": "2026-01-01", "standing": "fact", "order": order}
+
+
+MS_INPUTS = [ms_input("gse_count", "fnma", 2025, 200000), ms_input("gse_count", "fhlmc", 2025, 220000), ms_input("gse_usd", "fnma", 2025, 60.0), ms_input("gse_usd", "fhlmc", 2025, 69.0),
+             ms_input("usd_share", "urban_gse", 2026, 0.3, "Q2"), ms_input("usd_share", "urban_fha_va", 2026, 0.2, "Q2"), ms_input("fhfa", "enterprise_n", 2025, 410000), ms_input("fhfa", "enterprise_usd", 2025, 130.0), ms_input("fhfa", "government_n", 2025, 320000), ms_input("fhfa", "government_usd", 2025, 93.0), ms_input("fhfa", "all_usd", 2025, 300.0), ms_input("fhfa", "all_n", 2025, 950000),
+             ms_input("piece", "fha", text="Planted rule before.", when="2027-01-01", after="Planted rule after."), ms_input("part", "vs4_only", text="Planted part before.", when="2027-06-30", after="Planted part after."), ms_input("break", "second", text="Planted break two.", order=2), ms_input("break", "first", text="Planted break one.", order=1)]
+MS_ASSUME = [{"key": k, "value": v} for k, v in (("bureaus", 3.0), ("borrowers_per_loan", 1.5), ("pulls_per_loan", 4.0), ("price_per_score", 10.0), ("closing_fee", 0.0), ("gse_loans_year", 1000000.0), ("fico_mortgage_q", 80.0), ("fico_revenue_year", 500.0), ("fico_total_q", 100.0), ("fico_shares_q", 20.0), ("fico_tax_rate", 0.2))]
+MS_MIX = [{"view": "month", "agency": "All", "headline": True, "start": "2026-10-01", "vs_only_share": 0.02, "vs4_priced_share": 0.08}, {"view": "month", "agency": "FNMA", "headline": True, "start": "2026-10-01", "vs_only_share": 0.005, "vs4_priced_share": 0.08, "both_fico_share": 0.1, "both_vs_share": 0.075}]
+MS_MONTHLY = [{"agency": "All", "month": "2026-10-01", "final": False, "vs4_share": 0.081}]
+MS_SUMMARY = [{"agency": "All", "data_through": "2026-10-27"}]
+MS_GINNIE = [{"view": "meta", "top": 830, "last_issue": "2026-09", "last": "2026-08", "m1": "2026-07", "m2": "2026-08", "since": "2026-05", "lead": "Planted Lead", "second": "Planted Second", "fha_k": 2, "fha_n": 50000},
+             {"view": "range", "key": "all", "low": 0.04, "high": 0.08}, {"view": "range", "key": "lead_own", "low": 0.2, "high": 0.5}, {"view": "range", "key": "second", "low": 0.02, "high": 0.05},
+             {"view": "month", "key": "others", "month": "2026-07", "k": 1, "n": 10000}, {"view": "month", "key": "others", "month": "2026-04", "k": 500, "n": 10000}]
+MS_CLOSING = [{"view": "lender", "agency": "All", "id": "planted-lead", "start": "2026-07-01", "n": 500, "v": 150}, {"view": "lender", "agency": "All", "id": "planted-lead", "start": "2026-08-01", "n": 500, "v": 250}, {"view": "lender", "agency": "All", "id": "planted-second", "start": "2026-07-01", "n": 1000, "v": 300}]
+MS_PL = [{"view": "meta", "n": 1000, "from": "2025-03-01", "through": "2026-10-23", "vs": 0.0007, "lag_months": 4}]
+ms_base = {"whole_market": ms_year(2025), "assumptions": MS_ASSUME, "summary": MS_SUMMARY, "score_mix": MS_MIX, "monthly": MS_MONTHLY, "closing": MS_CLOSING, "ginnie_va": MS_GINNIE, "private_label": MS_PL, "inputs": {"status": "ok", "rows": MS_INPUTS}}
+
+
+def ms(**changed):
+    return market.build_rows(**{**ms_base, **changed})
+
+
+def ms_said(rows):
+    return {r["key"]: r["text"] for r in rows if r["view"] == "sentence"}
+
+
+def ms_warned(rows):
+    return [r["text"] for r in rows if r["view"] == "warning"]
+
+
+ms_built = ms()
+ms_meta = next(r for r in ms_built if r["view"] == "meta")
+ms_piece = {r["key"]: r for r in ms_built if r["view"] == "piece"}
+assert list(ms_piece) == ["gse", "fha", "va", "usda", "other_conforming", "business", "jumbo", "equity"], list(ms_piece)
+assert ms_meta["ok"] and ms_meta["year"] == 2025 and ms_meta["pieces_add"] and not ms_meta["stale"] and ms_warned(ms_built) == [], ms_warned(ms_built)
+# Shares come from the GSEs' own count, and other conforming size is what is left of HMDA's rows, in loans and dollars. The pieces add to first-lien loans.
+assert ms_piece["gse"]["n"] == 420000 and ms_piece["gse"]["share_n"] == 0.42 and ms_piece["other_conforming"]["n"] == 150000 and ms_piece["other_conforming"]["usd_bn"] == 48.0, ms_piece["other_conforming"]
+assert sum(r["n"] for r in ms_piece.values() if r["first_lien"]) == 1000000 == ms_meta["first_n"] and abs(sum(r["usd_bn"] for r in ms_piece.values() if r["first_lien"]) - ms_meta["first_usd_bn"]) < 0.5
+assert ms_meta["three_share"] == 0.74 and ms_meta["three_all_share"] == round(740000 / 1500000, 6) and ms_meta["gap_n"] == 220000 and ms_meta["row_share"] == 0.2 and ms_piece["equity"]["share_n"] is None and not ms_piece["equity"]["first_lien"], ms_meta
+ms_lines = ms_said(ms_built)
+assert ms_lines["fhfa_count"].endswith("VA are 75.8% of first-lien loans."), ms_lines["fhfa_count"]
+assert ms_lines["lead"] == "Fannie and Freddie are 42.0% of first-lien loans, 74% with FHA and VA, and the other 26% mostly names FICO, with VS4 under 1% (2025).", ms_lines["lead"]
+assert ms_lines["all_loans"].startswith("Fannie, Freddie, FHA and VA are 49% of all 1,500,000 home loans") and ms_lines["reach"].endswith("reaches 1.8 times as much of the market's first-lien loans."), ms_lines
+assert ms_lines["hmda_gap"].startswith('HMDA\'s row "Sold straight to Fannie or Freddie that year" holds 200,000 loans, 20.0% of first-lien') and "The GSEs' own 2025 count is 420,000, 42.0%. The other 220,000" in ms_lines["hmda_gap"], ms_lines["hmda_gap"]
+# 3 bureaus x 1.5 borrowers x (pulls x $10), the workbook's and the page's sum, one function. On a million GSE loans a year plus FHA's and VA's counts.
+assert market.PULL_CASES == (4, 5, 6) and fico_per_loan(3, 1.5, 4, 10) == 180 and fico_per_loan(3, 1.5, 4, 10, 2) == 189 and abs(fico_dollars(1e6, 0.01, {r["key"]: r["value"] for r in MS_ASSUME}) - 1.8e6) < 1e-6
+ms_follow = {r["key"]: r for r in ms_built if r["view"] == "follow"}
+assert list(ms_follow) == ["today_fnma", "today_both", "x02", "x10", "x25", "x50"], list(ms_follow)
+ms_ten = ms_follow["x10"]
+assert ms_ten["gse_share"] == 0.042 and ms_ten["both_share"] == 0.074 and (ms_ten["gse_p4"], ms_ten["gse_p5"], ms_ten["gse_p6"]) == (18000000, 22500000, 27000000) and (ms_ten["both_p4"], ms_ten["both_p6"]) == (23760000, 35640000), ms_ten
+assert ms_ten["gse_p4_text"] == "$18m" and ms_ten["both_p6_text"] == "$36m" and ms_ten["both_rev_low"] == 0.0594 and ms_ten["both_rev_text"] == "6% to 9%" and ms_ten["gse_rev_text"] == "4.5% to 6.8%", ms_ten  # of $400m, the quarter times four
+ms_today = ms_follow["today_fnma"]
+assert not ms_today["assumed"] and ms_today["both_share"] is None and ms_today["both_share_text"] == "cannot be seen" and ms_today["both_p4"] is None and ms_today["gse_p4"] == 900000 and ms_today["gse_p4_text"] == "under $1m" and ms_today["label"] == "Today: Fannie's at most 0.5%, if Freddie were the same, loans issued October 2026 so far", ms_today
+assert ms_follow["today_both"]["gse_rev_text"] == "0.9% to 1.4%" and ms_follow["today_both"]["label"] == "Today: at most 2.0% at both GSEs, the ceiling, same month" and ms_meta["point_p4"] == 1800000 and ms_meta["point_loans"] == 10000, ms_meta
+assert "about 10,000 loans a year times $180 to $270 (4 to 6 credit pulls per funded loan, 3 bureaus, 1.50 borrowers, $10 a score and no fee on a funded loan)" in ms_lines["basis"] and "$2m to $3m a year, or $0.07 to $0.11 of EPS at full flow-through (20% tax, 20.00m shares)" in ms_lines["basis"] and "1.00m loans a year" in ms_lines["basis"] and "2025's 0.42m GSE loans" in ms_lines["basis"], ms_lines["basis"]
+assert ms_lines["pulls_check"].endswith("So 4 to 5 pulls fits its revenue and 6 is the outer case."), ms_lines["pulls_check"]
+# The dollar range: Urban's printed shares added, the GSEs' own with HMDA's, FHFA's less USDA.
+assert ms_meta["usd_urban"] == 0.5 and abs(ms_meta["usd_fhfa"] - 0.733333) < 1e-5 and ms_lines["dollars"].startswith("By dollars, Fannie, Freddie, FHA and VA are 50% to 73%: 50% on Urban's Q2 split; "), ms_lines["dollars"]
+# Which score, in words, with its date. The VA range keeps its months and its files' date, and each lender's line follows the numbers.
+assert ms_piece["gse"]["uses"] == "Priced on VS4: 8.1% of loans issued October 2026 so far. Shows VS4 only: at most 0.5% at Fannie." and ms_piece["fha"]["uses"] == "HMDA 2025: 90.0% name a FICO model, 0.2% VS4." and "about 4% to 8% of loans closed July and August 2026 likely on VS4" in ms_piece["va"]["uses"], ms_piece["va"]
+assert ms_piece["va"]["fresh"].endswith("Ginnie Mae's files through issue month September 2026, no model named.") and ms_piece["fha"]["fresh"].endswith("Ginnie Mae's files through issue month September 2026, no model named.") and ms_piece["jumbo"]["fresh"] == "HMDA 2025, next file about June 2027." and ms_piece["gse"]["size_src_label"] == "Size: Planted source" and ms_piece["gse"]["size2_src_label"] == "Planted source" and ms_piece["fha"]["size_src_label"] == "HMDA" and ms_piece["other_conforming"]["uses"].endswith(" Measured on the HMDA rows that hold this piece, which also hold loans that reach the GSEs another way."), ms_piece["va"]["fresh"]
+assert ms_lines["fha_when"] == "FHA can take VS4 from Jan 1, 2027." and ms_lines["fha_check"] == "The check: these FHA loans closed too soon to use VS4" and ms_lines["fha_use"].startswith("Not in Ginnie Mae's files yet") and "2 of 50,000 sit at" in ms_lines["fha_use"] and ms_lines["fha_note"].startswith("FHA takes VS4 only on case numbers assigned from Jan 1, 2027") and "all other lenders near zero (1 of 10,000 at 830 or above since May 2026)" in ms_lines["va_use"], ms_lines
+assert ms_lines["leaders"] == "On those closing months, Planted Lead priced 40% of its GSE loans on VS4 and Planted Second 30%. So on VA, Planted Lead is about in line with that and Planted Second is well below it.", ms_lines["leaders"]
+ms_parts = [r for r in ms_built if r["view"] == "part"]
+assert [r["key"] for r in ms_parts] == ["use_fha", "use_va", "use_leaders", "vs4_only"] and all(r["as_of"] for r in ms_parts if r["computed"]) and [r["key"] for r in ms_built if r["view"] == "break"] == ["first", "second"], ms_parts
+assert ms_piece["fha"]["move"] == "Planted rule before." and next(r for r in ms_parts if r["key"] == "vs4_only")["text"] == "Planted part before."
+# The first screen's row: its big number, its line and the tab's lead print the same shares, from the same variables.
+ms_over = next(r for r in ms_built if r["view"] == "overview")
+assert ms_over["big"] == "42.0% → 74%" and ms_over["big_value"] == 0.42 and ms_over["big_unit"] == "share" and ms_over["big_what"] == "of 2025 first-lien loans: Fannie and Freddie by their own count, then with FHA and VA if they follow", ms_over
+assert ms_over["line"] == "The other 26% mostly names FICO, with VS4 under 1% (2025). If FHA and VA follow, any level of VS4 only at the GSEs reaches 1.8 times as much.", ms_over["line"]
+ms_big_gse, ms_big_three = ms_over["big"].split(" → ")
+ms_rest_said = ms_over["line"].split(" If FHA")[0]
+assert ms_lines["lead"] == f"Fannie and Freddie are {ms_big_gse} of first-lien loans, {ms_big_three} with FHA and VA, and {ms_rest_said[0].lower()}{ms_rest_said[1:]}", (ms_lines["lead"], ms_over["line"])
+assert f"reaches {ms_meta['reach']:.1f} times as much" in ms_lines["reach"] and f"reaches {ms_meta['reach']:.1f} times as much" in ms_over["line"], ms_meta["reach"]
+assert [r["key"] for r in ms_built if r["view"] == "overview_pic"] == ["gse", "fha", "va", "rest"] and abs(sum(r["value"] for r in ms_built if r["view"] == "overview_pic") - 1) < 1e-9, ms_over
+assert all(r["pass"] for r in ms_built if r["view"] == "check") and {r["key"] for r in ms_built if r["view"] == "check"} == {"gse_n", "gse_usd", "gov_n", "no_business_n"}, [r for r in ms_built if r["view"] == "check"]
+# Flips. A new HMDA year with no GSE counts keeps both sides on the old year, and says so; with its counts in the file, shares and residual move to it.
+ms_two = ms_year(2025) + ms_year(2026, scale=2)
+ms_flip = ms(whole_market=ms_two)
+f_meta = next(r for r in ms_flip if r["view"] == "meta")
+assert f_meta["year"] == 2025 and f_meta["hmda_latest"] == 2026 and f_meta["stale"] and any("HMDA 2026 is loaded" in w for w in ms_warned(ms_flip)) and next(r for r in ms_flip if r["view"] == "piece" and r["key"] == "other_conforming")["n"] == 150000 and next(r for r in ms_flip if r["view"] == "piece" and r["key"] == "jumbo")["fresh"] == "HMDA 2025. HMDA 2026 is loaded and waits on the GSEs' counts.", f_meta
+ms_flip = ms(whole_market=ms_two, inputs={"status": "ok", "rows": [*MS_INPUTS, ms_input("gse_count", "fnma", 2026, 500000), ms_input("gse_count", "fhlmc", 2026, 500000)]})
+f_meta = next(r for r in ms_flip if r["view"] == "meta")
+assert f_meta["year"] == 2026 and not f_meta["stale"] and next(r for r in ms_flip if r["view"] == "piece" and r["key"] == "other_conforming")["n"] == 140000 and f_meta["gse_share"] == 0.5, f_meta  # 1.14m of HMDA's rows less a million; no dollars for 2026 in the file
+assert next(r for r in ms_flip if r["view"] == "piece" and r["key"] == "gse")["usd_bn"] is None and next(r for r in ms_flip if r["view"] == "piece" and r["key"] == "other_conforming")["share_usd"] is None, "no dollars for the year: no dollar bar, and no stale dollars"
+# Counts that do not fit hold the sizes back. No input file stops nothing.
+ms_flip = ms(inputs={"status": "ok", "rows": [ms_input("gse_count", "fnma", 2025, 700000), ms_input("gse_count", "fhlmc", 2025, 700000)]})
+assert not next(r for r in ms_flip if r["view"] == "meta")["ok"] and not [r for r in ms_flip if r["view"] in ("piece", "follow", "overview")] and any("tops HMDA's conforming-size rows" in w for w in ms_warned(ms_flip)) and ms_said(ms_flip)["lead"].startswith("The GSEs' own 2025 count does not fit"), ms_said(ms_flip)
+ms_flip = ms(inputs={"status": "missing", "rows": []})
+assert not next(r for r in ms_flip if r["view"] == "meta")["ok"] and not [r for r in ms_flip if r["view"] in ("piece", "follow", "break")] and ms_said(ms_flip)["fha_check"] and any("input file is missing" in w for w in ms_warned(ms_flip)) and {r["key"] for r in ms_flip if r["view"] == "part"} == {"use_fha", "use_va", "use_leaders"}, ms_flip
+assert market.load_inputs(Path("/no/such/market_inputs.csv")) == {"status": "missing", "rows": []}
+# A count typed as zero is no count: the sizes are held back and the report says so, rather than a share of nothing on the first screen. One zero is enough.
+for ms_zero in ((0, 0), (0, 220000), (200000, 0)):
+    ms_flip = ms(inputs={"status": "ok", "rows": [ms_input("gse_count", "fnma", 2025, ms_zero[0]), ms_input("gse_count", "fhlmc", 2025, ms_zero[1]), ms_input("gse_usd", "fnma", 2025, 0.0), ms_input("gse_usd", "fhlmc", 2025, 0.0)]})
+    assert not next(r for r in ms_flip if r["view"] == "meta")["ok"] and not [r for r in ms_flip if r["view"] in ("piece", "follow", "overview")] and any("no GSE counts in the input file" in w for w in ms_warned(ms_flip)), ms_flip
+# An FHFA total typed as zero costs its one figure and its one sentence, not the tab.
+ms_flip = ms(inputs={"status": "ok", "rows": [*[r for r in MS_INPUTS if (r["kind"], r["key"]) not in (("fhfa", "all_usd"), ("fhfa", "all_n"))], ms_input("fhfa", "all_usd", 2025, 0.0), ms_input("fhfa", "all_n", 2025, 0)]})
+assert next(r for r in ms_flip if r["view"] == "meta")["ok"] and next(r for r in ms_flip if r["view"] == "overview")["big"] and "fhfa_count" not in ms_said(ms_flip) and "on FHFA's" not in ms_said(ms_flip)["dollars"] and not any("could not build" in w for w in ms_warned(ms_flip)), ms_said(ms_flip)
+assert "fhfa_count" in ms_said(ms(inputs={"status": "ok", "rows": MS_INPUTS})) and "on FHFA's" in ms_said(ms(inputs={"status": "ok", "rows": MS_INPUTS}))["dollars"], "with the totals in, both print"
+# With a count far under FHA and VA's, the pair still prints, the report warns, and no dollars for the GSEs divides nothing by zero. A hand-kept share with no value leaves its figure out.
+ms_flip = ms(inputs={"status": "ok", "rows": [ms_input("gse_count", "fnma", 2025, 1), ms_input("gse_count", "fhlmc", 2025, 1), ms_input("gse_usd", "fnma", 2025, 0.0), ms_input("gse_usd", "fhlmc", 2025, 0.0)]})
+ms_over = next(r for r in ms_flip if r["view"] == "overview")
+assert ms_over["big"] == "0.0% → 32%" and ms_over["line"].startswith("The other 68% mostly names FICO, with VS4 under 1% (2025).") and any("at or above the GSEs' own 2025 count" in w for w in ms_warned(ms_flip)), ms_over
+ms_flip = ms(inputs={"status": "ok", "rows": [*MS_INPUTS[:4], ms_input("usd_share", "urban_gse", 2026, None, "Q2"), ms_input("usd_share", "urban_fha_va", 2026, 0.2, "Q2")]})
+assert next(r for r in ms_flip if r["view"] == "meta")["usd_urban"] is None and ms_said(ms_flip)["dollars"].startswith("By dollars, Fannie, Freddie, FHA and VA are 68%."), ms_said(ms_flip)["dollars"]
+# A shape the builder did not foresee stops nothing: the dataset holds a meta row and a warning, and the workbook and the tab hold their sizes back.
+ms_odd = market.build_datasets({**ms_base, "whole_market": [{"view": "trend", "key": "first"}]})["market_size"]
+assert [r["view"] for r in ms_odd] == ["meta", "warning"] and not ms_odd[0]["ok"] and ms_odd[1]["text"].startswith("market size: could not build the dataset:") and set(ms_odd[0]) == set(ms_odd[1]), ms_odd
+# The rest of the market: a shift in what it names changes the words, in the lead and in the first screen's line alike.
+ms_flip = ms(whole_market=ms_year(2025, fico=0.4, vs4=0.01))
+assert "and the other 26% names FICO on 40.0%, with VS4 on 1.0% (2025)." in ms_said(ms_flip)["lead"] and next(r for r in ms_flip if r["view"] == "overview")["line"].startswith("The other 26% names FICO on 40.0%, with VS4 on 1.0% (2025). If FHA and VA follow,"), ms_said(ms_flip)
+# A November month: the label moves. A final month drops "so far". A month before both scores can show has no ms_today row.
+ms_nov = [{**r, "start": "2026-11-01"} for r in MS_MIX]
+ms_flip = ms(score_mix=ms_nov, monthly=[{"agency": "All", "month": "2026-11-01", "final": True, "vs4_share": 0.1}])
+assert next(r for r in ms_flip if r["view"] == "follow" and r["key"] == "today_fnma")["label"] == "Today: Fannie's at most 0.5%, if Freddie were the same, loans issued November 2026" and next(r for r in ms_flip if r["view"] == "piece" and r["key"] == "gse")["uses"].startswith("Priced on VS4: 10.0% of loans issued November 2026."), ms_flip
+# A share under 0.1% prints with the two decimals the first screen gives it, not as 0.0% of a count that is not zero.
+ms_small = [dict(MS_MIX[0], vs_only_share=0.0004), dict(MS_MIX[1], vs_only_share=0.0003)]
+ms_flip = ms(score_mix=ms_small)
+assert next(r for r in ms_flip if r["view"] == "follow" and r["key"] == "today_fnma")["label"].startswith("Today: Fannie's at most 0.03%, if Freddie") and next(r for r in ms_flip if r["view"] == "follow" and r["key"] == "today_both")["label"].startswith("Today: at most 0.04% at both GSEs") and next(r for r in ms_flip if r["view"] == "piece" and r["key"] == "gse")["uses"].endswith("Shows VS4 only: at most 0.03% at Fannie."), ms_flip
+# Fannie's month-end file comes first: Fannie's row reads as final, and both GSEs' row and the piece keep "so far" until Freddie's arrives.
+ms_flip = ms(monthly=[*MS_MONTHLY, {"agency": "FNMA", "month": "2026-10-01", "final": True, "vs4_share": 0.07}])
+assert next(r for r in ms_flip if r["view"] == "follow" and r["key"] == "today_fnma")["label"] == "Today: Fannie's at most 0.5%, if Freddie were the same, loans issued October 2026" and next(r for r in ms_flip if r["view"] == "follow" and r["key"] == "today_both")["label"] == "Today: at most 2.0% at both GSEs, the ceiling, loans issued October 2026 so far" and next(r for r in ms_flip if r["view"] == "piece" and r["key"] == "gse")["uses"].startswith("Priced on VS4: 8.1% of loans issued October 2026 so far."), ms_flip
+# A month-end file whose loans have no daily record (Freddie's daily files lapsed): the month is final, but the card's count holds only part of it, so the ceiling keeps "so far" until that count holds 95% of the month's scored loans. Fannie's row goes by its own count.
+ms_cover = [dict(MS_MIX[0], loans=8000), dict(MS_MIX[1], loans=4000), {"view": "month", "agency": "FHLMC", "headline": True, "start": "2026-10-01", "loans": 4000}]
+ms_final = [{"agency": "All", "month": "2026-10-01", "final": True, "vs4_share": 0.081, "scored_loans": 10000}, {"agency": "FNMA", "month": "2026-10-01", "final": True, "vs4_share": 0.07, "scored_loans": 4100}]
+ms_follow_label = lambda rows, key: next(r for r in rows if r["view"] == "follow" and r["key"] == key)["label"]  # noqa: E731
+ms_flip = ms(score_mix=ms_cover, monthly=ms_final)
+assert ms_follow_label(ms_flip, "today_fnma") == "Today: Fannie's at most 0.5%, if Freddie were the same, loans issued October 2026" and ms_follow_label(ms_flip, "today_both") == "Today: at most 2.0% at both GSEs, the ceiling, loans issued October 2026 so far" and next(r for r in ms_flip if r["view"] == "piece" and r["key"] == "gse")["uses"].startswith("Priced on VS4: 8.1% of loans issued October 2026."), ms_flip
+ms_flip = ms(score_mix=[dict(ms_cover[0], loans=9500), dict(ms_cover[1], loans=3000), dict(ms_cover[2], loans=6500)], monthly=ms_final)
+assert ms_follow_label(ms_flip, "today_fnma").endswith("loans issued October 2026 so far") and ms_follow_label(ms_flip, "today_both") == "Today: at most 2.0% at both GSEs, the ceiling, loans issued October 2026", ms_flip
+ms_flip = ms(score_mix=[dict(ms_cover[0], loans=9500), dict(ms_cover[1], loans=4000), dict(ms_cover[2], loans=5500)], monthly=ms_final)
+assert ms_follow_label(ms_flip, "today_both") == "Today: at most 2.0% at both GSEs, the ceiling, same month", "both counts whole: the same loans"
+ms_flip = ms(score_mix=MS_MIX[:1])
+assert [r["key"] for r in ms_flip if r["view"] == "follow" and not r["assumed"]] == ["today_both"] and next(r for r in ms_flip if r["key"] == "today_both")["label"].endswith("the ceiling, loans issued October 2026 so far") and "Shows VS4 only" not in next(r for r in ms_flip if r["view"] == "piece" and r["key"] == "gse")["uses"], "no Fannie row: nothing for same loans to point at"
+ms_early = [{**r, "start": "2026-09-01"} for r in MS_MIX]
+ms_flip = ms(score_mix=ms_early, monthly=[])
+assert not [r for r in ms_flip if r["view"] == "follow" and not r["assumed"]] and "Shows VS4 only" not in next(r for r in ms_flip if r["view"] == "piece" and r["key"] == "gse")["uses"] and [r["key"] for r in ms_flip if r["view"] == "follow"] == ["x02", "x10", "x25", "x50"], "nothing issued before Oct 1, 2026 can show both scores"
+# FHA opens: the check stops being one. Dated text turns over when the data reaches its date.
+ms_open = {**MS_GINNIE[0], "last": "2027-01", "last_issue": "2027-02"}
+ms_flip = ms(ginnie_va=[ms_open, *MS_GINNIE[1:]], summary=[{"agency": "All", "data_through": "2027-07-01"}])
+assert ms_said(ms_flip)["fha_when"] == "FHA can take VS4 since Jan 1, 2027." and ms_said(ms_flip)["fha_check"].startswith("No longer a clean check") and ms_said(ms_flip)["fha_use"].startswith("FHA can take VS4 since January 2027") and next(r for r in ms_flip if r["view"] == "piece" and r["key"] == "fha")["move"] == "Planted rule after." and next(r for r in ms_flip if r["view"] == "part" and r["key"] == "vs4_only")["text"] == "Planted part after.", ms_said(ms_flip)
+assert any("Ginnie Mae's files stop at issue month 2027-02" in w for w in ms_warned(ms_flip)), ms_warned(ms_flip)
+# One GSE's files stop early: the GSE piece says so, and not when they agree.
+ms_lag = lambda fh: next(r for r in ms(summary=[*MS_SUMMARY, {"agency": "FNMA", "data_through": "2026-10-27"}, {"agency": "FHLMC", "data_through": fh}]) if r["view"] == "piece" and r["key"] == "gse")["fresh"]  # noqa: E731
+assert ms_lag("2026-10-20").startswith("Scores: daily files, through Oct 27, 2026 at Fannie, Oct 20, 2026 at Freddie.") and ms_lag("2026-10-27").startswith("Scores: daily files, through Oct 27, 2026."), ms_lag("2026-10-20")
+# No Ginnie files: VA's words stay on HMDA, and nothing prints a range. A lender above or below its GSE use says so.
+ms_flip = ms(ginnie_va=[])
+assert "fha_check" not in ms_said(ms_flip) and "va_use" not in ms_said(ms_flip) and "Since then" not in next(r for r in ms_flip if r["view"] == "piece" and r["key"] == "va")["uses"] and "Ginnie" not in next(r for r in ms_flip if r["view"] == "piece" and r["key"] == "va")["fresh"], ms_said(ms_flip)
+ms_flip = ms(closing=[{"view": "lender", "agency": "All", "id": "planted-lead", "start": "2026-08-01", "n": 1000, "v": 100}, {"view": "lender", "agency": "All", "id": "planted-second", "start": "2026-08-01", "n": 1000, "v": 90}])
+assert ms_said(ms_flip)["leaders"].endswith("Planted Lead is above that and Planted Second is below it."), ms_said(ms_flip)["leaders"]
+ms_flip = ms(closing=[])
+assert "leaders" not in ms_said(ms_flip), "no GSE loans to set beside the VA range: no line"
+# FICO's revenue moves: the pull cases stop fitting and the report says so. A missing assumption leaves out the table and warns. A tie-out that misses warns.
+ms_flip = ms(assumptions=[{"key": k["key"], "value": 200.0 if k["key"] == "fico_mortgage_q" else k["value"]} for k in MS_ASSUME])
+assert "take the pull columns with care" in ms_said(ms_flip)["pulls_check"] and any("points to about" in w for w in ms_warned(ms_flip)), ms_said(ms_flip)["pulls_check"]
+ms_flip = ms(assumptions=[k for k in MS_ASSUME if k["key"] not in ("fico_total_q", "fico_shares_q")])
+assert "of EPS" not in ms_said(ms_flip)["basis"] and "Share of revenue is of FICO's fiscal guide, $0.50bn." in ms_said(ms_flip)["basis"] and next(r for r in ms_flip if r["view"] == "follow" and r["key"] == "x10")["gse_rev_low"] == 0.036, ms_said(ms_flip)["basis"]  # on the guide when the quarter's figure is missing, with no EPS line
+ms_flip = ms(assumptions=[k for k in MS_ASSUME if k["key"] != "bureaus"])
+assert not [r for r in ms_flip if r["view"] == "follow"] and "basis" not in ms_said(ms_flip) and any("follow table needs" in w for w in ms_warned(ms_flip)), ms_warned(ms_flip)
+for ms_thin in ("borrowers_per_loan", "gse_loans_year"):  # the data's own inputs read zero before any month-end file
+    ms_flip = ms(assumptions=[{"key": k["key"], "value": 0.0 if k["key"] == ms_thin else k["value"]} for k in MS_ASSUME])
+    assert next(r for r in ms_flip if r["view"] == "meta")["ok"] and not [r for r in ms_flip if r["view"] == "follow"] and not {"basis", "pulls_check"} & set(ms_said(ms_flip)) and any("follow table needs" in w for w in ms_warned(ms_flip)), ms_warned(ms_flip)
+ms_flip = ms(inputs={"status": "ok", "rows": [*MS_INPUTS[:-1], ms_input("fhfa", "jumbo_n", 2025, 1000)]})
+assert any(r["key"] == "jumbo_n" and not r["pass"] for r in ms_flip if r["view"] == "check") and any("HMDA's jumbo loans" in w for w in ms_warned(ms_flip)), ms_warned(ms_flip)
+ms_flip = ms(inputs={"status": "ok", "rows": [r for r in MS_INPUTS if r["kind"] != "usd_share" and r["kind"] != "fhfa"]})
+assert ms_said(ms_flip)["dollars"].startswith("By dollars, Fannie, Freddie, FHA and VA are 68%."), ms_said(ms_flip)["dollars"]
+# One GSE's files stop short of the month, so nothing here speaks for both in it. At the limit they do.
+ms_thin_mix = [dict(MS_MIX[0], loans=1000), dict(MS_MIX[1], loans=950), {"view": "month", "agency": "FHLMC", "headline": True, "start": "2026-10-01", "vs_only_share": 0.03, "vs4_priced_share": 0.08, "loans": 50}]
+ms_today_rows = lambda got: [r["key"] for r in got if r["view"] == "follow" and not r["assumed"]]  # noqa: E731
+ms_gse_uses = lambda got: next(r for r in got if r["view"] == "piece" and r["key"] == "gse")["uses"]  # noqa: E731
+ms_flip = ms(score_mix=ms_thin_mix)
+assert ms_today_rows(ms_flip) == ["today_fnma"] and ms_gse_uses(ms_flip).startswith("Priced on VS4: 8.1% of loans issued October 2026 so far, almost all Fannie."), ms_gse_uses(ms_flip)
+assert ms_gse_uses(ms(score_mix=ms_thin_mix[:2])).startswith("Priced on VS4: 8.1% of loans issued October 2026 so far, Fannie only."), "no Freddie row at all"
+assert ms_today_rows(ms(score_mix=[*ms_thin_mix[:2], dict(ms_thin_mix[2], loans=100)])) == ["today_fnma", "today_both"], "at the limit"
+# A Fannie month that shows too few second scores, on both sides or on one, says so: its count is not set out as lenders dropping FICO. A Fannie month holding half on VS4-priced loans is fine.
+for ms_shares in ({"both_fico_share": 0.0, "both_vs_share": 0.0}, {"both_fico_share": 0.2, "both_vs_share": 0.0}):
+    ms_flip = ms(score_mix=[MS_MIX[0], dict(MS_MIX[1], **ms_shares)])
+    assert not ms_today_rows(ms_flip) and "Shows VS4 only" not in ms_gse_uses(ms_flip) and "market size: Fannie's October 2026 files show too few second scores, so the \"Shows VS4 only, at most\" rows are held back" in ms_warned(ms_flip), ms_flip
+assert ms_today_rows(ms(score_mix=[MS_MIX[0], dict(MS_MIX[1], both_fico_share=0.1, both_vs_share=0.04)])) == ["today_fnma", "today_both"], "half of its VS4-priced loans show a FICO"
+# Each kind of row lost warns by name, and the base holds every kind.
+assert market.INPUT_KINDS == ("gse_count", "gse_usd", "fhfa", "usd_share", "piece", "part", "break") and {r["kind"] for r in MS_INPUTS} == set(market.INPUT_KINDS)
+for ms_kind in market.INPUT_KINDS:
+    assert f"market size: the input file has no {ms_kind} rows, so what rests on them stays off" in ms_warned(ms(inputs={"status": "ok", "rows": [r for r in MS_INPUTS if r["kind"] != ms_kind]})), ms_kind
+assert not [w for w in ms_warned(ms(inputs={"status": "missing", "rows": []})) if "no gse_usd rows" in w], "no file says so once, in its own words"
+# A fee on a funded loan: the sums and the implied pulls take it once a loan, and a fee past the revenue prints no pulls. Price and fee print as quoted.
+ms_fee = lambda fee, price=10.0: ms(assumptions=[{"key": k["key"], "value": fee if k["key"] == "closing_fee" else price if k["key"] == "price_per_score" else k["value"]} for k in MS_ASSUME])  # noqa: E731
+assert "about 3.5 pulls on every first-lien loan" in ms_said(ms_fee(10.0))["pulls_check"] and "pulls_check" not in ms_said(ms_fee(50.0)) and "about 4.5 pulls on every first-lien loan" in ms_said(ms_fee(0.0))["pulls_check"], ms_said(ms_fee(10.0))["pulls_check"]
+assert "$12.50 a score and $3.50 on a funded loan)" in ms_said(ms_fee(3.5, 12.5))["basis"] and "$11 a score and $2 on a funded loan)" in ms_said(ms_fee(2.0, 11.0))["basis"] and fico_per_loan(3, 1.5, 4, 12.5, 3.5) == ms_fee(3.5, 12.5)[0]["per_p4"], ms_said(ms_fee(3.5, 12.5))["basis"]
+# Small words: one figure when the two ends print alike, and a next file only while it lies ahead.
+assert market.rev_text(0.0021, 0.0024) == "0.2%" and market.rev_text(0.002, 0.003) == "0.2% to 0.3%" and market.rev_text(0.06, 0.09) == "6% to 9%" and market.rev_text(None, 0.1) == "not known" and market.rev_text(0.0001, 0.0002) == "under 0.1%"
+assert next(r for r in ms(summary=[{"agency": "All", "data_through": "2027-07-01"}]) if r["view"] == "piece" and r["key"] == "jumbo")["fresh"] == "HMDA 2025.", "past the month it was due"
+# The words: plain, and a score not shown stays unknown.
+ms_words = " ".join(str(r.get(k)) for got in (ms_built, ms(score_mix=ms_early), ms(ginnie_va=[])) for r in got for k in ("text", "uses", "move", "fresh", "label", "line", "note", "big_what") if r.get(k))
+assert not re.search(r"\b(a|the|this|that|first|VA) read\b|\bfold\b|\brung\b|\bthe pick\b|has no FICO|no sign of|like FICO|Estimated|Potential|Missed|Left\b", ms_words), re.search(r"\b(a|the|this|that|first|VA) read\b|\bfold\b|\brung\b|\bthe pick\b|has no FICO|no sign of|like FICO|Estimated|Potential|Missed|Left\b", ms_words)
+assert not re.search(r"\b[a-z]{2,}\d+(\.\d+)?%", ms_words), re.search(r"\b[a-z]{2,}\d+(\.\d+)?%", ms_words)
+# The same on the pipeline's own planted files, from disk through a real CSV. It stays in the site data folder, so the workbook below has its sheets and the weekly run below rebuilds it.
+ms_csv = gse_paths.PRIVATE / "market_inputs.csv"
+ms_csv.parent.mkdir(parents=True, exist_ok=True)
+with ms_csv.open("w", newline="") as f:
+    ms_w = csv.DictWriter(f, ["kind", "key", "year", "value", "unit", "text", "when", "after", "source", "url", "date", "standing", "order"])
+    ms_w.writeheader()
+    ms_w.writerows([{"kind": "gse_count", "key": k, "year": 2025, "value": 6, "unit": "count", "source": "Planted", "url": "https://example.org/planted", "date": "2026-02-11", "standing": "stated"} for k in ("fnma", "fhlmc")])
+    ms_w.writerow({"kind": "piece", "key": "fha", "text": "From a date, with a comma, in a quoted cell.", "source": "Planted", "url": "https://example.org/planted", "standing": "fact"})
+    ms_w.writerow({"kind": "gse_usd", "key": "fnma", "year": 2025, "value": "n/a"})  # a bad row is skipped, and says so
+ms_disk = market.build_datasets()["market_size"]
+ms_disk_meta = next(r for r in ms_disk if r["view"] == "meta")
+assert ms_disk_meta["inputs"] == "ok" and ms_disk_meta["year"] == 2025 and ms_disk_meta["gse_n"] == 12 and ms_disk_meta["residual_n"] == 2 and ms_disk_meta["gap_n"] == 1, ms_disk_meta
+assert ms_said(ms_disk)["lead"] == "Fannie and Freddie are 63.2% of first-lien loans, 79% with FHA and VA, and the other 21% names FICO on 40.0%, with VS4 under 1% (2025).", ms_said(ms_disk)["lead"]
+assert next(r for r in ms_disk if r["view"] == "piece" and r["key"] == "fha")["move"] == "From a date, with a comma, in a quoted cell." and not [r for r in ms_disk if r["view"] == "piece" and r["key"] == "usda"], "a quoted cell reads whole, and a piece with no loans that year has no row"
+assert abs(by_label["Each point of GSE loans with no FICO ($m a year)"] * 1e6 - ms_disk_meta["point_p4"]) < 1, "the workbook's calculator and the follow table are one sum"
+assert any("skipped unreadable rows in the input file: 1" in r["text"] for r in ms_disk if r["view"] == "warning"), ms_disk_meta
+(gse_paths.PRIVATE / "market_bad.csv").write_text("kind,key,year,value,when\npiece,slash,,,1/1/2027\npiece,dated,,,2027-01-01\nusd_share,not_a_number,2026,nan,\nusd_share,not_finite,2026,inf,\nusd_share,kept,2026,0.2,\nbreak,comma,,,,one,too many\n")
+assert (lambda got: (got["bad"], [r["key"] for r in got["rows"]]))(market.load_inputs(gse_paths.PRIVATE / "market_bad.csv")) == (4, ["dated", "kept"]), "nan, inf, a date not written 2027-01-01 and a stray comma are each a bad row, and say so"
+ms_source = Path(market.__file__).read_text()
+assert not re.search(r"\b\d{1,3},\d{3}\b", ms_source) and not re.search(r"\d\.\d%", ms_source.replace("under 0.1%", "")), "no typed figure in the tracked builder"
+assert not re.search(r"\.today\(|\.now\(|current_date", ms_source), "nothing in this builder reads today's date"
+(gse_paths.SITE_DATA / "market_size.json").write_text(json.dumps({"rows": ms_disk}))
+
 
 # The Rates sheet, on the engine's own rows from planted data, and the rate read on Lenders and Fees. Every value reads back with its decimals under its own heading, and a blank read stays blank.
 def sheet_cells(book, name):
@@ -2866,7 +3156,7 @@ assert [r["Rocket correspondent left out"] for r in card_got] == ["Yes" if r["co
 assert "Blank under 100 VS4 loans" not in " ".join(on_rates) and sum("Blank under 100 matched loans on either exact match" in t for t in on_rates) >= 6, "the floor is on matched loans"
 # Rocket's switch point: the note says what the first rows and the rows with no switch are, and what the use columns count; a line where nothing switches has its own table; the sentence sits under the first table.
 assert line_rows[0]["key"] == "main" and line_rows[0]["use_below"] is not None and any(r["key"].startswith("false|") for r in line_rows), line_rows
-assert any("Where the LLPA would not change: it is the same at FICO and at FICO plus 34" in t and "lines where nothing switches" in t and "The two On VS4 columns count all those loans, whatever the LLPA." in t and "The row where the LLPA would fall does not show what the LLPA does to the rate: the pick flips at the same line, so the two cannot be told apart." in t for t in on_rates) and all(t in on_rates for t in said_by_line.values()) and len(said_by_line) == 1 and list(rates_sheet.values()).count(said_by_line["line"]) == 1 and "On same FICO, a planted book: about the same in both months." in on_rates, said_by_line
+assert any("Where the LLPA would not change: it is the same at FICO and at FICO plus 34" in t and "lines where nothing switches" in t and "The two On VS4 columns count all those loans, whatever the LLPA." in t and "The row where the LLPA would fall does not show what the LLPA does to the rate: the choice of score flips at the same line, so the two cannot be told apart." in t for t in on_rates) and all(t in on_rates for t in said_by_line.values()) and len(said_by_line) == 1 and list(rates_sheet.values()).count(said_by_line["line"]) == 1 and "On same FICO, a planted book: about the same in both months." in on_rates, said_by_line
 line_got = table_under(rates_sheet, "Rocket's switch point: the step in the rate")
 assert [r["Rough"] for r in line_got] == ["Yes" if r["lender_weeks"] < pricing.THIN_WEEKS else None for r in line_rows if r["key"] != "scan"] and {"Yes", None} == {r["Rough"] for r in line_got} and not [r for r in line_got if r["Line"] == "Every line where nothing switches"], line_got
 said_at = lambda said: next(r for (r, c), v in rates_sheet.items() if c == 0 and v == said)  # noqa: E731
@@ -3010,6 +3300,11 @@ for at in range(list_at + 1, list_at + 40):
         break
     listed += read_me_b[(at, 0)].split(":")[0].split(", ")
 assert listed == names_b[1:], (listed, names_b)
+ms_sheet, ms_sheet2 = sheet_cells(book_b, "Market size"), sheet_cells(book_b, "If FHA and VA follow")
+assert ms_sheet[(1, 0)] == ms_said(ms_disk)["lead"] and ms_sheet[(3, 0)] == "Piece" and ms_sheet[(4, 0)] == "Fannie and Freddie" and ms_sheet[(4, 1)] == 12, ms_sheet
+assert ms_sheet[(3, 5)] == "Size from" and ms_sheet[(4, 5)] == "Planted", ms_sheet  # the head says what the link is for, so the cell holds the source's name alone
+ms_ten_at = next(r for (r, c), v in ms_sheet2.items() if c == 0 and v == "10%")
+assert ms_sheet2[(ms_ten_at, 3)] == 18 and ms_sheet2[(ms_ten_at, 5)] == 27 and ms_sheet2[(ms_ten_at, 1)] == round(0.1 * 12 / 19, 6), ms_sheet2  # a million GSE loans a year at $180 and $270
 for name in ("Read me", "Carrying VS4"):
     said_there = [v for v in sheet_cells(book_b, name).values() if isinstance(v, str)]
     assert any("oans first disclosed before late September show only the score that priced them" in t for t in said_there) and not any("Until late September" in t for t in said_there), name
@@ -3064,14 +3359,728 @@ assert dashboard_reads and dashboard_reads <= set(DASHBOARD_DATASETS), dashboard
 assert "rate_readout" not in DASHBOARD_DATASETS and "rate_readout" not in PUBLIC_DATASETS and "pricing" not in PUBLIC_DATASETS and "pricing" not in DASHBOARD_DATASETS
 assert "rates" in DASHBOARD_DATASETS and "rates" in PUBLIC_DATASETS and "rates" in public_reads, "the rate read went public on Nov 2, 2026"
 assert "rates" in dashboard_reads and "rate_readout" not in dashboard_reads and "pricing" not in public_reads | dashboard_reads, (public_reads, dashboard_reads)
+assert "market_size" in DASHBOARD_DATASETS and "market_size" not in PUBLIC_DATASETS and "market_size" in dashboard_reads and "market_size" not in public_reads, "market sizes stay private"
+assert {"front", "vs4_only"} <= set(DASHBOARD_DATASETS) and not {"front", "vs4_only"} & set(PUBLIC_DATASETS) and not {"front", "vs4_only"} & set(json.loads(site.CONTRACT.read_text())) and not {"front", "vs4_only"} & public_reads and {"front", "vs4_only"} <= dashboard_reads, "the first screen and the card stay private"
+assert "front" in DASHBOARD_DATASETS and "front" not in PUBLIC_DATASETS and "front" in dashboard_reads and "front" not in public_reads, "a sentence built on private inputs stays private"
+assert "vs4_only" in DASHBOARD_DATASETS and "vs4_only" not in PUBLIC_DATASETS and "vs4_only" in dashboard_reads and "vs4_only" not in public_reads, "the card stays private"
+from gsescore import front as front_mod  # noqa: E402
+
+assert front_mod.INPUTS == home / "data" / "private" / "front_inputs.csv"
+
+
+def check_front_datasets():
+    # The first screen and the VS4-only card, on planted loans. Fannie and Freddie, issue month October (the headline month) with a few November loans that score_mix's month view leaves out, as the real files do.
+    # Weeks: Sep 21 (before WEEK_FROM), Sep 28 (the first week most loans could show both scores), Oct 5, Oct 12, Oct 19, and Oct 26, partial because the files stop on Oct 27.
+    # A is the small lender, Rocket and UWM the two large VS4 lenders, B the big lender that shows only FICO. Every total below is counted by hand from these rows.
+    import duckdb  # noqa: E402
+
+    from gsescore import front, scores as scores8  # noqa: E402
+    from gsescore.aggregate import _rows as agg_rows  # noqa: E402
+    from gsescore.pricing import ROCKET, TOO_FEW, UWM  # noqa: E402
+
+    c8 = duckdb.connect()
+    c8.execute("CREATE MACRO seller_key(x) AS x")
+    c8.execute(f"CREATE TABLE seller_map AS SELECT * FROM (VALUES ('A', 'a'), ('B', 'b'), ('R', '{ROCKET}'), ('U', '{UWM}')) t(key, id)")
+    c8.execute(f"CREATE TABLE entity_names AS SELECT * FROM (VALUES ('a', 'A Co', 'A Co', NULL), ('b', 'B Co', 'B Co', NULL), ('{ROCKET}', 'Rocket', 'Rocket', 'RKT'), ('{UWM}', 'UWM', 'UWM', 'UWMC')) t(id, short, name, ticker)")
+    c8.execute("CREATE TABLE monthly AS SELECT DATE '2026-10-01' AS month, agency, 1000 AS scored_loans, 100 AS vs4_loans, 1000.0 AS scored_upb, 100.0 AS vs4_upb, false AS final FROM (VALUES ('All'), ('FNMA'), ('FHLMC')) t(agency)")
+    c8.execute("""CREATE TABLE loans (agency VARCHAR, seller VARCHAR, score_model VARCHAR, pricing_indicator VARCHAR, classic_fico INT, vs4 INT, fthb VARCHAR, issue_month DATE, first_intraday_date DATE, upb DOUBLE DEFAULT 300000, ltv INT DEFAULT 80,
+                  channel VARCHAR DEFAULT 'R', purpose VARCHAR DEFAULT 'P', mi_pct DOUBLE DEFAULT 0, special_program VARCHAR DEFAULT '7', orig_rate DOUBLE DEFAULT 6.5, loan_term INT DEFAULT 360)""")
+
+
+    def plant8(agency, seller, n, day, fico, vs4, model=None, fthb="N", month="2026-10-01"):
+        model = model or ("C" if vs4 is None else "V" if fico is None else "V")
+        c8.executemany("INSERT INTO loans (agency, seller, score_model, pricing_indicator, classic_fico, vs4, fthb, issue_month, first_intraday_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                       [(agency, seller, model, model, fico, vs4, fthb, month, day)] * n)
+
+
+    SEP21, SEP29, OCT6, OCT13, OCT20, OCT27 = "2026-09-25", "2026-09-29", "2026-10-06", "2026-10-13", "2026-10-20", "2026-10-27"
+    # Fannie. B: 6,000 showing only FICO. A: 30 in the first week at VS4 650 (20) and 790 (10), then 2 a week in the three full weeks at 650, 1 in the partial week, with 80 showing only FICO so it clears MIN_PRICED and stays under SMALL_LENDER, and 5 priced on VS4 with a FICO.
+    plant8("FNMA", "B", 3000, SEP29, 720, None)
+    plant8("FNMA", "B", 1000, OCT6, 720, None)
+    plant8("FNMA", "B", 1000, OCT13, 720, None)
+    plant8("FNMA", "B", 1000, OCT20, 720, None)
+    plant8("FNMA", "A", 20, SEP29, None, 650)
+    plant8("FNMA", "A", 10, SEP29, None, 790)
+    for day in (OCT6, OCT13, OCT20):
+        plant8("FNMA", "A", 2, day, None, 650)
+    plant8("FNMA", "A", 1, OCT27, None, 650)
+    plant8("FNMA", "A", 80, SEP29, 700, None)
+    plant8("FNMA", "A", 5, OCT6, 700, 720)
+    # Rocket: 3 in the week before, 1 a week in the full weeks at 680 and first-time buyers, 2 November loans in the partial week, 150 priced on VS4 with a FICO (VS4 800, FICO 760), 40 showing both priced on FICO, 100 showing only FICO.
+    plant8("FNMA", "R", 3, SEP21, None, 680)
+    for day in (OCT6, OCT13, OCT20):
+        plant8("FNMA", "R", 1, day, None, 680, fthb="Y")
+    plant8("FNMA", "R", 2, OCT27, None, 680, month="2026-11-01")
+    plant8("FNMA", "R", 150, OCT6, 760, 800)
+    plant8("FNMA", "R", 40, OCT6, 760, 700, model="C")
+    plant8("FNMA", "R", 100, SEP29, 760, None)
+    # UWM: 1 in the Oct 5 week at 790, 120 priced on VS4 with a FICO, 100 showing only FICO.
+    plant8("FNMA", "U", 1, OCT6, None, 790)
+    plant8("FNMA", "U", 120, OCT13, 760, 800)
+    plant8("FNMA", "U", 100, SEP29, 760, None)
+    # Freddie: Rocket shows VS4 and no FICO on 40 of 300, where Fannie's is 6 of 296 in October; A on about the same share as at Fannie (37 of 122), 49 of 149.
+    plant8("FHLMC", "B", 6000, OCT6, 720, None)
+    plant8("FHLMC", "R", 40, OCT6, None, 790)
+    plant8("FHLMC", "R", 60, OCT6, 760, 800)
+    plant8("FHLMC", "R", 200, OCT6, 760, None)
+    plant8("FHLMC", "A", 49, OCT6, None, 650)
+    plant8("FHLMC", "A", 100, OCT6, 700, None)
+    plant8("FHLMC", "U", 100, OCT6, 760, 800)
+    names8 = dict(c8.execute("SELECT id, short FROM entity_names").fetchall())
+    built8 = scores8._every_score(c8, names8, agg_rows)
+    mix8 = built8["score_mix"]
+    through8 = date(2026, 10, 27)
+    inputs8 = {"tu_pull_share": {"value": 0.31, "label": "T pulls", "what": "T base", "text": "T says {share}", "source": "T", "url": "https://example.com/t", "date": "2026-01-02"}, "du_app_share": {"value": 0.41, "label": "D apps", "what": "D base", "text": "D says {share}", "source": "D", "url": "https://example.com/d", "date": "2026-01-02"},
+               "vs4_tests_nothing": {"text": "NOT YET.", "until_month": "2026-11-01"}, "vs4_tests_window": {"text": "WINDOW.", "from_month": "2026-11-01", "until_month": "2027-02-01"}, "vs4_line_tail": {"text": "TAIL.", "until_month": "2026-11-01"}, "vs4_line_window": {"text": "LINE WINDOW.", "from_month": "2026-11-01", "until_month": "2027-02-01"}, "adoption_line_tail": {"text": "ADOPTION TAIL."},
+               "vs4_allowed": {"text": "ALLOWED."}, "vs4_why_rare": {"text": "RARE.", "until_month": "2027-01-01"}, "vs4_why_rare_fha_open": {"text": "RARE LATER.", "from_month": "2027-01-01"}, "adoption_fico": {"text": "ADOPTION FICO."}, "rate_cost_said": {"text": "A LIMIT"}, "rate_fico": {"text": "RATE FICO {share}."}, "front_frame": {"text": "FRAME {price}."}}
+    card8, c8said = front.card(c8, mix8, through8, inputs8, names8)
+    view8 = lambda v: [r for r in card8 if r["view"] == v]  # noqa: E731
+    said8 = {r["key"]: r["text"] for r in view8("sentence")}
+    meta8 = view8("meta")[0]
+    assert (meta8["month"], meta8["lead_id"], meta8["lead_label"], meta8["through"], meta8["name"]) == ("2026-10-01", "a", "A Co", "2026-10-27", "Shows VS4 only, at most"), meta8
+    # Counted by hand. October at Fannie: A 30 + 6 + 1 = 37, Rocket 3 + 3 = 6, UWM 1, 44 in all, of 6,000 + 122 + 296 + 221 = 6,639 loans.
+    oct_fn = next(r for r in mix8 if r["view"] == "month" and r["agency"] == "FNMA")
+    assert (oct_fn["loans"], round(oct_fn["vs_only_share"] * oct_fn["loans"]), oct_fn["headline"]) == (6639, 44, True), oct_fn
+    # The weeks: in any issue month, so the Oct 26 week holds Rocket's 2 November loans, and Rocket's 3 from the week before WEEK_FROM sit in view before. score_mix's view all ties to weeks + before, not to the month: a lender's count over every issue month beside its count in the month.
+    wk8 = {(r["agency"], r["week"]): r for r in view8("week")}
+    w = wk8[("FNMA", "2026-09-28")]
+    assert (w["first"], w["partial"], w["vo"], w["vo_lead"], w["vo_head"], w["vo_without"], w["label"]) == (True, False, 30, 30, 30, 0, "Sep 28"), w
+    assert [wk8[("FNMA", d)]["vo"] for d in ("2026-10-05", "2026-10-12", "2026-10-19", "2026-10-26")] == [4, 3, 3, 3], wk8
+    assert [wk8[("FNMA", d)]["vo_lead"] for d in ("2026-10-05", "2026-10-12", "2026-10-19", "2026-10-26")] == [2, 2, 2, 1], wk8
+    w = wk8[("FNMA", "2026-10-26")]
+    assert (w["partial"], w["days"], w["through"], w["vo_head"], w["first"]) == (True, 2, "2026-10-27", 1, False), w
+    assert not any(wk8[("FNMA", d)]["partial"] for d in ("2026-09-28", "2026-10-05", "2026-10-12", "2026-10-19")), wk8
+    bf = {r["agency"]: r for r in view8("before")}
+    assert (bf["FNMA"]["vo"], bf["FNMA"]["vo_head"], bf["FNMA"]["n"]) == (3, 3, 3), bf
+    all_fn = next(r for r in mix8 if r["view"] == "all" and r["agency"] == "FNMA")
+    assert sum(r["n"] for r in view8("week") if r["agency"] == "FNMA") + bf["FNMA"]["n"] == all_fn["loans"] == 6641 and sum(r["vo"] for r in view8("week") if r["agency"] == "FNMA") + bf["FNMA"]["vo"] == round(all_fn["vs_only_share"] * all_fn["loans"]) == 46, all_fn
+    rocket_vo = next(r for r in mix8 if r["view"] == "vs_only" and r["agency"] == "FNMA" and r["seller_id"] == ROCKET)
+    assert rocket_vo["loans"] == 8, rocket_vo  # every issue month, against the lender row's 6 in October
+    # The lender rows tie to the month and to lender_mix, with the rest in one row.
+    from gsescore import why as why8  # noqa: E402
+
+    lm8 = {(r["id"], r["agency"]): r for r in why8.build_datasets(c8, "2026-10-01")["lender_mix"] if r["view"] == "month"}
+    ln8 = {r["short"]: r for r in view8("lender")}
+    for short, sid in (("A Co", "a"), ("Rocket", ROCKET), ("UWM", UWM)):
+        r = ln8[short]
+        for prefix, agency in (("fn", "FNMA"), ("fh", "FHLMC")):
+            m = lm8[(sid, agency)]
+            assert (r[f"{prefix}_n"], r[f"{prefix}_vo"], r[f"{prefix}_priced"]) == (m["n"], m["vo"], m["bv"] + m["vo"]), (short, agency, r, m)
+    assert ln8["All other lenders"]["rest"] and (ln8["All other lenders"]["fn_n"], ln8["All other lenders"]["fn_vo"], ln8["All other lenders"]["lenders"]) == (6000, 0, 1), ln8
+    for prefix, agency in (("fn", "FNMA"), ("fh", "FHLMC")):
+        m = next(r for r in mix8 if r["view"] == "month" and r["agency"] == agency)
+        total = ln8["All lenders"]
+        assert total["total"] and (total[f"{prefix}_n"], total[f"{prefix}_vo"], total[f"{prefix}_priced"]) == (m["loans"], round(m["vs_only_share"] * m["loans"]), round(m["vs4_priced_share"] * m["loans"])), (agency, total, m)
+        assert sum(r[f"{prefix}_n"] for r in view8("lender") if not r.get("total")) == m["loans"], agency
+    assert (ln8["Rocket"]["fn_priced"], ln8["Rocket"]["fn_priced_fico"], ln8["Rocket"]["fn_vo"]) == (156, 150, 6) and abs(ln8["Rocket"]["fn_fico_share"] - 150 / 156) < 1e-9, ln8["Rocket"]
+    assert abs(ln8["UWM"]["fn_fico_share"] - 120 / 121) < 1e-9 and abs(ln8["A Co"]["fn_fico_share"] - 5 / 42) < 1e-9, ln8
+    # The bands add up to the month. Under 660: A's 27, of them 27 A's. 660-699: Rocket's 6 (3 first-time buyers; its 3 from the week before are not, and its 2 November loans are not in the month). 780+: A's 10 and UWM's 1.
+    bd8 = {r["key"]: r for r in view8("band")}
+    assert [(bd8[k]["vo"], bd8[k]["vo_lead"], bd8[k]["vo_without"], bd8[k]["vo_fthb"], bd8[k]["vo_without_fthb"]) for k in ("lt660", "660_699", "700_739", "740_779", "780up")] == [(27, 27, 0, 0, 0), (6, 0, 6, 3, 3), (0, 0, 0, 0, 0), (0, 0, 0, 0, 0), (11, 10, 1, 0, 0)], bd8
+    assert sum(b["vo"] for b in bd8.values()) == 44 and bd8["780up"]["both"] == 270 + 0 and bd8["700_739"]["both"] == 45, bd8
+    # The checks: ties pass; one more loan in a week is caught.
+    assert all(r["pass"] for r in view8("check")), view8("check")
+    assert [r["key"] for r in front.checks(mix8, [dict(view8("week")[0], n=view8("week")[0]["n"] + 1), *view8("week")[1:]], view8("before"), view8("lender"), view8("band"), inputs8) if not r["pass"]] == ["week_fh"], "the week check can fail"
+    assert [r["key"] for r in front.checks(mix8, view8("week"), view8("before"), view8("lender"), view8("band"), {}) if not r["pass"]] == ["inputs"], "a missing private file warns"
+    inputs_check = lambda rows: next(r for r in front.checks(mix8, view8("week"), view8("before"), view8("lender"), view8("band"), rows) if r["key"] == "inputs")  # noqa: E731
+    assert inputs_check(inputs8)["pass"] and inputs_check(inputs8)["label"] == "The first screen's private file is there, with all its rows", inputs_check(inputs8)
+    for lost_key in front.INPUT_WORDS + front.INPUT_SHARES:
+        lost_row = inputs_check({k: v for k, v in inputs8.items() if k != lost_key})
+        assert not lost_row["pass"] and lost_row["label"] == "The first screen's private file is missing or thin" and lost_row["detail"].endswith(f"stays off: {lost_key}."), lost_row
+    assert not inputs_check({**inputs8, "tu_pull_share": {**inputs8["tu_pull_share"], "value": None}})["pass"] and not inputs_check({**inputs8, "du_app_share": {**inputs8["du_app_share"], "value": 35.0}})["pass"] and not inputs_check({**inputs8, "front_frame": {"text": "FRAME {prices}."}})["pass"], "a bad figure, a figure past 100% and a mistyped placeholder each warn"
+    for short8 in ("label", "text"):
+        assert inputs_check({**inputs8, "du_app_share": {**inputs8["du_app_share"], short8: None}})["detail"].endswith("stays off: du_app_share.") and inputs_check({**inputs8, "tu_pull_share": {**inputs8["tu_pull_share"], short8: ""}})["detail"].endswith("stays off: tu_pull_share."), "a figure with no words is a row lost"
+    short_du8 = {**inputs8, "du_app_share": {**inputs8["du_app_share"], "label": None}}
+    assert [r["key"] for r in front._funnel(short_du8, None, None)] == ["tu_pull_share"] and front.funnel_cap({"funnel": front._funnel(short_du8, None, None), "month": "2026-10-01"}).startswith("VS4's share of Fannie's October loans."), "a short row costs its bar and its words, and stops nothing"
+    assert front._say({"vs4_line_tail": {"text": "THE {typo}."}}, "vs4_line_tail") is None and front._say({"rate_fico": {"text": "F {share}."}}, "rate_fico") == "F {share}." and front._say({"front_frame": {"text": "F {price}."}}, "front_frame") == "F {price}." and front._say({"vs4_line_tail": {"text": "THE TAIL."}}, "vs4_line_tail") == "THE TAIL.", "only the lines that are filled may hold a placeholder, so a mistyped one on any other line never prints"
+    assert inputs_check(inputs8)["pass"] and "gse_own_q3_share" not in inputs8, "the GSEs' own figure may be absent: the line beside the statements goes, and that is a tested state"
+    # A month's files, on each GSE and each side. One-sided at Fannie, under ONE_SIDE of its VS4-priced loans showing a FICO, reads as the files first; half of them is fine. Freddie's own month warns by its own key, and Fannie's words stand.
+    fh8s = lambda **kw: [dict(r, **kw) if r["view"] == "month" and r["agency"] == "FHLMC" else r for r in mix8]  # noqa: E731
+    fn8s = lambda **kw: [dict(r, **kw) if r["view"] == "month" and r["agency"] == "FNMA" else r for r in mix8]  # noqa: E731
+    failed8 = lambda mix: [r["key"] for r in front.checks(mix, view8("week"), view8("before"), view8("lender"), view8("band"), inputs8) if not r["pass"]]  # noqa: E731
+    assert "second_scores_fh" in failed8(fh8s(both_fico_share=0.0, both_vs_share=0.0)) and "second_scores" not in failed8(fh8s(both_fico_share=0.0, both_vs_share=0.0)) and "second_scores" in failed8(fn8s(both_fico_share=0.2, both_vs_share=0.0)) and front.card(c8, fh8s(both_fico_share=0.0, both_vs_share=0.0), through8, inputs8, names8)[1]["readable"], "each GSE's own check"
+    oct_fn_priced = oct_fn["vs4_priced_share"]
+    assert front.shows_second({"both_fico_share": 0.2, "both_vs_share": 0.5 * oct_fn_priced, "vs4_priced_share": oct_fn_priced}) and front.shows_second({"both_fico_share": 0.2, "both_vs_share": 0.1 * oct_fn_priced, "vs4_priced_share": oct_fn_priced}) and not front.shows_second({"both_fico_share": 0.2, "both_vs_share": 0.09 * oct_fn_priced, "vs4_priced_share": oct_fn_priced}) and not front.shows_second({"both_fico_share": 0.01, "both_vs_share": 0.009, "vs4_priced_share": 0.01}), "both limits, at and past them"
+    # The words, exactly.
+    assert next(r for r in view8("gse") if r["key"] == "fhlmc")["tag"] == "Likely a gap in what its files show, not confirmed" and [r["key"] for r in view8("gse")] == ["fnma", "fnma_ex", "fhlmc", "all"], view8("gse")
+    assert said8["lead"] == "Shows VS4 only, at most: 0.7% of Fannie's October-issued loans so far, where 44 of 6,639 show VS4 and no FICO. 37 of them are A Co, a small lender. Without it, about 0.1%.", said8["lead"]
+    assert said8["weeks"] == "Of those 44, 30 came in the week of Sep 28, the first week most loans could show both scores, and 30 of those are A Co. By week first disclosed since then, in any issue month: 4, 3, 3 a week, about half A Co, and 3 in the two-day Oct 26 week.", said8["weeks"]
+    assert said8["first"] == "Sep 28: the first week most loans could show both scores.", said8["first"]
+    # The legend sits over every GSE's chart, so each GSE's cover under 95% prints as its own.
+    real_weeks8 = front._weeks
+    def covered8(fn_cover, fh_cover):
+        def planted(*args):
+            weeks, before = real_weeks8(*args)
+            at = next(w for w in weeks if w["first"] and w["agency"] == "FNMA")
+            return [*[dict(w, cover=fn_cover) if w is at else w for w in weeks], dict(at, agency="FHLMC", cover=fh_cover)], before
+        front._weeks = planted
+        said = next(r["text"] for r in front.card(c8, mix8, through8, inputs8, names8)[0] if r["view"] == "sentence" and r["key"] == "first")
+        front._weeks = real_weeks8
+        return said
+    assert covered8(0.61, 0.82) == "Sep 28: the first week most loans could show both scores, 61% at Fannie and 82% at Freddie.", covered8(0.61, 0.82)
+    assert covered8(0.61, 0.97) == "Sep 28: the first week most loans could show both scores, 61% at Fannie.", covered8(0.61, 0.97)
+    assert covered8(0.97, 0.82) == "Sep 28: the first week most loans could show both scores, 82% at Freddie.", covered8(0.97, 0.82)
+    assert said8["ties"] == "At Fannie, the weeks and October's count are not the same loans: 3 of October's came before the week of Sep 28, and 2 of the weeks' are in other issue months.", said8["ties"]
+    # The ties sentence, on each of its parts, and the loans that show VS4 and no FICO with no Pricing Indicator: Fannie's and the headline month's alone.
+    assert front.ties_words("2026-11-01", 0, 315, 0) == "At Fannie, the weeks and November's count are not the same loans: 315 of the weeks' are in other issue months." and front.ties_words("2026-10-01", 5, 0, 0) == "At Fannie, the weeks and October's count are not the same loans: 5 of October's came before the week of Sep 28."
+    assert front.ties_words("2026-10-01", 3, 2, 6) == "At Fannie, the weeks and October's count are not the same loans: 3 of October's came before the week of Sep 28, and 2 of the weeks' are in other issue months. Another 6 of Fannie's October loans show VS4 and no FICO but carry no Pricing Indicator, so they are left out."
+    assert front.ties_words("2026-10-01", 0, 0, 1234) == "Another 1,234 of Fannie's October loans show VS4 and no FICO but carry no Pricing Indicator, so they are left out." and front.ties_words("2026-10-01", 0, 0, 0) is None
+    no_indicator = [("FNMA", None, 640, "2026-10-01", "2026-10-06"), ("FNMA", 700, 640, "2026-10-01", "2026-10-06"), ("FNMA", None, 640, "2026-11-01", "2026-10-06"), ("FHLMC", None, 640, "2026-10-01", "2026-10-20")]
+    c8.executemany("INSERT INTO loans (agency, seller, score_model, pricing_indicator, classic_fico, vs4, fthb, issue_month, first_intraday_date) VALUES (?, 'B', 'V', NULL, ?, ?, 'N', ?, ?)", no_indicator)
+    card8i, c8i = front.card(c8, mix8, through8, inputs8, names8)
+    assert next(r["text"] for r in card8i if r["view"] == "sentence" and r["key"] == "ties").endswith("other issue months. Another 1 of Fannie's October loans show VS4 and no FICO but carry no Pricing Indicator, so they are left out."), card8i
+    assert c8i["lasts"]["FHLMC"] == "2026-10-20" and next(w for w in card8i if w["view"] == "week" and w["agency"] == "FHLMC")["through"] == "2026-10-11", "the day each GSE's files reach is its own last record's, with or without the Indicator"
+    c8.execute("DELETE FROM loans WHERE pricing_indicator IS NULL")
+    assert said8["trend"] == "That is flat, but NOT YET.", said8["trend"]
+    assert said8["lenders"] == "Rocket and UWM still show a FICO on 96.2% and 99.2% of the Fannie loans they price on VS4.", said8["lenders"]
+    assert said8["pull"].startswith("From pull to loan, on different bases: T says 31%, and D says 41%.") and said8["pull"].endswith("and at most 0.7% are VS4 only."), said8["pull"]
+    assert said8["freddie"] == "Freddie shows 1.4% so far, most likely a gap in what its files show, not confirmed: Rocket shows 13.3% there and 2.0% at Fannie, while A Co shows about the same at both. Both GSEs together, at most 1.0% so far.", said8["freddie"]
+    assert said8["bands"] == "Without A Co, by VS4 score: 0 under 660, 6 at 660-699, 0 at 700-739, 0 at 740-779, 1 at 780+, and 3 of the 7 are first-time buyers. Too few to tell whether FICO is not being bought or borrowers have thin credit files.", said8["bands"]
+    assert (said8["allowed"], said8["why_rare"]) == ("ALLOWED.", "RARE."), said8
+    # The funnel: each number says what it is, and without the private file the two outside figures go.
+    fu8 = view8("funnel")
+    assert [r["key"] for r in fu8] == ["tu_pull_share", "du_app_share", "shows", "priced", "vs_only"] and [r["text"].split()[0] for r in fu8[2:]] == ["at", "4.8%", "at"] and all(r["what"] and r["label"] and r["text"] for r in fu8), fu8
+    card8b, _ = front.card(c8, mix8, through8, {}, names8)
+    assert [r["key"] for r in card8b if r["view"] == "funnel"] == ["shows", "priced", "vs_only"] and not {"allowed", "why_rare"} & {r["key"] for r in card8b if r["view"] == "sentence"}, card8b
+    assert next(r for r in card8b if r["view"] == "sentence" and r["key"] == "trend")["text"] == "That is flat.", card8b
+    floors8 = front._funnel({}, {"vs_share": 0.236, "vs4_priced_share": 0.05, "vs_only_share": 0.01}, "2026-10-01")
+    assert [r["text"] for r in floors8] == ["at least 23%", "5.0%", "at most 1.0%"], "at least rounds down, so it stays true"
+    # October final: "so far" goes. November the headline month: the first week is another month's, so its count stands on its own, and the months' words move on.
+    card8f, _ = front.card(c8, mix8, through8, inputs8, names8, final=True)
+    assert "so far" not in next(r["text"] for r in card8f if r["view"] == "sentence" and r["key"] == "lead")
+    # Fannie's month-end file in and Freddie's not: Fannie's words go final, Freddie's and both GSEs' keep their so far. Both in: none anywhere. Freddie's alone: only Fannie's and both GSEs' keep it.
+    far8 = lambda rows, key: next(r["what"] for r in rows if r["view"] == "gse" and r["key"] == key)  # noqa: E731
+    assert (far8(card8f, "fnma"), far8(card8f, "fhlmc"), far8(card8f, "all")) == ("44 of 6,639 October-issued loans", "89 of 6,549 loans so far", "133 of 13,188 loans so far") and next(r for r in card8f if r["view"] == "meta")["final"] is True and next(r for r in card8f if r["view"] == "meta")["final_fh"] is False, card8f
+    assert next(r["text"] for r in card8f if r["view"] == "sentence" and r["key"] == "freddie").startswith("Freddie shows 1.4% so far,") and next(r["text"] for r in card8f if r["view"] == "sentence" and r["key"] == "freddie").endswith("at most 1.0% so far."), card8f
+    card8ff, _ = front.card(c8, mix8, through8, inputs8, names8, final=True, final_fh=True)
+    assert not [r for r in card8ff if r["view"] in ("gse", "sentence") and "so far" in (r.get("what") or r.get("text") or "")] and next(r for r in card8ff if r["view"] == "meta")["final_fh"] is True, card8ff
+    card8h, _ = front.card(c8, mix8, through8, inputs8, names8, final=False, final_fh=True)
+    assert (far8(card8h, "fnma"), far8(card8h, "fhlmc"), far8(card8h, "all")) == ("44 of 6,639 October-issued loans so far", "89 of 6,549 loans", "133 of 13,188 loans so far"), card8h
+    nov_mix = [dict(r, start="2026-11-01") if r["view"] == "month" else r for r in mix8]
+    card8n, _ = front.card(c8, nov_mix, through8, inputs8, names8)
+    said8n = {r["key"]: r["text"] for r in card8n if r["view"] == "sentence"}
+    assert said8n["trend"] == "That is flat, but WINDOW.", said8n["trend"]
+    assert (said8n["why_rare"], said8["why_rare"]) == ("RARE.", "RARE."), said8n
+    for rare_month in ("2027-01-01", "2027-03-01"):
+        assert next(r["text"] for r in front.card(c8, [dict(r, start=rare_month) if r["view"] == "month" else r for r in mix8], through8, inputs8, names8)[0] if r["view"] == "sentence" and r["key"] == "why_rare") == "RARE LATER.", rare_month
+    # Rocket holds half or more of a month's count, and it is not the small lender: the row and the lead name it. Its tile and row stand whatever it shows.
+    big_mix = [dict(r, start="2026-11-01", vs_only_share=2 / r["loans"]) if r["view"] == "month" and r["agency"] == "FNMA" else dict(r, start="2026-11-01") if r["view"] == "month" else r for r in mix8]
+    card8b2, c8b2 = front.card(c8, big_mix, through8, inputs8, names8)
+    assert c8b2["big"]["short"] == "Rocket" and next(r["text"] for r in card8b2 if r["view"] == "sentence" and r["key"] == "lead").endswith("show VS4 and no FICO. 2 of them are Rocket."), card8b2
+    assert front.vs4_row(c8b2, inputs8)[0]["line"].startswith("Almost none: 2 of 6,639, 2 of them at Rocket."), front.vs4_row(c8b2, inputs8)[0]["line"]
+    assert sum(r["vo"] for r in card8n if r["view"] == "band") == 2 and next(r for r in card8n if r["view"] == "meta")["lead_label"] == "A Co", "November's own loans: Rocket's 2, and the weeks keep the same small lender"
+    assert said8n["lead"].endswith("show VS4 and no FICO.") and said8n["weeks"].startswith("The week of Sep 28, the first week most loans could show both scores, shows 30, and 30 of those are A Co."), said8n
+    # A month whose files stop showing second scores, as a month-end file could: the count is still at most, but the words stop reading it as lenders, and nothing flips to say FICO was dropped.
+    dropped = [dict(r, both_fico_share=0.0, both_vs_share=0.0) if r["view"] == "month" and r["agency"] == "FNMA" else r for r in mix8]
+    card8d, c8d = front.card(c8, dropped, through8, inputs8, names8)
+    said8d = {r["key"]: r["text"] for r in card8d if r["view"] == "sentence"}
+    assert said8d["lead"].endswith("Only 0.0% of the month's loans show both scores, so this count says more about the files than about lenders dropping FICO.") and not {"trend", "lenders", "freddie", "bands"} & set(said8d) and not c8d["readable"], said8d
+    assert "second_scores" in [r["key"] for r in card8d if r["view"] == "check" and not r["pass"]] and "but only 0.0% of the month's loans show both scores" in front.vs4_row(c8d, inputs8)[0]["line"] and "Almost none" not in front.vs4_row(c8d, inputs8)[0]["line"], card8d
+    assert front.vs4_row(c8d, inputs8)[0]["line"].startswith("44 of 6,639 October loans so far at Fannie show VS4 and no FICO, but only 0.0%") and "TAIL." not in front.vs4_row(c8d, inputs8)[0]["line"], front.vs4_row(c8d, inputs8)[0]["line"]
+    assert said8d["weeks"].endswith(" These counts rest on the same files, so they may say more about the files than about lenders dropping FICO.") and said8d["pull"].endswith("VS4 shows on at least 5% of Fannie's October loans and prices 4.8%.") and "at most" not in said8d["pull"], said8d
+    assert [r["tag"] for r in card8d if r["view"] == "gse" and r["key"] in ("fnma", "all")] == ["May say more about the files than about lenders dropping FICO"] * 2 and not [r["key"] for r in view8("gse") if r.get("tag") and r["key"] != "fhlmc"], card8d
+    side8 = [dict(r, both_fico_share=0.2, both_vs_share=0.0) if r["view"] == "month" and r["agency"] == "FNMA" else r for r in mix8]
+    card8s, c8s = front.card(c8, side8, through8, inputs8, names8)
+    said8s = {r["key"]: r["text"] for r in card8s if r["view"] == "sentence"}
+    assert not c8s["readable"] and front.vs4_row(c8s, inputs8)[0]["line"].endswith("show VS4 and no FICO, but only 0.0% of the month's VS4-priced loans show a FICO, so this may say more about the files than about lenders dropping FICO.") and said8s["lead"].endswith("Only 0.0% of the month's VS4-priced loans show a FICO, so this count may say more about the files than about lenders dropping FICO.") and not {"trend", "lenders", "freddie", "bands"} & set(said8s), said8s
+    # A month behind the headline whose files do not show second scores: the weeks and the charts still hold its loans, so the weeks say so, the trend goes, the Overview note says so and the report warns. A month under HEADLINE_MIN and a month that shows them do not count.
+    past8 = lambda **kw: [*mix8, {**oct_fn, "start": "2026-09-01", "headline": False, "loans": 30000, "both_fico_share": 0.0, "both_vs_share": 0.0, **kw}]  # noqa: E731
+    assert front.blanked(past8()) == ["2026-09-01"] and front.blanked(mix8) == [] and front.blanked(past8(), "FHLMC") == [] and front.blanked(past8(agency="FHLMC"), "FHLMC") == ["2026-09-01"] and front.blanked(past8(loans=19999)) == [] and front.blanked(past8(both_fico_share=0.2, both_vs_share=0.04)) == [] and front.blanked(fn8s(both_fico_share=0.0, both_vs_share=0.0, loans=30000)) == [], "each limit, and the headline month has its own guard"
+    card8p, c8p = front.card(c8, past8(), through8, inputs8, names8)
+    said8p = {r["key"]: r["text"] for r in card8p if r["view"] == "sentence"}
+    assert c8p["readable"] and said8p["weeks"].endswith(" September's files at Fannie show too few second scores, so these counts may say more about the files than about lenders dropping FICO.") and "trend" not in said8p, said8p
+    assert [r["key"] for r in card8p if r["view"] == "check" and not r["pass"]] == ["second_scores_past_fn"] and next(r for r in card8p if r["view"] == "check" and r["key"] == "second_scores_past_fn")["detail"] == "September at Fannie: too few second scores, and the weeks and charts still hold those loans.", card8p
+    assert next(r["text"] for r in front.card(c8, past8(agency="FHLMC"), through8, inputs8, names8)[0] if r["view"] == "sentence" and r["key"] == "trend") == "That is flat, but NOT YET." and "second_scores_past_fh" in [r["key"] for r in front.card(c8, past8(agency="FHLMC"), through8, inputs8, names8)[0] if r["view"] == "check" and not r["pass"]], "Freddie's month warns, and Fannie's trend stands"
+    assert not {r["key"] for r in card8 if r["view"] == "check" and not r["pass"]} and {"second_scores_past_fn", "second_scores_past_fh"} <= {r["key"] for r in card8 if r["view"] == "check"}, "the checks pass on files that show them"
+    assert front.slice_note(past8(), None) == 'September at Fannie shows too few second scores, so "Shows VS4 only, at most" there may say more about the files than about lenders dropping FICO.' and front.slice_note(fn8s(both_fico_share=0.0, both_vs_share=0.0, loans=30000), None).startswith("October at Fannie shows too few") and front.slice_note(fn8s(both_fico_share=0.0, both_vs_share=0.0), None) is None, "the note speaks of any such month, headline included"
+    # Freddie's own month, with no likely gap to name: its tile carries the same caution as Fannie's, and with neither none. A likely gap keeps its own words.
+    tag8 = lambda mix: next(r["tag"] for r in front.card(c8, mix, through8, inputs8, names8)[0] if r["view"] == "gse" and r["key"] == "fhlmc")  # noqa: E731
+    assert tag8(fh8s(both_fico_share=0.0, both_vs_share=0.0, vs_only_share=oct_fn["vs_only_share"])) == "May say more about the files than about lenders dropping FICO" and tag8(fh8s(vs_only_share=oct_fn["vs_only_share"])) is None and tag8(fh8s(both_fico_share=0.0, both_vs_share=0.0)) == "Likely a gap in what its files show, not confirmed", "each state"
+    # A lender no longer small in the month it is said of stops being called small, on the card and on the row. At the limit it is not small.
+    lead_at = lambda n: [dict(r, loans=n, vs_only_share=44 / n) if r["view"] == "month" and r["agency"] == "FNMA" else r for r in mix8]  # noqa: E731
+    assert ", a small lender. Without it," in said8["lead"] and ", a small lender" not in next(r["text"] for r in front.card(c8, lead_at(6100), through8, inputs8, names8)[0] if r["view"] == "sentence" and r["key"] == "lead") and "37 of them are A Co. Without it," in next(r["text"] for r in front.card(c8, lead_at(6100), through8, inputs8, names8)[0] if r["view"] == "sentence" and r["key"] == "lead"), "A Co's 122 loans are 2% of 6,100"
+    assert ", a small lender" in front.vs4_row(c8said, inputs8)[0]["line"] and ", a small lender" not in front.vs4_row(front.card(c8, lead_at(6100), through8, inputs8, names8)[1], inputs8)[0]["line"] and ", a small lender" in next(r["text"] for r in front.card(c8, lead_at(6101), through8, inputs8, names8)[0] if r["view"] == "sentence" and r["key"] == "lead"), "the row, and one loan past the limit"
+    # Freddie's files stop short of the month, with no gap to name in so few loans: the gap the charts still draw comes from the latest month both GSEs reach. It goes with no such month, or where that month shows no gap.
+    nov8 = [dict(r, start="2026-11-01", loans=40 if r["agency"] == "FHLMC" else r["loans"]) if r["view"] == "month" else r for r in mix8]
+    oct8 = lambda **fh: [dict(r, headline=False, loans=max(r["loans"], 20000), **(fh if r["agency"] == "FHLMC" else {})) for r in mix8 if r["view"] == "month" and r["agency"] != "All"]  # noqa: E731
+    card8l, c8l = front.card(c8, [*nov8, *oct8()], through8, inputs8, names8)
+    meta8l = next(r for r in card8l if r["view"] == "meta")
+    assert not c8l["gap"] and c8l["gap_chart"]["short"] == "Rocket" and meta8l["fh_tag"] == "Likely a gap in what its files show, not confirmed" and next(r for r in card8l if r["view"] == "gse" and r["key"] == "fhlmc")["tag"] is None, meta8l
+    assert meta8["fh_tag"] == "Likely a gap in what its files show, not confirmed" and c8said["gap_chart"] == c8said["gap"], "with both GSEs in the month, the month's own gap"
+    assert next(r for r in front.card(c8, nov8, through8, inputs8, names8)[0] if r["view"] == "meta")["fh_tag"] is None and front.card(c8, nov8, through8, inputs8, names8)[1]["gap_chart"] is None, "no earlier month both reach"
+    assert front.card(c8, [*nov8, *oct8(vs_only_share=oct_fn["vs_only_share"])], through8, inputs8, names8)[1]["gap_chart"] is None, "the earlier month shows no gap"
+    nov8fn = [dict(r, start="2026-11-01", loans=40 if r["agency"] == "FNMA" else r["loans"]) if r["view"] == "month" else r for r in mix8]
+    assert next(r for r in front.card(c8, [*nov8fn, *oct8()], through8, inputs8, names8)[0] if r["view"] == "meta")["fh_tag"] is None, "only Freddie's files stopping short looks back"
+    # One GSE's files stop short of the month. Under GSE_THIN the other is not set beside it, the both-GSE tile goes and the words say why, with its last day. At the limit, as usual.
+    thin8 = lambda agency, n: [dict(r, loans=n) if r["view"] == "month" and r["agency"] == agency else r for r in mix8]  # noqa: E731
+    card8h1, c8h1 = front.card(c8, thin8("FHLMC", 40), through8, inputs8, names8)
+    said8h1 = {r["key"]: r["text"] for r in card8h1 if r["view"] == "sentence"}
+    assert said8h1["freddie"] == "Freddie's files stop at Oct 6, so they hold only 40 of October's loans, too few to set beside Fannie." and [r["key"] for r in card8h1 if r["view"] == "gse"] == ["fnma", "fnma_ex", "fhlmc"] and next(r for r in card8h1 if r["view"] == "gse" and r["key"] == "fhlmc")["what"].endswith(", too few to set beside Fannie") and "gse_thin" in [r["key"] for r in card8h1 if r["view"] == "check" and not r["pass"]], card8h1
+    assert "Freddie's files stop at Oct 6, so they hold only 40 of October's loans, too few to set beside Fannie. TAIL." in front.vs4_row(c8h1, inputs8)[0]["line"] and "both GSEs" not in front.vs4_row(c8h1, inputs8)[0]["line"], "the row says the same, in place of the gap"
+    card8h2, c8h2 = front.card(c8, [r for r in mix8 if not (r["view"] == "month" and r["agency"] == "FHLMC")], through8, inputs8, names8)
+    assert next(r["text"] for r in card8h2 if r["view"] == "sentence" and r["key"] == "freddie") == "Freddie's files stop at Oct 6, so they hold none of October's loans.", card8h2
+    said8h3 = {r["key"]: r["text"] for r in front.card(c8, thin8("FNMA", 40), through8, inputs8, names8)[0] if r["view"] == "sentence"}
+    assert said8h3["freddie"].endswith("Fannie's files stop at Oct 27, so they hold only 40 of October's loans, too few to set beside Freddie.") and "Both GSEs" not in said8h3["freddie"], said8h3
+    assert front.thin_gse({"All": {"loans": 1000}, "FNMA": {"loans": 900}, "FHLMC": {"loans": 100}}) is None and front.thin_gse({"All": {"loans": 1000}, "FNMA": {"loans": 901}, "FHLMC": {"loans": 99}}) == "FHLMC" and front.thin_gse({"All": {"loans": 1000}}) is None and front.thin_gse({}) is None, "at the limit, and with no GSE's row to go by"
+    assert front.whose_words(None, {}) == "both GSEs" and front.whose_words("FHLMC", {"FHLMC": {"loans": 9}}) == "almost all Fannie" and front.whose_words("FNMA", {}) == "Freddie only", "what a both-GSE figure holds"
+    # No small lender to set apart: every count still builds and ties, and nothing names one.
+    weeks8n, before8n = front._weeks(c8, None, "2026-10-01")
+    assert all(w["vo_lead"] == 0 and w["vo_without"] == w["vo"] for w in weeks8n) and sum(b["vo_without"] for b in front._bands(c8, "2026-10-01", None)) == 44, weeks8n
+    # A week of more weeks than the sentence names, and a partial week with no full weeks behind it.
+    many = [dict(wk8[("FNMA", "2026-10-05")], week=f"2026-11-{d:02d}", label=f"Nov {d}", vo=v) for d, v in ((2, 5), (9, 6), (16, 7), (23, 8), (30, 9))]
+    assert "in the latest four full weeks, in any issue month: 6, 7, 8, 9 a week" in front.week_words(many, 0, "A Co"), front.week_words(many, 0, "A Co")
+    assert front.week_words([wk8[("FNMA", "2026-10-26")]], 3, None) == "By week first disclosed, in any issue month: 3 in the two-day Oct 26 week.", front.week_words([wk8[("FNMA", "2026-10-26")]], 3, None)
+    assert front.week_words([], 0, None) is None
+    # Flat or rising: too few full weeks, then within the limits, then past each limit.
+    base = {"first": False, "partial": False, "share_without": 0.001}
+    assert front.trend([base, base]) is None and front.trend([base, base, base]) == "flat"
+    assert front.trend([base, base, {**base, "share_without": 0.0016}]) == "rising" and front.trend([base, base, {**base, "share_without": 0.0015}]) == "flat", "the latest full week against the earlier ones"
+    assert front.trend([{**base, "share_without": 0.006}, {**base, "share_without": 0.006}, {**base, "share_without": 0.006}]) == "not flat", "over the level, however steady"
+    assert front.trend([base, base, {**base, "first": True, "share_without": 0.5}, {**base, "partial": True, "share_without": 0.5}]) is None, "neither the first week nor a partial one counts"
+    rising = [dict(wk8[("FNMA", d)], share_without=v, vo_without=30) for d, v in (("2026-10-05", 0.001), ("2026-10-12", 0.001), ("2026-10-19", 0.004))]
+    assert front.trend_words(rising, inputs8, "2026-10-01", "A Co") == "That is rising: 0.4% of the week of Oct 19 without A Co.", front.trend_words(rising, inputs8, "2026-10-01", "A Co")
+    assert front.trend_words(rising[:2], inputs8, "2026-10-01", "A Co") is None and front.trend_words([dict(w, share_without=0.001) for w in rising], {}, "2026-10-01", None) == "That is flat."
+    # The latest five full weeks are all that count, a rise needs BURST_MIN loans, and past the level only a latest week over the ones before it reads as rising.
+    runs8 = lambda *shares, n=30: [{"first": False, "partial": False, "label": f"Wk {i}", "share": s, "share_without": s, "vo_without": n} for i, s in enumerate(shares)]  # noqa: E731
+    assert front.trend(runs8(0.0009, 0.0009, 0.0006, 0.0006, 0.0013, n=14)) == "flat" and front.trend(runs8(0.0009, 0.0009, 0.0006, 0.0006, 0.0027, n=29)) == "flat", "a usual week, and one under BURST_MIN loans"
+    assert front.trend(runs8(0.0009, 0.0009, 0.0006, 0.0006, 0.0027)) == "rising", "the same week on BURST_MIN loans"
+    assert front.trend(runs8(0.007, 0.0004, 0.0004, 0.0004, 0.0004, 0.0004)) == "flat" and front.trend(runs8(0.007, 0.0004, 0.0004, 0.0004, 0.0004)) == "not flat", "one old week does not count for good: a blip five full weeks back drops out"
+    assert front.trend(runs8(0.001, 0.001, 0.001, 0.02)) == "rising" and front.trend(runs8(0.002, 0.005, 0.008, 0.012)) == "rising", "a first jump, and a climb"
+    falling8 = runs8(0.016, 0.025, 0.019, 0.003)
+    assert front.trend(falling8) == "not flat" and front.trend(runs8(0.01, 0.01, 0.01)) == "not flat" and front.trend(runs8(0.02, 0.02, 0.02, 0.026)) == "not flat", "falling, steady, and a jump gone steady"
+    assert front.trend_words(falling8, inputs8, "2026-10-01", "A Co") == "That has not stayed near zero: 0.3% of the week of Wk 3 without A Co, against 2.0% on average in the weeks just before it.", front.trend_words(falling8, inputs8, "2026-10-01", "A Co")
+    assert front.trend_words(falling8, {}, "2026-10-01", None) == "That has not stayed near zero: 0.3% of the week of Wk 3, against 2.0% on average in the weeks just before it."
+    # A week that bursts past the rest gets its own count and the small lender's part of it, and "about half" speaks only of the usual weeks. A sentence that lumped them would read as a steady series.
+    wk8b = lambda label, vo, lead, **kw: {"first": False, "partial": False, "label": label, "vo": vo, "vo_lead": lead, "vo_head": vo, "days": 5, **kw}  # noqa: E731
+    usual8 = [wk8b("Oct 5", 30, 15), wk8b("Oct 12", 28, 12), wk8b("Oct 19", 26, 14)]
+    burst8 = [*usual8, wk8b("Oct 26", 90, 80)]
+    assert front.week_words(burst8, 0, "A Co") == "By week first disclosed since then, in any issue month: 30, 28, 26 a week, about half A Co, with 90 in the week of Oct 26, 80 of them A Co.", front.week_words(burst8, 0, "A Co")
+    assert front.week_words([*burst8, wk8b("Nov 2", 1, 0, partial=True, days=1)], 0, "A Co").endswith("with 90 in the week of Oct 26, 80 of them A Co, and 1 in the one-day Nov 2 week."), "a partial week after it"
+    assert front.week_words([*usual8, wk8b("Oct 26", 84, 80)], 0, "A Co").endswith("with 84 in the week of Oct 26, 80 of them A Co."), "at the limit: three times the middle week"
+    assert front.week_words([*usual8, wk8b("Oct 26", 83, 80)], 0, "A Co").endswith("30, 28, 26, 83 a week, mostly A Co."), "under it, one list, and the lender's share over all of it"
+    assert front.week_words([wk8b("Oct 5", 4, 2), wk8b("Oct 12", 3, 2), wk8b("Oct 19", 3, 2), wk8b("Oct 26", 29, 20)], 0, "A Co").endswith("4, 3, 3, 29 a week, mostly A Co."), "under the floor, however far above the others"
+    assert front.week_words([wk8b("Oct 5", 4, 2), wk8b("Oct 12", 3, 2), wk8b("Oct 19", 3, 2), wk8b("Oct 26", 30, 20)], 0, "A Co").endswith("4, 3, 3 a week, about half A Co, with 30 in the week of Oct 26, 20 of them A Co."), "at the floor"
+    assert front.week_words(burst8, 0, None).endswith("30, 28, 26 a week, with 90 in the week of Oct 26."), "no lender to name"
+    assert front.week_words([*usual8, wk8b("Oct 26", 90, 0)], 0, "A Co").endswith("about half A Co, with 90 in the week of Oct 26."), "a burst that is not the small lender's names no part of it"
+    assert front.week_words([wk8b("Oct 5", 90, 80), wk8b("Oct 12", 28, 12), wk8b("Oct 19", 26, 14), wk8b("Oct 26", 88, 70)], 0, "A Co").endswith("28, 26 a week, about half A Co, with 90 in the week of Oct 5, 80 of them A Co and 88 in the week of Oct 26, 70 of them A Co."), "two bursts in the four weeks named"
+    assert front.week_words([wk8b("Oct 5", 90, 80)], 0, "A Co").endswith("90 a week, mostly A Co."), "one week has nothing to burst past"
+    # "That is flat" alone only while the weeks as printed are flat too: when they are not, the sentence says whose weeks are flat. The test itself stays on the weeks without the small lender.
+    flat8 = [dict(x, share=s, share_without=w) for x, s, w in zip(burst8, (0.0022, 0.0026, 0.0024, 0.0061), (0.0011, 0.0014, 0.0013, 0.0004))]
+    assert front.trend(flat8) == "flat" and front.trend_words(flat8, inputs8, "2026-10-01", "A Co") == "Without A Co that is flat, but NOT YET.", front.trend_words(flat8, inputs8, "2026-10-01", "A Co")
+    assert front.trend_words(flat8, {}, "2026-10-01", "A Co") == "Without A Co that is flat.", "with no private words"
+    assert front.trend_words([dict(x, vo=20, share=0.002, share_without=0.001) for x in burst8], inputs8, "2026-10-01", "A Co") == "That is flat, but NOT YET.", "the whole series is flat"
+    assert front.trend_words([dict(x, share=0.002, share_without=0.001) for x in burst8], inputs8, "2026-10-01", "A Co") == "Without A Co that is flat, but NOT YET.", "the shares look flat, but the counts it prints do not"
+    assert front.trend_words([dict(x, share=0.006, share_without=0.001) for x in usual8], inputs8, "2026-10-01", "A Co") == "Without A Co that is flat, but NOT YET.", "the small lender alone lifts every week past the limit"
+    # The named lenders cap: the rest fall into one row and the totals still tie.
+    named8, front.NAMED = front.NAMED, 1
+    capped = {r["short"]: r for r in front._lender_rows(c8, "2026-10-01", names8)}
+    front.NAMED = named8
+    assert set(capped) == {"A Co", "Rocket", "UWM", "All other lenders", "All lenders"} and capped["All other lenders"]["fn_vo"] == 0 and capped["All other lenders"]["lenders"] == 1 and capped["A Co"]["fn_vo"] + capped["Rocket"]["fn_vo"] + capped["UWM"]["fn_vo"] + capped["All other lenders"]["fn_vo"] == capped["All lenders"]["fn_vo"] == 44, capped
+    # Under LEAD_MATTERS of the count over every record, no lender is set apart, rather than one that means nothing.
+    assert front._small_lead(c8) == "a"
+    matters8, front.LEAD_MATTERS = front.LEAD_MATTERS, 0.9
+    assert front._small_lead(c8) is None, "A Co holds 37 of Fannie's 46"
+    front.LEAD_MATTERS = matters8
+    # Rocket and UWM keep their rows with no VS4-only loan in the month: the card's words rest on them.
+    c8.execute(f"INSERT INTO scw SELECT * REPLACE (DATE '2026-12-01' AS month) FROM scw WHERE seller_id = '{UWM}' AND has_fico AND agency = 'FNMA'")
+    zero8 = {r["short"]: r for r in front._lender_rows(c8, "2026-12-01", names8)}
+    c8.execute("DELETE FROM scw WHERE month = DATE '2026-12-01'")
+    assert (zero8["UWM"]["id"], zero8["UWM"]["fn_vo"], zero8["UWM"]["fn_priced"]) == (UWM, 0, 120), zero8
+    # A jump past ALMOST_NONE at Fannie warns, and the card stops saying almost none.
+    jump = [dict(r, vs_only_share=0.02) if r["view"] == "month" and r["agency"] == "FNMA" else r for r in mix8]
+    assert "level" in [r["key"] for r in front.checks(jump, view8("week"), view8("before"), view8("lender"), view8("band"), inputs8) if not r["pass"]]
+    said8j = {r["key"]: r["text"] for r in front.card(c8, jump, through8, inputs8, names8)[0] if r["view"] == "sentence"}
+    assert "why_rare" not in said8j and said8j["allowed"] == "ALLOWED." and "why_rare" not in {r["key"] for r in card8d if r["view"] == "sentence"}, "it stays rare only while it is rare, on files that show second scores"
+    # What the bands point to: a cluster at the top, low scores with first-time buyers, neither, and too few.
+    def blank(key, words, **kw):
+        out = {"key": key, "label": key, "words": words, "vo_lead": 0, "vo_without": 0, "vo_without_fthb": 0, "both": 0, "both_fthb": 0, **kw}
+        return {**out, "vo": out["vo_without"] + out["vo_lead"], "vo_fthb": out["vo_without_fthb"]}
+
+
+    top_heavy = [blank("lt660", "under 660", vo_without=5, both=100), blank("660_699", "at 660-699", vo_without=5, both=100), blank("700_739", "at 700-739", vo_without=5, both=300), blank("740_779", "at 740-779", vo_without=5, both=100), blank("780up", "at 780+", vo_without=30, both=400)]
+    thin = [blank("lt660", "under 660", vo_without=20, vo_without_fthb=10, both=100, both_fthb=10), blank("660_699", "at 660-699", vo_without=15, vo_without_fthb=8, both=100, both_fthb=10), blank("700_739", "at 700-739", vo_without=5, both=300, both_fthb=30), blank("740_779", "at 740-779", vo_without=5, both=100, both_fthb=10), blank("780up", "at 780+", vo_without=5, both=400, both_fthb=40)]
+    even = [blank("lt660", "under 660", vo_without=5, both=100), blank("660_699", "at 660-699", vo_without=5, both=100), blank("700_739", "at 700-739", vo_without=15, both=300), blank("740_779", "at 740-779", vo_without=5, both=100), blank("780up", "at 780+", vo_without=20, both=400)]
+    assert "Clustered at 780+ (60%, against 40% of loans showing both scores), which points to FICO not being bought." in front.band_words(top_heavy, None), front.band_words(top_heavy, None)
+    assert "point to thin credit files more than to FICO not being bought" in front.band_words(thin, None) and "Clustered" not in front.band_words(thin, None), front.band_words(thin, None)
+    assert "Neither a cluster at the top nor low scores with first-time buyers stands out yet." in front.band_words(even, None), front.band_words(even, None)
+    assert "thin credit files" not in front.band_words([{**b, "vo_fthb": 0, "vo_without_fthb": 0} for b in thin], None), "low scores alone, with no first-time buyers, do not point to thin files"
+    assert "Too few to tell" in front.band_words([{**b, "vo": b["vo"] // 3} for b in even], None)
+    assert front.band_words(even, "L").startswith("Without L, by VS4 score:") and front.band_words(even, None).startswith("By VS4 score:")
+    lead_heavy = [dict(b, vo_lead=v, vo=b["vo"] + v, vo_fthb=b["vo_fthb"] + f, shows_lead=s) for b, v, f, s in zip(even, (40, 5, 2, 2, 10), (0, 0, 0, 0, 0), (100, 10, 10, 10, 20))]
+    assert front.band_words(lead_heavy, "L").endswith("L's 59: 40 under 660, 10 at 780+, no first-time buyers; of its own loans showing VS4, 50% at 780+ show no FICO, and 38% of those below."), front.band_words(lead_heavy, "L")
+    assert "of its own loans" not in front.band_words([dict(b, shows_lead=1) for b in lead_heavy], "L"), "too few of its own loans to say"
+    assert "1,286 under 660" in front.band_words([dict(even[0], vo=1286), *even[1:]], None) and "of the 1,331 are first-time buyers" in front.band_words([dict(even[0], vo=1286), *even[1:]], None), "counts with their commas"
+    assert "L's 2,299: 1,250 under 660, 1,040 at 780+" in front.band_words([dict(b, vo_lead=v, vo=b["vo"] + v, shows_lead=s) for b, v, s in zip(even, (1250, 5, 2, 2, 1040), (1300, 10, 10, 10, 1100))], "L")
+    # Freddie: a likely gap only while a large lender's share is far above its Fannie share, and never as confirmed; the small lender only while it shows about the same at both.
+    gap = lambda **kw: {"id": "x", "short": "X", "fh_vo": 40, "fh_n": 300, "fn_n": 300, "fh_own_share": 0.13, "fn_own_share": 0.01, **kw}  # noqa: E731
+    fh8, fn8, al8 = {"vs_only_share": 0.03}, {"vs_only_share": 0.003}, {"vs_only_share": 0.021}
+    small8 = {"id": "s", "short": "S", "fh_vo": 10, "fh_n": 150, "fn_n": 150, "fh_own_share": 0.35, "fn_own_share": 0.33}
+    said = front.freddie_words(fh8, fn8, al8, [gap(), small8], "s", "S")
+    assert "most likely a gap in what its files show, not confirmed" in said and "while S shows about the same at both" in said and "Neither GSE" not in said and "at most 2.1%" in said, said
+    assert "while S" not in front.freddie_words(fh8, fn8, al8, [gap(), {**small8, "fh_own_share": 0.1}], "s", "S"), "the small lender differs"
+    assert "gap" not in front.freddie_words(fh8, fn8, al8, [gap(fh_own_share=0.04), small8], "s", "S"), "the large lender's share is not far above"
+    assert "gap" not in front.freddie_words(fh8, fn8, al8, [gap(fh_n=50), small8], "s", "S"), "too few loans"
+    assert "gap" not in front.freddie_words({"vs_only_share": 0.004}, fn8, al8, [gap(), small8], "s", "S"), "Freddie not far above Fannie"
+    assert front.freddie_words(None, fn8, al8, [], None, None) is None and front.freddie_gap(fh8, None, [gap()], None) is None and front.freddie_gap(fh8, fn8, [gap()], "x") is None, "the small lender itself is not the test"
+    # Rocket and UWM keep a FICO: "still" and the rate row's second answer stand only while both clear KEEPS on MIN_PRICED+ loans.
+    keep = lambda a, b: [{"id": ROCKET, "short": "Rocket", "fn_priced": 100, "fn_priced_fico": a}, {"id": UWM, "short": "UWM", "fn_priced": 100, "fn_priced_fico": b}]  # noqa: E731
+    assert front.keep_fico(keep(90, 99)) and "still show" in front.keeps_words(keep(90, 99))
+    assert not front.keep_fico(keep(89, 99)) and "still" not in front.keeps_words(keep(89, 99)) and "show a FICO on 89.0% and 99.0%" in front.keeps_words(keep(89, 99))
+    few = [{"id": ROCKET, "short": "Rocket", "fn_priced": 99, "fn_priced_fico": 99}, keep(90, 99)[1]]
+    assert not front.keep_fico(few) and front.keeps_words(few) is None and front.keeps_words([]) is None
+
+    # What moved the month: its shape, then each guard flipped.
+    ad8 = [{"month": m, "agency": "All", "final": f, "d_total": t, "d_new": n, "d_within": w, "d_mix": x} for m, f, t, n, w, x in (
+        ("2026-07-01", True, 0.041, 0.0003, 0.0382, 0.0025), ("2026-08-01", True, 0.0135, 0.0, 0.0255, -0.012), ("2026-09-01", True, -0.0009, 0.0002, 0.0065, -0.0076), ("2026-10-01", False, 0.0312, 0.0008, 0.0114, 0.019))]
+    month_line, since_line = front.moved(ad8, "2026-07-01")
+    assert month_line == "Of October's 3.1-point rise so far, new lenders added 0.08, the same lenders using it more added 1.1, and 1.9 was loans shifting back toward them, reversing most of a 2.0-point fall in August and September.", month_line
+    assert since_line == "Since July it is the same lenders using it more: up 4.3 points, with the shift between lenders about zero.", since_line
+    flip = lambda month, **kw: [dict(r, **kw) if r["month"] == month else r for r in ad8]  # noqa: E731
+    assert "so far" not in front.moved(flip("2026-10-01", final=True), "2026-07-01")[0], "a final month"
+    assert "reversing a 2.0-point fall in August and September." in front.moved(flip("2026-10-01", d_mix=0.0196, d_within=0.0108), "2026-07-01")[0], "a shift that prints the same as the fall reverses it"
+    assert "reversing a 2.0-point fall in August and September." in front.moved(flip("2026-10-01", d_mix=0.025, d_within=0.0054), "2026-07-01")[0], "a larger shift reverses all of it"
+    assert "reversing part of a 5.7-point fall in August and September." in front.moved(flip("2026-09-01", d_mix=-0.045), "2026-07-01")[0], "a shift under half the fall"
+    small_mix = flip("2026-10-01", d_mix=0.0060, d_within=0.0244)
+    assert "reversing" not in front.moved(small_mix, "2026-07-01")[0] and " back " not in front.moved(small_mix, "2026-07-01")[0], "the shift is not most of the rise"
+    no_fall = flip("2026-09-01", d_mix=0.0076, d_within=-0.0087)
+    assert "reversing" not in front.moved(no_fall, "2026-07-01")[0], "no fall just before it"
+    small_fall = flip("2026-09-01", d_mix=-0.0005, d_within=-0.0006)
+    small_fall = [dict(r, d_mix=0.0001) if r["month"] == "2026-08-01" else r for r in small_fall]
+    assert "reversing" not in front.moved(small_fall, "2026-07-01")[0], "the fall is under half the shift"
+    one_month = [dict(r, d_mix=0.0005) if r["month"] == "2026-08-01" else r for r in ad8]
+    assert "reversing" not in front.moved(one_month, "2026-07-01")[0], "only the months just before it count, and September's fall alone is under half the shift"
+    assert "reversing most of a 2.1-point fall in September." in front.moved([dict(r, d_mix=-0.021) if r["month"] == "2026-09-01" else r for r in one_month], "2026-07-01")[0], "a run of one month, large enough"
+    down = flip("2026-10-01", d_total=-0.012, d_new=0.0, d_within=-0.005, d_mix=-0.007)
+    assert front.moved(down, "2026-07-01")[0] == "Of October's 1.2-point fall so far, new lenders added 0.00, the same lenders using it less took off 0.5, and 0.7 came off as loans shifted away from them.", front.moved(down, "2026-07-01")[0]
+    assert front.moved(ad8[:1], "2026-07-01") == (None, None) and front.moved(ad8[:2], "2026-07-01")[1] is None, "nothing to compare since the first month"
+    mixy = flip("2026-08-01", d_within=0.0205, d_mix=-0.007)
+    assert front.moved(mixy, "2026-07-01")[1] == "Since July it is the same lenders using it more: up 3.8 points, with the shift between lenders adding 0.4.", front.moved(mixy, "2026-07-01")[1]
+    # "About zero" must be about zero: the reader can add the parts up. Past 0.2 points it says the number, even within a tenth of the change, and within 0.2 points it still says the number if that is over a tenth of the change.
+    off8 = flip("2026-08-01", d_new=0.0001, d_within=0.0285, d_mix=-0.0151)
+    assert front.moved(off8, "2026-07-01")[1] == "Since July it is the same lenders using it more: up 4.6 points, with the shift between lenders taking off 0.4.", front.moved(off8, "2026-07-01")[1]
+    small8 = [{"month": m, "agency": "All", "final": True, "d_total": t, "d_new": 0.0, "d_within": w, "d_mix": x} for m, t, w, x in (("2026-08-01", 0.004, 0.0035, 0.0005), ("2026-09-01", 0.002, 0.0017, 0.0003), ("2026-10-01", 0.004, 0.0032, 0.0008))]
+    assert front.moved(small8, "2026-07-01")[1] == "Since July it is the same lenders using it more: up 0.8 points, with the shift between lenders adding 0.2.", front.moved(small8, "2026-07-01")[1]
+    newish = flip("2026-08-01", d_within=0.0085, d_new=0.017)
+    assert front.moved(newish, "2026-07-01")[1] == "Since July, up 4.4 points: the same lenders added 2.6, the shift between lenders took off 0.06, new lenders added 1.8.", front.moved(newish, "2026-07-01")[1]
+    nov = [*ad8, {"month": "2026-11-01", "agency": "All", "final": False, "d_total": 0.01, "d_new": 0.001, "d_within": 0.009, "d_mix": 0.0}]
+    assert front.moved(nov, "2026-07-01")[0].startswith("Of November's 1.0-point rise so far") and "reversing" not in front.moved(nov, "2026-07-01")[0], "a November month"
+
+    # The adoption row: its words, on the two largest VS4 lenders, the new lenders and what is known of FICO.
+    ad_rows = [dict(r, scored_loans=1000, vs4_share=s, active_sellers=c, active_share=a, new_any=na, new_share_any=ns) for r, s, c, a, na, ns in zip(ad8, (0.047, 0.059, 0.052, 0.091), (6, 7, 11, 24), (0.28, 0.25, 0.27, 0.35), (3, 2, 5, 3), (0.05, 0.004, 0.02, 0.066))]
+    sellers8 = [{"level": "seller", "id": "r", "short": "R", "vs4_loans": 900}, {"level": "seller", "id": "u", "short": "U", "vs4_loans": 500}, {"level": "seller", "id": "n1", "short": "N1", "vs4_loans": 85}, {"level": "seller", "id": "n2", "short": "N2", "vs4_loans": 2}, {"level": "seller", "id": "n3", "short": "N3", "vs4_loans": 1}]
+    monthly8 = [{"level": "seller", "agency": "All", "month": "2026-10-01", "id": i, "vs4": v, "vs4_share": s} for i, v, s in (("r", 700, 0.39), ("u", 300, 0.29), ("n1", 85, 0.06), ("n2", 2, 0.01), ("n3", 1, 0.01))]
+    adopters8 = [{"agency": "All", "id": i, "first_any": "2026-10-01"} for i in ("n1", "n2", "n3")]
+    series8 = [{"period": "month", "agency": "All", "start": m, "ex_top2": x, "excluded": "R and U"} for m, x in (("2026-07-01", 0.0004), ("2026-08-01", 0.0009), ("2026-09-01", 0.0029), ("2026-10-01", 0.0081))]
+    row8, pic8, say8 = front.adoption_row(ad_rows, series8, sellers8, monthly8, adopters8, "2026-07-01", True, 0.0, inputs8)
+    sd = dict(say8)
+    assert (row8["number"], row8["line"], row8["what"]) == ("9.1%", "R and U are 92% of these loans, and since July the rise is the same lenders using VS4 more, though most of October's rise so far is loans shifting back toward them. ADOPTION TAIL.", "of October's loans so far priced on VS4, both GSEs, by issue month"), row8
+    adopt8 = lambda *a, **kw: front.adoption_row(*a, **kw)[0]["line"]  # noqa: E731
+    assert "ADOPTION TAIL." not in adopt8(ad_rows, series8, sellers8, monthly8, adopters8, "2026-07-01", False, 0.0, inputs8) and "ADOPTION TAIL." not in adopt8(ad_rows, series8, sellers8, monthly8, adopters8, "2026-07-01", None, 0.0, inputs8) and "ADOPTION TAIL." not in adopt8(ad_rows, series8, sellers8, monthly8, adopters8, "2026-07-01", True, 33.0, inputs8) and "ADOPTION TAIL." not in adopt8(ad_rows, series8, sellers8, monthly8, adopters8, "2026-07-01", True, 0.0, {}), "the tail under the same guard as the sentence beside it, and with its row in the file"
+    assert adopt8(ad_rows, series8, sellers8, monthly8, adopters8, "2026-07-01", True, 0.0, {**inputs8, "adoption_line_tail": {"text": "ADOPTION TAIL.", "until_month": "2026-10-01"}}).endswith("toward them."), "and only while its months hold"
+    not_back = [dict(r, d_mix=0.002, d_within=0.0284) if r["month"] == "2026-10-01" else r for r in ad_rows]
+    assert "though most" not in adopt8(not_back, series8, sellers8, monthly8, adopters8, "2026-07-01", True, 0.0, inputs8) and "using VS4 more. ADOPTION TAIL." in adopt8(not_back, series8, sellers8, monthly8, adopters8, "2026-07-01", True, 0.0, inputs8), "the shift is not most of the month's rise"
+    assert adopt8(ad_rows, series8, sellers8, monthly8, adopters8, "2026-10-01", True, 0.0, inputs8) == "R and U are 92% of these loans. ADOPTION TAIL.", "nothing since to compare"
+    assert adopt8(ad_rows[:1], series8, [], monthly8, [], "2026-07-01", True, 0.0, inputs8) == TOO_FEW, "no line for the tail to follow"
+    final_back = [dict(r, final=True) if r["month"] == "2026-10-01" else r for r in ad_rows]
+    assert "though most of October's rise is loans shifting back toward them." in adopt8(final_back, series8, sellers8, monthly8, adopters8, "2026-07-01", True, 0.0, inputs8), "a final month"
+    assert dict(front.adoption_row(ad_rows, series8, sellers8, monthly8, adopters8[2:], "2026-07-01", True, 0.0, inputs8)[2])["new"].startswith("New lenders: N3 had a first VS4 loan in October, with 1, and holds 6.6% of loans."), "one new lender"
+    # One GSE's files stop short of the month: "both GSEs" goes from the row and the level.
+    gse8 = lambda fn, fh: [*ad_rows, {"month": "2026-10-01", "agency": "FNMA", "scored_loans": fn}, {"month": "2026-10-01", "agency": "FHLMC", "scored_loans": fh}]  # noqa: E731
+    thin_row = front.adoption_row(gse8(950, 50), series8, sellers8, monthly8, adopters8, "2026-07-01", True, 0.0, inputs8)
+    assert thin_row[0]["what"] == "of October's loans so far priced on VS4, almost all Fannie, by issue month" and thin_row[2][0][1].startswith("9.1% of October's loans so far, almost all Fannie, were priced on VS4"), thin_row
+    assert front.adoption_row(gse8(900, 100), series8, sellers8, monthly8, adopters8, "2026-07-01", True, 0.0, inputs8)[0]["what"] == "of October's loans so far priced on VS4, both GSEs, by issue month", "at the limit"
+    assert sd["level"] == "9.1% of October's loans so far were priced on VS4, up from 5.2% in September. R and U are 92% of those loans, and they use it on about 39% and 29% of their own.", sd["level"]
+    assert sd["inside"] == "Inside adopting lenders: 24 lenders priced a loan on VS4 in October, up from 11. They hold 35% of loans, up from 27%, and use it on 26% of those loans.", sd["inside"]
+    assert sd["new"] == "New lenders: 3 had a first VS4 loan in October and hold 6.6% of loans, but 2 of them made 4 or fewer. N1, with 85, is the exception. Everyone outside R and U uses it on 0.8% of their loans.", sd["new"]
+    assert sd["fico"] == "ADOPTION FICO." and [p["label"] for p in pic8] == ["Jul", "Aug", "Sep", "Oct"] and [p["open"] for p in pic8] == [False, False, False, True] and pic8[-1]["outside"] == 0.0081, (sd, pic8)
+    assert "fico" not in dict(front.adoption_row(ad_rows, series8, sellers8, monthly8, adopters8, "2026-07-01", False, 0.0, inputs8)[2]), "only while Rocket and UWM keep a FICO"
+    assert "fico" not in dict(front.adoption_row(ad_rows, series8, sellers8, monthly8, adopters8, "2026-07-01", True, 33.0, inputs8)[2]), "only on the price with no fee on a funded loan"
+    # And only while Fannie's VS4-priced loans as a whole show a FICO, whoever else's stop: the line's tail and the sentence go together.
+    assert front.all_keep([{"total": True, "fn_priced": 100, "fn_priced_fico": 90}]) and not front.all_keep([{"total": True, "fn_priced": 100, "fn_priced_fico": 89}]) and not front.all_keep([{"total": True, "fn_priced": 0, "fn_priced_fico": 0}]) and not front.all_keep([]), "at the limit, under it, and with nothing to go by"
+    whole8 = front.adoption_row(ad_rows, series8, sellers8, monthly8, adopters8, "2026-07-01", True, 0.0, inputs8, False)
+    assert "ADOPTION TAIL." not in whole8[0]["line"] and "fico" not in dict(whole8[2]), whole8[0]["line"]
+    assert "are 92%" not in front.adoption_row(ad_rows, series8, [*sellers8[:1], {**sellers8[1], "id": "zz"}], monthly8, adopters8, "2026-07-01", True, 0.0, inputs8)[0]["line"], "a lender with no row that month"
+    spread = [dict(r, vs4=10 if r["id"] in ("r", "u") else r["vs4"]) for r in monthly8]
+    assert "are " not in front.adoption_row(ad_rows, series8, sellers8, spread, adopters8, "2026-07-01", True, 0.0, inputs8)[0]["line"].split(",")[0], "the two are under half"
+    all_few = [dict(r, vs4=2) if r["id"] == "n1" else r for r in monthly8]
+    assert "and all made 4 or fewer." in dict(front.adoption_row(ad_rows, series8, sellers8, all_few, adopters8, "2026-07-01", True, 0.0, inputs8)[2])["new"]
+    two_more = [dict(r, vs4=50) if r["id"] == "n2" else r for r in monthly8]
+    assert "1 of them with 4 or fewer; N1 made the most, 85." in dict(front.adoption_row(ad_rows, series8, sellers8, two_more, adopters8, "2026-07-01", True, 0.0, inputs8)[2])["new"]
+    assert dict(front.adoption_row(ad_rows, series8, sellers8, monthly8, [], "2026-07-01", True, 0.0, inputs8)[2])["new"].startswith("New lenders: none had a first VS4 loan in October.")
+    assert front.adoption_row([], [], [], [], [], "2026-07-01", True, 0.0, inputs8)[0]["line"] == TOO_FEW
+
+    # The rate row: is there a rate difference, and dollars per score or executed rate, each clause on its guard.
+    f8 = {"view": "row", "key": "same_fico", "sentence": "About 3 bp lower.", "dot": -3.0, "dot_raw": -3.1, "lo": -4.0, "hi": -1.5, "tl": -5.86, "th": 1.24, "n": 6120, "sub": "about 6,100 showing a FICO, issued from Oct 1"}
+    n8 = {"view": "row", "key": "same_number", "sentence": "About 6 bp higher.", "dot": 6.0, "tl": 5.28, "th": 7.34, "n": 18450}
+    g8 = lambda key, label, dot, mid, n, lo, hi, **kw: {"view": "lender", "scope": "group", "key": key, "label": label, "same_fico_dot": dot, "same_fico_mid": mid, "same_fico_n": n, "same_fico_lo": lo, "same_fico_hi": hi, **kw}  # noqa: E731
+    groups8 = [g8("rr", "Rocket retail", -6.5, -6.4, 2900, -7.5, -3.5), g8("rb", "Rocket broker", 0.5, 0.35, 510, -1.0, 2.5), g8("ub", "UWM broker", -1.5, -1.38, 1600, -3.5, 1.0), g8("uc", "UWM correspondent", 0.5, -0.24, 880, -3.0, 1.5), g8("rc", "Rocket correspondent", None, None, 190, None, None, not_like_for_like=True)]
+    follows8 = [{"view": "follows_score", "key": f"{s}|{g}", "label": label, "guard": ok} for s, label, ok in (("rocket_retail", "Rocket retail", True), ("uwm", "UWM", False)) for g in ("vs4", "fico")]
+    meta_r8 = {"view": "meta", "lender_rates": "On rate, at the same FICO: Rocket retail about -6.5 bp.", "offset_tail": ", though most of these rates were likely set before it"}
+    card_u8 = {"view": "lender", "scope": "card", "key": UWM, "label": "UWM", "same_fico_dot": -1.5, "same_fico_lo": -4.0, "same_fico_hi": 1.0}
+    behind8 = {"view": "behind", "key": "crossing", "value": 31.6}
+    rates8 = [meta_r8, f8, n8, *groups8, *follows8, card_u8, behind8]
+    rules8 = [{"view": "curve", "scope": s, "key": "lt0", "cohort": "latest", "loans": n, "vs4_share": v, "latest_from": "2026-10-12"} for s, n, v in ((ROCKET, 1210, 0.0081), (UWM, 340, 0.0027))]
+    fees8 = [{"view": "option", "key": "All", "scope": "All", "loans": 21000, "avg_upb": 300000.0, "fee_vs_bp": 74.0, "fee_best_bp": 66.0}, {"view": "option", "key": UWM, "scope": UWM, "fee_fico_bp": 72.0, "fee_best_bp": 52.0, "fee_actual_bp": 53.2}]
+    lend8 = keep(98, 97)
+    rate = lambda rates=rates8, rules=rules8, fees=fees8, lenders=lend8, keeps=True, note=6.4, top=0.38: front.rate_row(rates, rules, fees, lenders, keeps, note, inputs8, top)  # noqa: E731
+    row8, pic8, say8 = rate()
+    sd = dict(say8)
+    assert (row8["number"], row8["line"]) == ("−3 bp", "Barely: about 3 bp lower at the same FICO, mostly Rocket retail, and zero is not ruled out. On funded loans, Rocket and UWM do not look to be choosing on dollars per score: 97% or more of their VS4-priced Fannie loans show a FICO, so FICO still gets paid. Executed rate fits Rocket retail, not yet UWM."), row8
+    assert row8["what"] == "VS4-priced against FICO-priced loans, same FICO score, lender, channel and week first disclosed, issued from Oct 1 (most rates likely set before that day's LLPA change), note rate only", row8["what"]
+    assert row8["cap"] == "VS4 less FICO, with the 95% range. +6 bp means a VS4 720 gets about the rate of a FICO 690, not that VS4 costs more", row8["cap"]
+    # Which loans the +6 rests on, when its row says so, in the caption and in the closed sentence, and the closed sentence's other date on the same basis.
+    window8 = rate([dict(r, sub="about 18,500 VS4 loans under 820, from Aug 3") if r.get("key") == "same_number" else r for r in rates8])
+    assert window8[0]["cap"] == "VS4 less FICO, with the 95% range. +6 bp, on loans first disclosed from Aug 3, means a VS4 720 gets about the rate of a FICO 690, not that VS4 costs more", window8[0]["cap"]
+    assert "Same score number, loans first disclosed from Aug 3: about 6 bp higher (95% range +5 to +7.5), so a VS4 720 gets about the rate of a FICO 690. It does not say VS4 costs more." in dict(window8[2])["difference"], dict(window8[2])["difference"]
+    assert "against FICO loans of the same lender, channel, week first disclosed and score." in sd["difference"], sd["difference"]
+    no_window8 = rate([dict(r, sub="about 18,500 VS4 loans under 820") if r.get("key") == "same_number" else r for r in rates8])
+    assert no_window8[0]["cap"] == row8["cap"] and "Same score number: about 6 bp higher" in dict(no_window8[2])["difference"], "with no window in its row, no clause"
+    assert "Is there a rate difference? Barely, so far. Same FICO: about 3 bp lower, about $7 a month on $350,000, on about 6,100 VS4 loans showing a FICO, issued from Oct 1," in sd["difference"], sd["difference"]
+    assert "Zero is not ruled out (95% range −6 to +1.5), and most of these rates were likely set before Oct 1 ended the LLPA's 20-point markdown on VS4." in sd["difference"], sd["difference"]
+    assert "By lender: Rocket retail −6.5, UWM broker −1.5, Rocket broker +0.5, UWM correspondent +0.5." in sd["difference"] and "Same score number: about 6 bp higher (95% range +5 to +7.5), so a VS4 720 gets about the rate of a FICO 690. It does not say VS4 costs more." in sd["difference"], sd["difference"]
+    assert sd["dollars_or_rate"].startswith("Dollars per score or executed rate? On funded loans it does not look like dollars per score at Rocket or UWM: 97% or more of their VS4-priced Fannie loans show a FICO, and they almost never use VS4 when it is below FICO (0.8% and 0.3%, both GSEs, loans first disclosed from Oct 12). The limit on that: A LIMIT, and no file shows pulls before funding."), sd["dollars_or_rate"]
+    assert "Executed rate fits Rocket retail, where the rate follows whichever score priced the loan; it does not yet fit UWM, which collects 94% of the LLPA saving while its note rate moves about 1.5 bp," in sd["dollars_or_rate"], sd["dollars_or_rate"]
+    assert sd["fico"] == "RATE FICO 38%." and [(p["x"], p["dot"], p["tl"], p["th"]) for p in pic8] == [("same_fico", -3.0, -6.0, 1.5), ("same_number", 6.0, 5.0, 7.5)], (sd, pic8)
+    swap = lambda key, **kw: [dict(r, **kw) if r.get("key") == key and r.get("view") in ("row", "lender") else r for r in rates8]  # noqa: E731
+    assert "zero is not ruled out" not in rate(swap("same_fico", th=-0.5))[0]["line"] and "95% range −6 to −0.5" in dict(rate(swap("same_fico", th=-0.5))[2])["difference"], "the 95% range clears zero"
+    assert "mostly" not in rate([dict(r, lender_rates=None) if r.get("view") == "meta" else r for r in rates8])[0]["line"], "the rate engine names no one lender and channel"
+    assert "mostly" not in rate(swap("rr", same_fico_n=1000))[0]["line"], "its share of the gap falls under half"
+    assert "mostly" not in rate(swap("rr", same_fico_hi=0.5))[0]["line"], "its own range reaches zero"
+    assert "mostly" not in rate(swap("ub", same_fico_dot=-4.0))[0]["line"], "another group sits within LENDER_APART of it"
+    assert "By lender" not in dict(rate(swap("rr", same_fico_n=1000))[2])["difference"]
+    assert rate(swap("same_fico", dot=-8.0, dot_raw=-7.9, sentence="About 8 bp lower."))[0]["line"].startswith("About 8 bp lower at the same FICO"), "past BARELY"
+    assert rate(swap("same_fico", sentence="No visible difference."))[0]["line"].startswith("No visible difference at the same FICO")
+    assert rate(swap("same_fico", sentence="Not clearly different from zero."))[0]["line"].startswith("Not clearly different from zero at the same FICO")
+    assert rate(swap("same_fico", sentence=TOO_FEW))[0]["line"] == TOO_FEW and rate(swap("same_fico", sentence=TOO_FEW))[1:] == ([], [])
+    assert "most of these rates" not in dict(rate([dict(r, offset_tail=None) if r.get("view") == "meta" else r for r in rates8])[2])["difference"], "most of them were not set before it"
+    assert "a FICO 690" in sd["difference"] and "a FICO 690" not in dict(rate([r for r in rates8 if r.get("view") != "behind"])[2])["difference"], "no crossing, no score to name"
+    assert "dollars per score" not in dict(rate(keeps=None)[2]).get("dollars_or_rate", "").split("Executed")[0].replace("Dollars per score or executed rate?", "") and "do not look" not in rate(keeps=None)[0]["line"] and "still gets paid" not in rate(keeps=None)[0]["line"] and "fico" not in dict(rate(keeps=None)[2]), "files with no second scores say nothing either way"
+    row8k, _, say8k = rate(lenders=keep(80, 99), keeps=False)
+    assert "no longer rule out dollars per score" in dict(say8k)["dollars_or_rate"] and "does not look like" not in dict(say8k)["dollars_or_rate"] and "do not look" not in row8k["line"] and "still gets paid" not in row8k["line"] and "fico" not in dict(say8k), "Rocket under KEEPS"
+    assert "94% or more of their" in dict(rate(lenders=[{**keep(98, 97)[0], "fn_priced": 1000, "fn_priced_fico": 946}, keep(98, 97)[1]])[2])["dollars_or_rate"], "the share rounds down, so the words cannot go past it"
+    assert front._at_least(0.973) == "97% or more" and front._at_least(1) == "all", "a floor, and never more than all"
+    assert "On funded loans, Rocket and UWM do not look to be choosing on dollars per score: all of their VS4-priced Fannie loans show a FICO, so FICO still gets paid." in rate(lenders=keep(100, 100))[0]["line"] and "UWM: all of their VS4-priced Fannie loans show a FICO" in dict(rate(lenders=keep(100, 100))[2])["dollars_or_rate"], "with both at every loan, no impossible floor"
+    assert "On funded loans" not in rate(keeps=False)[0]["line"] and "Executed rate" not in rate(keeps=None)[0]["line"], "the row's last sentences stand only while both keep a FICO"
+    assert rate([dict(r, guard=False) if r.get("key", "").startswith("rocket_retail|") else r for r in rates8])[0]["line"].endswith("so FICO still gets paid. Executed rate does not yet fit UWM."), "the retail fit goes"
+    assert rate(fees=[dict(r, fee_actual_bp=66.5) if r.get("scope") == UWM else r for r in fees8])[0]["line"].endswith("so FICO still gets paid. Executed rate fits Rocket retail."), "UWM's no longer stands"
+    assert rate([dict(r, guard=False) if r.get("key", "").startswith("rocket_retail|") else r for r in rates8], fees=[dict(r, fee_actual_bp=66.5) if r.get("scope") == UWM else r for r in fees8])[0]["line"].endswith("show a FICO, so FICO still gets paid."), "neither"
+    # The date and the rule behind the rate row's figure, each under its guard.
+    assert "(most rates" not in rate([dict(r, offset_tail=None) if r.get("view") == "meta" else r for r in rates8])[0]["what"] and rate([dict(r, offset_tail=None) if r.get("view") == "meta" else r for r in rates8])[0]["what"].endswith("and week first disclosed, issued from Oct 1, note rate only"), "most of them were not set before it"
+    assert rate(swap("same_fico", sub="about 6,100 showing a FICO"))[0]["what"].endswith("lender, channel and week first disclosed, note rate only"), "no date to say"
+    # A fee on a funded loan: FICO's being paid is no longer the whole of it, so those words go and the rest stands. Whose files reach the window is said.
+    fee_line = front.rate_row(rates8, rules8, fees8, lend8, True, 6.4, inputs8, 0.38, 33.0)[0]["line"]
+    assert "still gets paid" not in fee_line and "On funded loans" in fee_line and fee_line.endswith("show a FICO. Executed rate fits Rocket retail, not yet UWM."), fee_line
+    assert front._whose({"FNMA": "2026-12-07", "FHLMC": "2026-11-30"}, "2026-12-07") == "Fannie only" and front._whose({"FNMA": "2026-11-30", "FHLMC": "2026-12-07"}, "2026-12-07") == "Freddie only" and front._whose({"FNMA": "2026-12-07", "FHLMC": "2026-12-07"}, "2026-12-07") == "both GSEs" and front._whose(None, "2026-12-07") == "both GSEs" and front._whose({"FHLMC": "2026-11-30"}, "2026-12-07") == "both GSEs", "whose files reach it"
+    assert "(0.8% and 0.3%, Fannie only, loans first disclosed from Oct 12)" in dict(front.rate_row(rates8, rules8, fees8, lend8, True, 6.4, inputs8, 0.38, 0, {"FNMA": "2026-10-27", "FHLMC": "2026-10-06"})[2])["dollars_or_rate"], "the planted window opens after Freddie's files stop"
+    # Same FICO clear of zero on the high side: the gap itself says VS4 costs more, so neither the sentence nor the caption says it does not. With zero in its range, or under the words "about", both stand.
+    dear8 = rate(swap("same_fico", dot=8.0, dot_raw=7.9, sentence="About 8 bp higher.", tl=6.0, th=10.0))
+    assert "It does not say VS4 costs more." not in dict(dear8[2])["difference"] and "not that VS4 costs more" not in dear8[0]["cap"] and dear8[0]["cap"] == "VS4 less FICO, with the 95% range", dear8[0]["cap"]
+    near8 = rate(swap("same_fico", dot=8.0, dot_raw=7.9, sentence="About 8 bp higher.", tl=-1.0, th=10.0))
+    assert "It does not say VS4 costs more." in dict(near8[2])["difference"] and "not that VS4 costs more" in near8[0]["cap"], near8[0]["cap"]
+    assert "It does not say VS4 costs more." in dict(rate(swap("same_fico", dot=1.0, dot_raw=1.1, sentence="Not clearly different from zero.", tl=-1.0, th=3.0))[2])["difference"], "the row reads no difference at all"
+    assert rate([r for r in rates8 if r.get("view") != "behind"])[0]["cap"] == "VS4 less FICO, with the 95% range" and rate(swap("same_number", dot=-6.0, sentence="About 6 bp lower.", tl=-7.0, th=-5.0))[0]["cap"] == "VS4 less FICO, with the 95% range", "no crossing, or VS4 lower on the same number: no gloss to give"
+    assert "almost never" not in dict(rate(rules=[dict(r, vs4_share=0.2) for r in rules8])[2])["dollars_or_rate"] and "almost never" not in dict(rate(rules=[dict(r, loans=50) for r in rules8])[2])["dollars_or_rate"], "the use below FICO"
+    assert "Executed rate fits" not in dict(rate([dict(r, guard=False) if r.get("key", "").startswith("rocket_retail|") else r for r in rates8])[2])["dollars_or_rate"], "the rate does not follow the score used"
+    assert "does not yet fit" not in dict(rate(fees=[dict(r, fee_actual_bp=66.5) if r.get("scope") == UWM else r for r in fees8])[2])["dollars_or_rate"], "UWM collects under SAVING"
+    assert "does not yet fit" not in dict(rate(swap(UWM, same_fico_dot=-4.0))[2])["dollars_or_rate"], "UWM's note rate moves"
+    assert "does not yet fit" not in dict(rate([dict(r, guard=True) if r.get("key", "").startswith("uwm|") else r for r in rates8])[2])["dollars_or_rate"], "UWM's rate follows the score used"
+    assert "about $" not in dict(rate(note=None)[2])["difference"], "no note rate to scale"
+    assert "fico" not in dict(rate(top=None)[2])
+    for thin_rates in ([], [{"view": "meta", "as_of": "2026-10-27"}, {"view": "check", "label": "A check", "value": 3.0, "limit": 1.5, "pass": False, "detail": None}]):
+        assert rate(thin_rates, [], [])[0]["line"] == TOO_FEW, thin_rates  # the rate read's own planted states
+
+    # The price row: where the price sits against the break-evens, the LLPA dollars kept to their one labelled place.
+    ass8 = [{"key": "bureaus", "value": 3.0}, {"key": "borrowers_per_loan", "value": 1.5}, {"key": "price_per_score", "value": 12.0}, {"key": "vs_price", "value": 2.0}, {"key": "closing_fee", "value": 0.0}]
+    row8, pic8, say8 = front.price_row(ass8, fees8)
+    assert row8["number"] == "$12" and row8["what"] == "a FICO score today; a VS4 score is about $2" and row8["line"] == "Close to the point where dropping FICO starts to pay: keeping FICO pays up to about $15.33 a score at 4 credit pulls per funded loan, $12.67 at 5, $10.89 at 6, if the lower LLPA from holding both scores is worth its full value to the lender.", row8
+    assert [(p["x"], p["v"], p["ref"]) for p in pic8] == [("4", 15.33, False), ("5", 12.67, False), ("6", 10.89, False), ("today", 12.0, True)], pic8
+    assert say8[0][0] == "working" and say8[0][1] == "Having FICO as well as VS4 is worth about $240 a loan in LLPA on average, on 21,000 loans showing both scores." and say8[0][2] == "rate" and "$240" not in row8["line"], say8
+    price_at = lambda p: front.price_row([dict(r, value=p) if r["key"] == "price_per_score" else r for r in ass8], fees8)[0]["line"]  # noqa: E731
+    assert price_at(10.0).startswith("Below the point where dropping FICO starts to pay") and price_at(16.0).startswith("Past the point where keeping FICO pays") and price_at(12.0).startswith("Close to"), price_at(10.0)
+    assert front.price_row(ass8, [dict(fees8[0], loans=999)])[0]["line"] == TOO_FEW and front.price_row(ass8, [])[0]["number"] == "$12" and front.price_row([], [])[0]["number"] is None
+    assert front.price_row(ass8, [dict(fees8[0], fee_vs_bp=65.0)])[0]["line"] == TOO_FEW, "holding both is worth nothing here"
+    # A fee on a funded loan comes off what keeping FICO is worth, once a loan, and the words say so. Past what it is worth it comes off VS4's own price too, and the limit never goes under nothing.
+    fee8 = lambda fee: [dict(r, value=fee) if r["key"] == "closing_fee" else r for r in ass8]  # noqa: E731
+    row8f, pic8f, _ = front.price_row(fee8(34.0), fees8)
+    assert row8f["line"] == "Past the point where keeping FICO pays: keeping FICO pays up to about $6.83 a score at 4 credit pulls per funded loan, $5.87 at 5, $5.22 at 6, if the lower LLPA from holding both scores is worth its full value to the lender and the $34 fee is due on a loan that keeps FICO.", row8f["line"]
+    assert row8f["what"] == "a FICO score today, plus $34 per borrower per score on a funded loan; a VS4 score is about $2" and [p["v"] for p in pic8f if not p["ref"]] == [6.83, 5.87, 5.22], row8f
+    assert [p["v"] for p in front.price_row(fee8(100.0), fees8)[1] if not p["ref"]] == [0.0, 0.0, 0.0] and front.price_row(fee8(100.0), fees8)[0]["line"].startswith("Past the point where keeping FICO pays: keeping FICO pays up to about $0.00 a score"), "a fee far past what it is worth: keeping FICO pays at no price, and the verdict does not flip"
+    assert [p["v"] for p in front.price_row(fee8(60.0), fees8)[1] if not p["ref"]] == [0.33, 0.67, 0.89] and front.price_row(fee8(60.0), fees8)[0]["line"].startswith("Past the point"), "a fee just past it: the sum, not a floor at VS4's price"
+    # Prices print as quoted: whole dollars with no cents, anything else to the cent.
+    assert (usd_price(12.0), usd_price(10.5), usd_price(4.95), usd_price(1)) == ("$12", "$10.50", "$4.95", "$1"), "one format"
+    row8q = front.price_row([dict(r, value=10.5) if r["key"] == "price_per_score" else r for r in fee8(33.5)], fees8)[0]
+    assert row8q["number"] == "$10.50" and row8q["what"].startswith("a FICO score today, plus $33.50 per borrower"), row8q
+    assert front.price_row([dict(r, value=10.5) if r["key"] == "price_per_score" else r for r in ass8], [])[1][0]["text"] == "$10.50 today", "and on the picture"
+
+    # Rest of the market comes whole from market_size, and says so without it.
+    ms8 = [{"view": "overview", "big": "33.3% → 61%", "big_value": 0.333, "big_unit": "share", "big_what": "W", "line": "L"}, {"view": "overview_pic", "order": 0, "key": "gse", "label": "G", "value": 0.333, "n": 1000000, "what": "S"}, {"view": "sentence", "key": "reach", "text": "R."}, {"view": "sentence", "key": "fha_when", "text": "F."}, {"view": "sentence", "key": "fha_note", "text": "N."}]
+    row8, pic8, say8 = front.market_row(ms8)
+    assert (row8["number"], row8["line"], row8["what"]) == ("33.3% → 61%", "L", "W") and pic8[0]["v"] == 0.333 and dict(say8) == {"fha_when": "F."}, (row8, pic8, say8)
+    assert front.market_row([])[0]["number"] is None and front.market_row([])[0]["cap"] is None and front.market_row(ms8)[0]["cap"] == "Share of first-lien loans" and front.market_row([])[0]["line"] == "Sizes are held back: the weekly report says why." and front.market_row([{"view": "sentence", "key": "lead", "text": "HELD BACK."}])[0]["line"] == "HELD BACK.", "the reason beside the dash is the builder's own, or points to the report"
+    # On what market.py really writes: the first screen prints the pair and never a dash, its line carries the reach, and the words under it repeat no sentence of the row. Without the reach the line drops that sentence and says nothing about it.
+    ms_row, ms_pics, ms_say = front.market_row(ms_built)
+    ms_over8 = next(r for r in ms_built if r["view"] == "overview")
+    assert ms_row["number"] == ms_over8["big"] and re.fullmatch(r"\d+\.\d% → \d+%", ms_row["number"]) and "—" not in ms_row["number"] and ms_row["number_value"] == ms_over8["big_value"] and ms_row["what"] == ms_over8["big_what"] and ms_row["line"] == ms_over8["line"] and ms_row["cap"] == "Share of first-lien loans", ms_row
+    assert " times as much." in ms_row["line"] and [k for k, _ in ms_say] == ["fha_when"] and not any(t in ms_row["line"] or " times as much" in t for _, t in ms_say) and [p["x"] for p in ms_pics] == ["gse", "fha", "va", "rest"], (ms_row, ms_say)
+
+    # The whole screen: five rows in order, a tab that exists for each, every number saying what it is, and it holds on any thin input.
+    more8 = {"score_mix": mix8, "adoption": ad_rows, "series": series8, "sellers": sellers8, "seller_monthly": monthly8, "adopters": adopters8, "assumptions": ass8, "rates": rates8, "rules": rules8, "fees": fees8, "market_size": ms8}
+    screen8 = front.screen(more8, c8said, through8, inputs8, "2026-07-01", 6.4)
+    rows8 = [r for r in screen8 if r["view"] == "row"]
+    assert [r["key"] for r in rows8] == ["adoption", "vs4_only", "market", "rate", "price"] and [r["order"] for r in rows8] == [0, 1, 2, 3, 4] and all(r["go"] == front.GO[r["key"]] for r in rows8), rows8
+    assert all(r["number"] and r["what"] and r["line"] and r["cap"] and r["label"] for r in rows8), rows8
+    assert next(r for r in rows8 if r["key"] == "vs4_only")["line"] == "Almost none: 44 of 6,639, 37 of them at A Co, a small lender. Freddie's 1.4% so far is most likely a gap in what its files show, not confirmed; at both GSEs together the most is 1.0% so far. TAIL.", rows8
+    row8v = next(r for r in rows8 if r["key"] == "vs4_only")
+    assert row8v["what"] == "of Fannie's October-issued loans so far show VS4 and no FICO, the most that can be VS4 only there" and row8v["cap"] == 'VS4\'s share: D apps, then Fannie\'s October loans. "At most" counts loans, not FICO pulls cut earlier on a loan that still shows a FICO', row8v
+    assert "so far" not in front.vs4_row({**c8said, "final": True}, inputs8)[0]["what"], "a final month"
+    assert [p["x"] for p in screen8 if p["view"] == "pic" and p["key"] == "vs4_only"] == ["du_app_share", "shows", "priced", "vs_only"] and [r["key"] for r in view8("funnel")][0] == "tu_pull_share", "the pull figure stays in the card's data and its sentence, off the picture"
+    assert front.funnel_cap({**c8said, "funnel": [{"key": "du_app_share", "label": "VS4 in Planted's X apps (May)"}]}).startswith('VS4\'s share: X apps (May), then Fannie\'s October loans. "At most" counts loans') and front.funnel_cap({**c8said, "funnel": []}).startswith('VS4\'s share of Fannie\'s October loans. "At most" counts loans'), "without the private file, no bar and no words for it"
+    # The row's clause on Freddie and both GSEs, each flipped: no gap, FICO's revenue from the follow table's own row, no Freddie, final, and a month past the tail's.
+    vs8 = lambda c=c8said, ms_rows=(), rows=inputs8: front.vs4_row(c, rows, ms_rows)[0]["line"]  # noqa: E731
+    follow8 = {"view": "follow", "key": "today_both", "gse_rev_low": 0.002, "gse_rev_text": "0.2% to 0.5%"}
+    assert "; at both GSEs together the most is 1.0% so far, which would be 0.2% to 0.5% of FICO's revenue. TAIL." in vs8(ms_rows=[follow8]) and "of FICO's revenue" not in vs8(ms_rows=[{**follow8, "gse_rev_low": None, "gse_rev_text": "not known"}]), "FICO's revenue only when the table knows it"
+    assert "Freddie shows 1.4% so far; at both GSEs together the most is 1.0% so far." in vs8({**c8said, "gap": None}) and "gap" not in vs8({**c8said, "gap": None}), "no gap: the figure alone"
+    assert vs8({**c8said, "fh": None}).endswith("a small lender. TAIL.") and vs8({**c8said, "al": None}).endswith("a small lender. TAIL."), "no Freddie or no both-GSE row: no clause"
+    assert "Freddie's 1.4% is most likely" in vs8({**c8said, "far_fh": ""}) and "the most is 1.0%." in vs8({**c8said, "far_all": ""}), "each with its own so far"
+    assert vs8({**c8said, "big": {"fn_vo": 30, "short": "Big Co"}}).startswith("Almost none: 44 of 6,639, 30 of them at Big Co, 37 of them at A Co, a small lender."), "the large lender first"
+    assert vs8({**c8said, "matters": False}).startswith("Almost none: 44 of 6,639. Freddie's"), "no small lender to name"
+    assert vs8({**c8said, "fn": {**c8said["fn"], "vs_only_share": 0.02}}).startswith("133 of 6,639, 37 of them at A Co"), "past almost none, the count alone: the row's what says the rest"
+    # The real test: while its months hold, then the window's words, and in neither once Rocket or UWM has stopped showing a FICO on most loans, when the test is under way.
+    assert vs8({**c8said, "month": "2026-11-01"}).endswith("so far. LINE WINDOW.") and vs8({**c8said, "month": "2027-01-01"}).endswith("so far. LINE WINDOW."), "the window"
+    assert vs8({**c8said, "month": "2027-02-01"}).endswith("the most is 1.0% so far."), "after it, neither"
+    moved8 = [{**r, "fn_priced_fico": r["fn_priced"] // 2} if r.get("short") == "Rocket" else r for r in c8said["lenders"]]
+    assert vs8({**c8said, "lenders": moved8}).endswith("the most is 1.0% so far.") and vs8({**c8said, "lenders": moved8, "month": "2026-11-01"}).endswith("the most is 1.0% so far."), "the test has begun"
+    # The price row past the point where keeping FICO pays: the rate row's own words on FICO's units stay off. Short of it they stand.
+    many8 = {**c8said, "bands": [dict(b, both=b["both"] * 10) for b in c8said["bands"]]}
+    rate_said8 = lambda more: {r["key"] for r in front.screen(more, many8, through8, inputs8, "2026-07-01", 6.4) if r["view"] == "sentence" and r["row"] == "rate"}  # noqa: E731
+    assert "fico" in rate_said8(more8) and "fico" not in rate_said8({**more8, "assumptions": [dict(r, value=16.0) if r["key"] == "price_per_score" else r for r in ass8]}) and "fico" not in rate_said8({**more8, "assumptions": fee8(34.0)}) and "difference" in rate_said8({**more8, "assumptions": fee8(34.0)}), "each way past it"
+    # Row 1's fact only while Fannie's month as a whole shows a FICO: here Rocket and UWM do, and A Co's loans take the month under KEEPS. With the month over it, the fact stands.
+    adoption_line8 = lambda c: next(r for r in front.screen(more8, c, through8, inputs8, "2026-07-01", 6.4) if r["view"] == "row" and r["key"] == "adoption")["line"]  # noqa: E731
+    assert not front.all_keep(c8said["lenders"]) and "ADOPTION TAIL." not in adoption_line8(c8said) and "ADOPTION TAIL." in adoption_line8({**c8said, "lenders": [dict(r, fn_priced_fico=r["fn_priced"]) if r.get("total") else r for r in c8said["lenders"]]}), "the screen passes the month's own guard"
+    # The Overview chart's note: only with a likely gap at Freddie, and while Freddie holds most of the slice.
+    wk8s = lambda fh, al: [{"view": "week", "agency": "FHLMC", "vs_only_share": fh, "loans": 100}, {"view": "week", "agency": "All", "vs_only_share": al, "loans": 300}]  # noqa: E731
+    assert front.slice_note(wk8s(0.02, 0.01), True) == 'Most of "Shows VS4 only, at most" here is Freddie\'s, most likely a gap in what its files show, not confirmed.' and front.slice_note(wk8s(0.02, 0.01), None) is None and front.slice_note(wk8s(0.01, 0.01), True) is None and front.slice_note([], True) is None, "each guard"
+    assert next(r for r in screen8 if r["view"] == "meta")["slice_note"] == front.slice_note(mix8, c8said["gap"]) and c8said["gap"], "the screen carries it"
+    note8 = lambda c: next(r for r in front.screen(more8, c, through8, inputs8, "2026-07-01", 6.4) if r["view"] == "meta")["slice_note"]  # noqa: E731
+    assert note8({**c8said, "gap": None}) and not note8({**c8said, "gap_chart": None}), "it goes by the gap the charts still draw, which outlasts the month's own while Freddie's files stop short"
+    assert next(r for r in screen8 if r["view"] == "meta")["line"] == "FRAME $12." and {p["key"] for p in screen8 if p["view"] == "pic"} == {"adoption", "vs4_only", "market", "rate", "price"} and all(p["what"] for p in screen8 if p["view"] == "pic"), screen8
+    assert next(r for r in front.screen({**more8, "assumptions": [dict(r, value=33.0) if r["key"] == "closing_fee" else r for r in ass8]}, c8said, through8, inputs8, "2026-07-01") if r["view"] == "meta")["line"] is None, "the frame only on the price with no fee on a funded loan"
+    assert next(r for r in front.screen(more8, c8said, through8, {**inputs8, "front_frame": {"text": "FRAME {prices}."}}, "2026-07-01") if r["view"] == "meta")["line"] is None and next(r for r in front.screen({**more8, "assumptions": [dict(r, value=10.5) if r["key"] == "price_per_score" else r for r in ass8]}, c8said, through8, inputs8, "2026-07-01") if r["view"] == "meta")["line"] == "FRAME $10.50.", "a mistyped placeholder never prints, and the price prints as quoted"
+    assert "fico" not in dict(front.rate_row(rates8, rules8, fees8, lend8, True, 6.4, {**inputs8, "rate_fico": {"text": "RATE FICO {shares}."}}, 0.38)[2]) and front._fill("A {share}", "share", "5%") == "A 5%" and front._fill("A {shares}", "share", "5%") is None and front._fill(None, "share", "5%") is None and front._fill("", "share", "5%") is None, "the same for the other lines with a figure in them"
+    assert front._funnel({"tu_pull_share": {"value": 35.0, "text": "T {share}"}, "du_app_share": {"value": 0.0, "text": "D {share}"}}, None, None) == [] and front._funnel({"tu_pull_share": {"value": 0.3, "label": "T", "text": "T {shares}"}}, None, None)[0]["said"] is None and front.funnel_words(front._funnel({"tu_pull_share": {"value": 0.3, "label": "T", "text": "T {shares}"}, "du_app_share": {"value": 0.4, "label": "D", "text": "D {share}"}}, None, None), None) is None, "a figure past 100% or a mistyped placeholder prints nothing"
+    # The date on the first screen: a GSE whose files stop earlier does not read as covered to the later day. These planted files stop at Freddie on Oct 6.
+    assert next(r for r in screen8 if r["view"] == "meta")["dated"] == "Data through Oct 27, 2026 at Fannie, Oct 6 at Freddie.", screen8
+    assert front.dated_words(through8, {"FNMA": "2026-10-27", "FHLMC": "2026-10-27"}) == "Data through Oct 27, 2026." and front.dated_words(through8, {"FHLMC": "2026-10-20"}) == "Data through Oct 27, 2026." and front.dated_words(through8, {}) == "Data through Oct 27, 2026."
+    # Step 1's line beside the statements: a row only with the GSEs' own figure and a whole, final quarter.
+    quarter8 = [{"view": "quarter", "start": "2026-07-01", "agency": a, "months": 3, "complete": True, "vs4_priced_share": 0.08, "vs4_priced_upb_share": 0.081} for a in ("All", "FNMA", "FHLMC")]
+    said8q = [r for r in front.screen({**more8, "score_mix": [*mix8, *quarter8]}, c8said, through8, {**inputs8, "gse_own_q3_share": {"value": 0.10, "from_month": "2026-07-01"}}, "2026-07-01") if r["view"] == "said_check"]
+    assert [r["key"] for r in said8q] == ["gse_q3"] and "against the GSEs' own about 10%" in said8q[0]["text"], said8q
+    assert not [r for r in screen8 if r["view"] == "said_check"] and not [r for r in front.screen({**more8, "score_mix": [*mix8, *quarter8]}, c8said, through8, inputs8, "2026-07-01") if r["view"] == "said_check"], "no figure of theirs, no line"
+    for empty_more in ({}, {"score_mix": mix8}, {**more8, "rates": [], "fees": [], "market_size": []}):
+        assert [r["key"] for r in front.screen(empty_more, c8said, through8, {}, "2026-07-01") if r["view"] == "row"] == ["adoption", "vs4_only", "market", "rate", "price"], empty_more
+    # Thin shapes: no Fannie row in the month, no month at all, no loans at all, and a private file that is missing or will not parse. Each builds, and what is built can be written.
+    card8t, c8t = front.card(c8, [r for r in mix8 if r["agency"] != "FNMA"], through8, inputs8, names8)
+    assert not any(r["view"] == "sentence" and r["key"] in ("lead", "weeks", "trend", "bands") for r in card8t) and next(r["text"] for r in card8t if r["view"] == "sentence" and r["key"] == "freddie").startswith("Freddie shows 1.4% so far."), card8t
+    card8e, c8e = front.card(c8, [], through8, inputs8, names8)
+    assert next(r for r in card8e if r["view"] == "meta")["month"] is None and not [r for r in card8e if r["view"] in ("lender", "band", "gse")] and [r["key"] for r in card8e if r["view"] == "funnel"] == ["tu_pull_share", "du_app_share"], card8e
+    assert [r["line"] for r in front.screen({}, c8e, through8, inputs8, "2026-07-01") if r["view"] == "row"][1] == TOO_FEW
+    c9 = duckdb.connect()
+    c9.execute("CREATE TABLE loans (first_intraday_date DATE)")
+    assert front.build_datasets(c9, {}, "2026-07-01") == {"vs4_only": [], "front": []}
+    assert front.load_inputs(home / "no_such_file.csv") == {}
+    (home / "bad_inputs.csv").write_text("key,value,text\nx,not a number,\ny,0.5,kept\n")
+    assert front.load_inputs(home / "bad_inputs.csv")["x"]["value"] is None and front.load_inputs(home / "bad_inputs.csv")["y"]["value"] == 0.5, "one bad figure drops that figure, not the file"
+    (home / "nan_inputs.csv").write_text("key,value,text\nx,nan,\ny,inf,\nz,0.5,kept\n")
+    assert [front.load_inputs(home / "nan_inputs.csv")[k]["value"] for k in "xyz"] == [None, None, 0.5], "nan and inf are no figure: a browser cannot read them"
+    (home / "odd_inputs.csv").write_bytes(b"\xef\xbb\xbfkey,value,text,from_month,until_month\ncomma,,a,b,,,,\nslash,,T,11/1/2026,\nslash_end,,T,,2/1/2027\nkept,,T,2026-11-01,2027-02-01\n")
+    assert set(front.load_inputs(home / "odd_inputs.csv")) == {"kept"} and front._say(front.load_inputs(home / "odd_inputs.csv"), "kept", "2026-11-01") == "T", "a saved BOM reads, a stray comma or a date not written 2026-11-01 drops that row, and the inputs check names it"
+    (home / "good_inputs.csv").write_text('key,value,label,what,text,from_month,until_month,source,url,date\nfront_frame,,,,"FRAME {price}.",,,,,\nvs4_line_tail,,,,TAIL.,,2026-11-01,,,\ntu_pull_share,0.31,T,TW,,,,S,https://example.com/t,2026-01-02\n')
+    good8 = front.load_inputs(home / "good_inputs.csv")
+    assert good8["tu_pull_share"]["value"] == 0.31 and front._say(good8, "vs4_line_tail", "2026-10-01") == "TAIL." and front._say(good8, "vs4_line_tail", "2026-11-01") is None and front._say(good8, "front_frame") == "FRAME {price}." and front._say(good8, "no_key") is None and front._say({"k": {"text": "T", "from_month": "2026-11-01"}}, "k", "2026-10-01") is None, good8
+    front.INPUTS, real_inputs8 = home / "good_inputs.csv", front.INPUTS
+    both8 = front.build_datasets(c8, more8, "2026-07-01")
+    front.INPUTS = real_inputs8
+    json.dumps(both8, allow_nan=False)
+    assert all(len({tuple(sorted(r)) for r in rows}) == 1 for rows in both8.values()) and [r["key"] for r in both8["front"] if r["view"] == "row"] == ["adoption", "vs4_only", "market", "rate", "price"], "each file's rows share one set of fields"
+    assert "about $" in next(r["text"] for r in both8["front"] if r["view"] == "sentence" and r["key"] == "difference"), "the note rate comes from the loans"
+    # Through the whole builder: Fannie's month-end file in and Freddie's not, read from adoption, so each GSE's words say which it is.
+    front.INPUTS = home / "good_inputs.csv"
+    both8f = front.build_datasets(c8, {**more8, "adoption": [*ad_rows, {"agency": "FNMA", "month": "2026-10-01", "final": True}, {"agency": "FHLMC", "month": "2026-10-01", "final": False}]}, "2026-07-01")
+    both8ff = front.build_datasets(c8, {**more8, "adoption": [*ad_rows, {"agency": "FNMA", "month": "2026-10-01", "final": True}, {"agency": "FHLMC", "month": "2026-10-01", "final": True}]}, "2026-07-01")
+    both8h = lambda fn_scored: front.build_datasets(c8, {**more8, "adoption": [*ad_rows, {"agency": "FNMA", "month": "2026-10-01", "final": True, "scored_loans": fn_scored}, {"agency": "FHLMC", "month": "2026-10-01", "final": False}]}, "2026-07-01")  # noqa: E731
+    assert next(r for r in both8h(6640)["vs4_only"] if r["view"] == "meta")["final"] is True and next(r for r in both8h(9000)["vs4_only"] if r["view"] == "meta")["final"] is False and "October-issued loans so far" in next(r["what"] for r in both8h(9000)["vs4_only"] if r["view"] == "gse" and r["key"] == "fnma"), "the month-end file holds a quarter more than the card can count, so its count is still so far"
+    front.INPUTS = real_inputs8
+    assert next(r for r in both8ff["vs4_only"] if r["view"] == "meta")["final_fh"] is True and not [r for r in both8ff["vs4_only"] if r["view"] == "gse" and "so far" in r["what"]], both8ff
+    meta8f = next(r for r in both8f["vs4_only"] if r["view"] == "meta")
+    assert meta8f["final"] is True and meta8f["final_fh"] is False and next(r["what"] for r in both8f["vs4_only"] if r["view"] == "gse" and r["key"] == "fhlmc").endswith("so far") and "so far" not in next(r["text"] for r in both8f["vs4_only"] if r["view"] == "sentence" and r["key"] == "lead") and "so far" in next(r["what"] for r in both8f["front"] if r["view"] == "row" and r["key"] == "adoption") and "so far" not in next(r["what"] for r in both8f["front"] if r["view"] == "row" and r["key"] == "vs4_only"), both8f
+    # The words themselves: plain, and a score not shown stays unknown. The private text here is planted, so nothing here holds a finding.
+    said_all = [r["line"] for r in screen8 if r["view"] == "row"] + [r["text"] for r in screen8 if r["view"] == "sentence"] + [r["text"] for r in card8 if r["view"] == "sentence"] + [r[k] for r in [*card8, *screen8] for k in ("what", "cap") if r.get(k)]
+    for line in said_all:
+        assert not re.search(r"\b(a|the|first|this|that|our) read\b|\brung\b|\bfold\b|the pick\b|ha(s|ve) no (Classic )?FICO|with no (Classic )?FICO\b|no FICO on\b|no sign of|like FICO|±", line), line
+        assert not re.search(r"\b[a-z]{2,}\d+(\.\d+)?%", line), line
+    # Nothing here is typed into the source: no figure and no lender's name in a template of the module. Thresholds are named constants, and the private words stay out of the repo.
+    front_src = (gse_paths.REPO / "src" / "gsescore" / "front.py").read_text()
+    assert not re.search(r"\btoday\(|\bnow\(|current_date|current_timestamp", front_src), "the module holds no clock: the month, the weeks and the words follow the data"
+    front_tree = ast.parse(front_src)
+    front_docs = {id(n.body[0].value) for n in ast.walk(front_tree) if isinstance(n, (ast.Module, ast.FunctionDef)) and isinstance(n.body[0], ast.Expr)}
+    for node in ast.walk(front_tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in front_docs:
+            assert not re.search(r"(?<![.\d])\d+%|\$\d|\bRocket\b|\bUWM\b|\bAmeriSave\b|\bloanDepot\b", node.value.replace("95% range", "")), node.value
+    assert not (gse_paths.REPO / "reference" / "front_inputs.csv").exists() and "data/private" not in (gse_paths.REPO / ".gitignore").read_text() and "/data/" in (gse_paths.REPO / ".gitignore").read_text(), "the private file sits under data/, which git ignores"
+
+
+check_front_datasets()
+# A hand edit of the assumptions that is not a number keeps the last build's value and says so, so the weekly run goes on. Nothing here reads real data.
+from gsescore import exposure as exposure_mod  # noqa: E402
+
+real_assumptions, slip_assumptions = exposure_mod.ASSUMPTIONS_CSV, home / "slip_assumptions.csv"
+slip_assumptions.write_text("key,label,value,unit,kind,note,source,url,date\nprice_per_score,Price,$12,usd,source,,,,\nvs_price,VS4 price,,usd,source,,,,\nbureaus,Bureaus,2,count,judgment,,,,\nnot_finite,Not finite,inf,count,judgment,,,,\n")
+exposure_mod.ASSUMPTIONS_CSV = slip_assumptions
+import duckdb as slip_duckdb  # noqa: E402
+
+slip_con = slip_duckdb.connect()
+slip_con.execute("CREATE TABLE monthly (agency VARCHAR, final BOOLEAN, scored_loans INT, month DATE)")
+slip_con.execute("CREATE TABLE loans (issue_month DATE, num_borrowers DOUBLE)")
+slip_got = {r["key"]: r["value"] for r in exposure_mod.build_datasets(slip_con, [])["assumptions"]}
+assert slip_got["price_per_score"] == fr_price and slip_got["bureaus"] == 2.0 and slip_got["not_finite"] is None, slip_got
+assert exposure_mod.assumption_slips() == [f"assumptions: {k} in reference/assumptions.csv is not a number, so the last build's value stands" for k in ("price_per_score", "vs_price", "not_finite")], exposure_mod.assumption_slips()
+assert market.market_warnings()[:1] == ["assumptions: price_per_score in reference/assumptions.csv is not a number, so the last build's value stands"], market.market_warnings()
+exposure_mod.ASSUMPTIONS_CSV = home / "no_such_assumptions.csv"
+assert exposure_mod.assumption_slips()[0].startswith("assumptions: could not read reference/assumptions.csv"), "and never raises"
+exposure_mod.ASSUMPTIONS_CSV = real_assumptions
+assert exposure_mod.assumption_slips() == [], "the file as it stands"
+# Fannie's month shows too few second scores: its share is not today's, for the calculator or the workbook, so the last build's stands, at Fannie and at both GSEs. Without a last build, the month's own.
+slip_mix = lambda **fn: [{"view": "month", "agency": "All", "headline": True, "start": "2026-11-01", "vs_only_share": 0.0271, "vs4_priced_share": 0.09}, {"view": "month", "agency": "FNMA", "headline": True, "start": "2026-11-01", "vs_only_share": 0.0123, "vs4_priced_share": 0.09, "both_fico_share": 0.1, "both_vs_share": 0.08, **fn}]  # noqa: E731
+slip_last = home / "site" / "data" / "assumptions.json"
+slip_kept = slip_last.read_text()
+slip_read = lambda mix: {r["key"]: r for r in exposure_mod.build_datasets(slip_con, mix)["assumptions"]}  # noqa: E731
+slip_last.write_text(json.dumps({"rows": [{"key": "no_fico_fnma", "value": 0.0044}, {"key": "no_fico_all", "value": 0.0188}]}))
+assert (slip_read(slip_mix())["no_fico_fnma"]["value"], slip_read(slip_mix())["no_fico_all"]["value"]) == (0.0123, 0.0271) and (slip_read(slip_mix(both_fico_share=0.0, both_vs_share=0.0))["no_fico_fnma"]["value"], slip_read(slip_mix(both_fico_share=0.0, both_vs_share=0.0))["no_fico_all"]["value"]) == (0.0044, 0.0188) and slip_read(slip_mix(both_fico_share=0.2, both_vs_share=0.0))["no_fico_fnma"]["value"] == 0.0044, "both sides blanked, and one"
+assert slip_read(slip_mix())["no_fico_fnma"]["note"].endswith("Some lenders show fewer of their scores at Freddie Mac, so Fannie Mae's share says more about lenders."), slip_read(slip_mix())["no_fico_fnma"]["note"]
+slip_last.write_text('{"rows": []}')
+assert slip_read(slip_mix(both_fico_share=0.0, both_vs_share=0.0))["no_fico_fnma"]["value"] == 0.0123, "no last build to fall back on"
+slip_last.write_text(slip_kept)
+# The tracker's quarter beside the GSEs' own figure. Planted numbers only. It speaks of a difference only when both GSEs sit outside that figure's rounding, by loans and by balance.
+from gsescore.front import said_gse_q3  # noqa: E402
+
+said_mix = lambda fn, fnu, fh, fhu, **kw: [{"view": "quarter", "start": "2026-07-01", "agency": a, "months": 3, "complete": True, "vs4_priced_share": s, "vs4_priced_upb_share": u, **kw} for a, s, u in (("All", 0.08, 0.08), ("FNMA", fn, fnu), ("FHLMC", fh, fhu))]  # noqa: E731
+said_own = {"value": 0.10, "from_month": "2026-07-01"}
+said_line = lambda mix, own=said_own: (said_gse_q3(mix, own) or {}).get("text")  # noqa: E731
+assert said_line(said_mix(0.08, 0.081, 0.07, 0.071)) == "By issue month here, VS4 priced 8.0% of Q3 loans (Fannie Mae 8.0%, Freddie Mac 7.0%), 8.0% by balance, against the GSEs' own about 10%. They round to a whole percent and count on their own basis; the cause of the difference is not established."
+assert said_line(said_mix(0.098, 0.101, 0.103, 0.099)).endswith("8.0% by balance, which rounds to the GSEs' own about 10%.")  # inside the rounding: no difference to explain
+assert said_line(said_mix(0.08, 0.081, 0.101, 0.102)).endswith("8.0% by balance. The GSEs report about 10% on their own basis.")  # one in, one out: no claim
+assert said_line(said_mix(0.12, 0.13, 0.111, 0.12)).endswith("the cause of the difference is not established.")  # above works too
+assert said_line(said_mix(0.08, 0.081, 0.07, 0.071, months=2)) is None and said_line(said_mix(0.08, 0.081, 0.07, 0.071, complete=False)) is None  # a quarter not whole or not final
+assert said_line([]) is None and said_line(said_mix(0.08, 0.081, 0.07, 0.071), None) is None and said_line(said_mix(0.08, 0.081, 0.07, 0.071), {"value": 0.1, "from_month": "2026-10-01"}) is None  # no input, or a quarter not in the data
 
 # The Rates tab reads only what the builder writes, on planted data: every meta field and limit key, every field of a row, and each lender read. A term on the page has its definition.
 page_js = (dashboard_page / "app.js").read_text()
+assert all(f"'{go}'" in re.search(r"const TABS = \[(.*?)\]", page_js).group(1) for go in front_mod.GO.values()), "each row's tab exists"
 rates_js = page_js[page_js.index("// ---- Rates ----"):page_js.index("// Dollars at any size")]
 meta_reads = set(re.findall(r"\bmeta\.(\w+)", rates_js)) | set(re.findall(r"rateLine\('[\w-]+', '(\w+)'", rates_js)) | set(re.findall(r"metaNote\('(\w+)'\)", rates_js)) | {"said_check"}
 assert meta_reads == {"answer", "stamp", "dated", "changed", "expected", "rule_at_lock", "test_line", "rc_reason", "number_blend", "number_why", "number_bands", "milliman_line", "equivalent_stat", "equivalent_caption", "equivalent_more", "llpa_sum", "llpa_share", "said_check", "gap_line", "lender_rates", "score_lead", "sample", "offset_tail"}, meta_reads  # lender_line stays in the data, for the workbook
 assert meta_reads <= set(meta_a) and all(meta_a["view"] == "meta" and k in views_d["meta"][0] for k in meta_reads), meta_reads - set(meta_a)
-assert ".said_check" in page_js[page_js.index("function saidCheck"):page_js.index("function drawSaid")] and "rowsOf('rates')" in page_js[page_js.index("function saidCheck"):page_js.index("function drawSaid")]
+assert ".said_check" in page_js[page_js.index("function saidCheck"):page_js.index("function drawSaid")] and "rowsOf('rates')" in page_js[page_js.index("function saidCheck"):page_js.index("function drawSaid")] and "rowsOf('front')" in page_js[page_js.index("function saidCheck"):page_js.index("function drawSaid")]
 limit_reads = set(re.findall(r"limitOf\('(\w+)'\)", rates_js))
 assert limit_reads == {"note_rate", "selected", "rests_on", "same_loans", "line", "past", "ranges", "left_out", "method", "thin", "match", "book", "rebuilt"}, limit_reads  # grid stays in the data, for the workbook
 assert limit_reads <= {r["key"] for r in views["limit"]} | {r["key"] for r in views_d["limit"]} | {r["key"] for r in views_d3["limit"]} | {r["key"] for r in views_line["limit"]} | {r["key"] for r in views_between["limit"]} | {r["key"] for r in views_past["limit"]}, limit_reads
@@ -3085,6 +4094,54 @@ assert all(f"['{key}', '" in rates_js and key in {r["key"] for r in views["steps
 assert {"month", "fade", "gapband"} == set(re.findall(r"r\.scope === '(\w+)'", rates_js)) - {"all", "group"} and {"month", "fade", "gapband"} <= {r["scope"] for r in views["same_number"]}, "chart 2 and More cuts"
 assert all(f"{read}_{part}" in built_a[0] for read in ("same_fico", "same_llpa", "same_number") for part in ("dot", "lo", "hi", "n", "weeks", "rough")) and "correspondent_out" in built_a[0], "what a lender's cell and the company card read"
 page_tools = (dashboard_page / "tools.js").read_text()
+carry_over, carry_lender = page_tools[page_tools.index("function drawCarryOverview"):page_tools.index("function drawCarryLender")], page_tools[page_tools.index("function drawCarryLender"):page_tools.index("function drawLenderSplit")]
+assert "r.complete" in page_tools[page_tools.index("const openWeek"):page_tools.index("vx.openWeek")] and "open: open(r.start)" in carry_over and "open: open(r.start)" in carry_lender and "' so far'" in carry_over and "' so far'" in carry_lender and "'Fainter: week not over'" in page_tools[page_tools.index("function drawCarry("):page_tools.index("function drawCarryOverview")] and "vx.openWeek(p.agency)" in (dashboard_page / "visuals.js").read_text(), "a week not over reads as one on the weekly charts, so a day's deliveries do not look like a jump"
+# A week not over with too few loans is not drawn at all, on every chart that reads coveredWeek and on the week card's frozen figures. One with enough is drawn fainter, with so far on its hover. A lender's charts keep their own 20-loan minimum.
+page_who = (dashboard_page / "visuals.js").read_text()
+page_who = page_who[page_who.index("function drawWho"):page_who.index("function drawFrozen")]
+page_frozen = (dashboard_page / "visuals.js").read_text()
+page_frozen = page_frozen[page_frozen.index("function drawFrozen"):page_frozen.index("// ---- The first screen ----")]
+assert "OPEN_MIN = 2000" in page_tools and "!(open(r.start) && r.loans < OPEN_MIN)" in page_tools[page_tools.index("const coveredWeek"):page_tools.index("vx.coveredWeek")] and "covered(r) ? r[f] : null" in page_tools[page_tools.index("function drawNote"):page_tools.index("function drawCarry(")] and "covered(r)" in page_who and "covered(r)" in page_frozen and "gap: !covered(r)" in carry_over and "r.n >= CELL_MIN" in carry_lender and "coveredWeek" not in carry_lender, "one test, four readers, and the lender charts their own"
+assert "`A week with too few loans showing every score so far is left out. ${note.textContent}`" in carry_over and "'Too few loans show every score so far'" in page_tools[page_tools.index("function drawCarry("):page_tools.index("function drawCarryOverview")], "the note and the hover"
+assert ".attr('fill-opacity', open(d.key) ? vx.OPEN_FILL : 1)" in page_who and "${open(d.key) ? ' so far' : ''}" in page_who and "' Fainter: week not over.'" in page_who and "'Fainter: week not over'" in page_frozen and "transparent)`, 'Fainter: week not over', 'box']" in (dashboard_page / "visuals.js").read_text(), "Why the weeks jump, the frozen chart and the card's legend"
+assert "finals.get(r.start) === false ? ' so far' : ''" in carry_lender, "a lender's month not over says so on hover"
+from gsescore.aggregate import EVENTS as aggregate_events  # noqa: E402
+
+# The week card: a left-out week prints no change figure against a week of other deliveries, and says whose loans it holds. With the weekly file failed, the frozen figures have no way to know a week is covered, and neither chart beside the main one draws.
+page_note = page_tools[page_tools.index("function drawNote"):page_tools.index("function drawCarry(")]
+assert "card('Priced on VS4, as delivered', cur.vs4_share, covered(m) && !(cur.partial && cur.loans < OPEN_MIN) ? prev && prev.vs4_share : null)" in page_note and "${cur.fnma_loans === cur.loans ? 'Fannie only this week' : !cur.fnma_loans ? 'Freddie only this week' : 'Both GSEs'}, share of loans." in page_note and "statusOf('weekly') === 'ok' && covered(r) ? r[f] : null" in page_note and "statusOf('lender_mix', 'score_mix', 'weekly')" in page_who and "statusOf('score_mix', 'weekly')" in page_frozen, "the week card, and a failed weekly file"
+assert "node('div', 'vx-lbl', 'Loans that could show both scores')" in page_note and "[null, 'Loans that could show both scores', int(n(r))]" in (dashboard_page / "visuals.js").read_text() and "Loans first seen" not in page_note and "'Loans first disclosed'" not in (dashboard_page / "visuals.js").read_text(), "these counts hold only the loans whose records carry the Indicator"
+assert "tag.textContent = freddie.tag || meta.fh_tag || '';" in (dashboard_page / "visuals.js").read_text() and "tag.hidden = !tag.textContent;" in (dashboard_page / "visuals.js").read_text(), "the chart's tag follows the month both GSEs reach, while its files stop short"
+assert 'id="who-note" data-clamp="0"' in (dashboard_page / "index.html").read_text(), "no legend on that chart, so its note shows whole"
+page_method = (dashboard_page / "index.html").read_text()
+assert "A week not over with under 2,000 such loans is left out the same way, since it is a day's deliveries." in page_method and "nearly every record published from then on carries it" in page_method and "; every record published" not in page_method, "the Method gives the rule, and says nearly"
+assert ("2026-09-09", "VS4 open to all sellers") in aggregate_events, "the date the market row gives"
+# Priced on VS4, by week: the same rule, on the one chart that reads the weekly file directly. A lender's own weekly chart keeps its bars.
+page_weekly, page_bars = page_js[page_js.index("function drawWeekly"):page_js.index("function drawEventList")], page_js[page_js.index("function weeklyBars"):page_js.index("function drawMonthly")]
+assert "vx.OPEN_MIN = OPEN_MIN;" in page_tools and "window.vx?.OPEN_MIN ?? 0" in page_weekly and "OPEN_MIN" not in page_bars and "Week of ${shortDay(r.week)}${r.complete ? '' : ', so far'}" in page_bars and "(partial)" not in page_bars, "the chart's rule and its hover"
+assert "Bars are weekly; the line is a four-week average. Fainter: week not over; one with under 2,000 loans so far is left out." in page_method and "The latest week is partial." not in page_method, "its note"
+assert '<p class="vx-note" data-clamp="0">Loans by the week they first appeared' in page_method, "no Fainter key in that chart's legend, so its note shows whole"
+# The same week stays off the trend chart by week, and a lender's weekly chart drops a week not over with too few of its loans. The week card gives no change for a one-day week, even with the weekly file failed.
+page_clean, page_seller_weekly = page_js[page_js.index("function drawClean"):page_js.index("seriesChart(document.getElementById('clean-a-chart')")], page_js[page_js.index("function drawSellerWeekly"):page_js.index("function drawSplits")]
+assert "window.vx?.OPEN_MIN ?? 0" in page_clean and "!(r.complete === false && r.scored < openMin)" in page_clean, "the trend chart by week"
+assert "const OPEN_LENDER_MIN = 20;" in page_js and "!(r.complete === false && r.scored < OPEN_LENDER_MIN)" in page_seller_weekly, "a lender's weekly chart"
+assert "OPEN_MIN" in page_tools[page_tools.index("const SPLIT_MIN"):page_tools.index("vx.coveredWeek")], "the week card reads the same limit"
+if shutil.which("node"):  # the filter itself, cut from the page, on planted weeks: on the line, past it, a whole week, another GSE, and with the limit not there yet
+    weekly_filter = re.search(r"rowsOf\('weekly'\)\.filter\((\(r\) => .+?)\),\n", page_weekly).group(1)
+    weekly_plant = "const planted = [{agency: 'All', week: 'thin', scored_loans: 1999, complete: false}, {agency: 'All', week: 'enough', scored_loans: 2000, complete: false}, {agency: 'All', week: 'whole', scored_loans: 12, complete: true}, {agency: 'FNMA', week: 'other', scored_loans: 9000, complete: true}];\nconst p = {agency: 'All'};\nconst run = (window) => { const openMin = window.vx?.OPEN_MIN ?? 0; return planted.filter(" + weekly_filter + ").map((r) => r.week); };\nconsole.log(JSON.stringify([run({vx: {OPEN_MIN: 2000}}), run({vx: {}}), run({})]));\n"
+    weekly_run = subprocess.run(["node", "-e", weekly_plant], capture_output=True, text=True, timeout=60)
+    assert weekly_run.returncode == 0 and json.loads(weekly_run.stdout) == [["enough", "whole"], ["thin", "enough", "whole"], ["thin", "enough", "whole"]], (weekly_run.stdout, weekly_run.stderr[:300])
+if shutil.which("node"):  # the test itself, on planted weeks: on a week not over, on the 2,000-loan line and on COVER_MIN's
+    week_src = page_tools[page_tools.index("const SPLIT_MIN"):page_tools.index("vx.coveredWeek")] + page_tools[page_tools.index("const openWeek"):page_tools.index("vx.openWeek")]
+    week_plant = """const planted = [{agency: 'All', week: 'thin', scored_loans: 1999, complete: false}, {agency: 'All', week: 'enough', scored_loans: 2000, complete: false}, {agency: 'All', week: 'low', scored_loans: 3000, complete: false}, {agency: 'All', week: 'whole', scored_loans: 100, complete: true}, {agency: 'All', week: 'part', scored_loans: 1000, complete: true}, {agency: 'FNMA', week: 'thin', scored_loans: 9000, complete: true}];
+const rowsOf = () => planted;
+""" + week_src + """
+const covered = coveredWeek('All');
+console.log(JSON.stringify([['thin', 1999], ['enough', 2000], ['low', 2000], ['whole', 100], ['part', 500], ['none', 5]].map(([start, loans]) => covered({start, loans}))));
+"""
+    week_run = subprocess.run(["node", "-e", week_plant], capture_output=True, text=True, timeout=60)
+    assert week_run.returncode == 0 and json.loads(week_run.stdout) == [False, True, False, True, False, True], (week_run.stdout, week_run.stderr[:300])
+assert 'id="note-dated"' in (dashboard_page / "index.html").read_text() and "getElementById('note-dated')" in page_tools and "rowsOf('front')" in page_tools[page_tools.index("function drawNote"):page_tools.index("function drawCarry(")], "the week card says when one GSE's files stop early"
 assert "rateText('rl-rates'" in rates_js and "hit.index + 1" in rates_js, "the lender line is drawn, and a sentence's stop stays with it"
 assert "vx.inLabel = inLabel" in page_tools and "window.vx.inLabel" in rates_js and "d.scope === 'card'" in page_tools and "readText(r[`${k}_dot`]" in page_tools, "chart 2's month tags and the company card's block"
 assert "rateList('ra-limits', st, [limitOf('note_rate'), limitOf('rests_on')], left, true)" in rates_js and "rateText('ra-selected', st === 'loading' ? 'ok' : st, limitOf('selected'), new Map(), runIn)" in rates_js and "el.replaceChildren(...parts(shown, left))" in rates_js, "the limits open on the page, in order, and the verdict under the lead with its head and no skeleton"
@@ -3222,8 +4279,58 @@ if shutil.which("node"):
         script_check = subprocess.run(["node", "--check", str(dashboard_page / script_name)], capture_output=True, text=True, timeout=60)
         assert script_check.returncode == 0, (script_name, script_check.stderr[:300])
 assert "A lender can change its pick at once, but rates on loans locked since then take weeks to reach the files." in page_index and "loans priced for it" not in page_index and "'An approximate range for the estimate, from resampling lender and channel groups, or weeks inside them on Which FICO. At the switch point it comes from that fit\\'s own error. Ends in the text are rounded outward. It does not cover points, credits or lock dates.'" in page_visuals, "the words on other tabs that spoke of the same things"
-assert 'class="h-top2"' in page_index and "TOP_SHORT = { 'ROCKET MORTGAGE, LLC': 'Rocket', 'UNITED WHOLESALE MORTGAGE, LLC': 'UWM' }" in page_js and "'Two lenders'" in page_js and 'of <span class="mx-month" data-source="score_mix" data-field="start">—</span> loans have a Classic FICO.' in page_index, "the header names the two lenders where the file's two are the ones it knows, and gives the share its month"
+# The public page keeps its old header until the user asks to publish the new one, so its pin moves there.
+public_index, public_js = (public_page / "index.html").read_text(), (public_page / "app.js").read_text()
+assert 'class="h-top2"' in public_index and "TOP_SHORT = { 'ROCKET MORTGAGE, LLC': 'Rocket', 'UNITED WHOLESALE MORTGAGE, LLC': 'UWM' }" in public_js and "'Two lenders'" in public_js and 'of <span class="mx-month" data-source="score_mix" data-field="start">—</span> loans have a Classic FICO.' in public_index, "the public header names the two lenders where the file's two are the ones it knows, and gives the share its month"
+# The private page's first screen: a title, one line from the data, the tabs in the reader's order, then five rows that each open a tab. Every sentence comes from the data, so the page holds no finding.
+assert "<h1>FICO and VantageScore in mortgages: who gets paid</h1>" in page_index and 'class="vx-takeaway dash-skeleton" id="front-line" data-source="front" data-field="line" data-where="view=meta"' in page_index, "the header"
+assert not any(gone in page_index + page_js for gone in ("h-top2", "TOP_SHORT", "loans have a Classic FICO", "drawTiles", "mx-fico", 'id="headline"', 'id="reach-card"')) and "drawReach" not in page_visuals, "what the rows replaced"
+assert re.findall(r'role="tab" id="tab-(\w+)"', page_index) == ["overview", "lenders", "outlook", "market", "pricing", "scores", "borrowers", "method"] and "const TABS = ['overview', 'lenders', 'outlook', 'market', 'pricing', 'scores', 'borrowers', 'method'];" in page_js, "the tabs' order"
+assert re.findall(r'data-tab="\w+" aria-selected="\w+">([^<]+)</button>', page_index) == ["Overview", "FHFA adoption", "VS4 only and outlook", "Rest of market", "Rate", "Why lenders choose", "Borrowers", "Method"], "the tabs' names"
+assert "const tabOf = (name) => (name === 'rates' ? 'pricing' : name);" in page_js and "dash.setLink(t === 'pricing' ? 'rates' : t);" in page_js and re.findall(r'<template id="tpl-(\w+)">', page_index) == ["outlook", "lenders", "scores", "borrowers", "pricing", "market", "method"], "#rates still opens the tab, and the templates keep their order"
+assert re.findall(r'class="fr" data-go="(\w+)"(?: data-at="[\w-]+")? data-key="(\w+)" role="link" tabindex="0"', page_index) == [("lenders", "adoption"), ("outlook", "vs4_only"), ("market", "market"), ("pricing", "rate"), ("outlook", "price")], "five rows, each opening its tab"
+overview = page_index[page_index.index('id="overview" role="tabpanel"'):page_index.index('id="pricing" role="tabpanel"')]
+assert [overview.index(f'id="{i}"') for i in ("front-card", "front-words", "carry-card", "score-mix-chart", "carry-more", "who-chart", "frozen-chart", "changes-card", "overview-more", "score-mix-card", "quarter-card", "clean-card")] == sorted(overview.index(f'id="{i}"') for i in ("front-card", "front-words", "carry-card", "score-mix-chart", "carry-more", "who-chart", "frozen-chart", "changes-card", "overview-more", "score-mix-card", "quarter-card", "clean-card")), "under the rows: the chart the reader likes, open, then this week, with the rest closed"
+assert not re.search(r"<details[^>]* open", overview) and overview.count('data-param="agency"') == 2 and overview.count('data-param="measure"') == 2, "every block under the rows starts closed, and a toggle sits with what it moves"
+assert "t === 'overview' || t === 'borrowers'" in page_js and "if (go && !(go.classList.contains('fr') && event.detail && String(getSelection()))) {" in page_visuals and "event.target.matches('.fr[data-go]')) event.target.click();" in page_visuals, "the rows: no global toggles above them, a drag selects, Enter opens"
+tpl_outlook = page_index[page_index.index('<template id="tpl-outlook">'):page_index.index('<template id="tpl-lenders">')]
+assert tpl_outlook.index('id="vo-card"') < tpl_outlook.index('id="outlook-sec"') and all(f'id="{i}"' in tpl_outlook for i in ("vo-lead", "vo-gse", "vo-pull", "vo-week-fn", "vo-week-ex", "vo-week-fh", "vo-lenders", "vo-bands")), "the card opens the tab, Fannie Mae with and without the one lender, Freddie Mac beside them"
+front_js = page_visuals[page_visuals.index("// ---- The first screen ----"):page_visuals.index("// ---- Where every lender stands ----")]
+assert "rowsOf('front')" in front_js and "rowsOf('vs4_only')" in front_js and not re.search(r"\d\.\d%|\$\d|AmeriSave|Rocket|UWM", front_js.replace("'$1–$2'", "")) and not re.search(r"\d\.\d%|\$\d|AmeriSave", tpl_outlook), "no typed figure and no lender's name in what the card and the rows draw: the data holds them"
+# One name for the most that can lack a FICO.
+assert "['vs_only', 'Shows VS4 only, at most', col(4)]" in page_js and page_index.count("Shows VS4 only, at most") >= 7 and "[null, 'Shows VS4 only, at most', pct1(d.only)]" in page_visuals and "['only', 'Shows VS4 only, at most', '" in page_visuals, "the one name"
+assert not any(other in page_index + all_page_js for other in ("Shows no FICO", "have only VS4", "show VS4 alone", "Shows VS4 only<", "['vs_only', 'Shows VS4 only'", "[null, 'Shows VS4 only',")), "and no other"
+assert not any(old in page_index for old in (">Rates<", ">Outlook<", ">Lenders</button>", ">Whole market<", "Rates tab", "Outlook tab", "The whole market, from HMDA")), "the old tab names"
+# What a real browser showed. The row's name says the arrow in a word, and the number stays on its line.
+assert """num.setAttribute('aria-label', String(r.number).replace(/\\s*→\\s*/, ' then '));""" in page_visuals and "num.removeAttribute('aria-label');" in page_visuals and "white-space: nowrap; }\n  .fr-what, .fr-cap" in page_css, "the number in a screen reader and on the page"
+# A row that opens at one card lands there once the tab's data has arrived, on a fresh page too.
+assert "landing = go.dataset.at || null;" in page_visuals and "vx.after.push(drawFrontLine, tidy, land);" in page_visuals and "window.addEventListener(type, () => { landing = null; }, { passive: true, capture: true });" in page_visuals, "the price row's landing"
+# A place for words stays empty when its guard fails: no dash under the title, beside a number or on the card.
+assert "[['fr-what', 'what'], ['fr-line', 'line'], ['fr-cap', 'cap']]" in page_visuals and "if (st !== 'loading' && !text) document.getElementById('front-line').textContent = '';" in page_visuals and "if (st !== 'loading' && !voSaid('lead')) document.getElementById('vo-lead').textContent = '';" in page_visuals, "no dash where words go"
+# The lender table's month: Fannie Mae's in its heading, and Freddie Mac's column has its own month-end file, so it says so itself.
+assert 'id="expo-card" data-source="assumptions" tabindex="-1"' in page_index and "const goCard = go.dataset.at && document.getElementById(go.dataset.at);" in page_visuals and "if (goCard) goCard.focus({ preventScroll: true });" in page_visuals, "a row that lands on a card leaves the keyboard on it"
+assert "W < 260 ? 'Loans showing VS4, a floor' : 'Share of its loans showing VS4, a floor'" in page_visuals and "W < 275 ? 'VS4 bucket minus FICO bucket' : 'VS4 score bucket minus Classic FICO bucket'" in page_js, "two axis words that would be cut at the narrowest widths"
+assert "(rowsOf('front').find((r) => r.view === 'meta') || {}).slice_note" in carry_over and "p.agency === 'All'" in carry_over and "${slice ? `${slice} ` : ''}${NOTE_FLOOR}" in carry_over, "the chart's note says whose slice it is, on both GSEs only"
+assert "<summary>More in words <span>adoption, FHA's date and rate, and what adoption and rate mean for FICO</span></summary>" in page_index and "The same in words" not in page_index, "the block says what it holds"
+assert "|| 'First week most loans could show both scores'" in page_visuals and "noLead = st !== 'loading' && !meta.lead_label" in page_visuals and "document.getElementById('vo-week-ex').parentElement.hidden = noLead;" in page_visuals and "if (!noLead) voBars(document.getElementById('vo-week-ex')" in page_visuals and "bands.length && !noLead ?" in page_visuals and "btable.tHead.rows[0].cells[3].hidden = noLead;" in page_visuals and "tr.cells[3].hidden = noLead;" in page_visuals and ".vo-weeks > div[hidden] { display: none; }" in page_css, "with no lender set apart, no chart or column names one"
+assert "`${longDay(fn)} at Fannie, ${shortDay(fh)} at Freddie`" in page_js[page_js.index("function drawSummary"):page_js.index("function prep(")], "the week card's fallback and Method say each GSE's day when they differ"
+assert "front_error" in (gse_paths.REPO / "src" / "gsescore" / "cli.py").read_text()[(gse_paths.REPO / "src" / "gsescore" / "cli.py").read_text().index("def cmd_build"):(gse_paths.REPO / "src" / "gsescore" / "cli.py").read_text().index("def cmd_export")], "build says so when the first screen did not build"
+assert "Both are left out when the sizes cannot be built." in (gse_paths.REPO / "src" / "gsescore" / "export.py").read_text(), "the workbook's Read me, on the two sheets that can go"
+assert "`By lender, Fannie Mae${issued}`" in page_visuals and "`Shows VS4 only, at most, by VS4 score, Fannie Mae${issued}`" in page_visuals and "`Freddie Mac: shows VS4 only, share of its loans${meta.final_fh === false ? ' so far' : ''}`" in page_visuals and '<th scope="col">Freddie Mac: shows VS4 only, share of its loans</th>' in page_index and '<h3 id="vo-band-h">Shows VS4 only, at most, by VS4 score, Fannie Mae</h3>' in page_index, "each table says whose month it is, and what it counts"
+# The card's tables fit their box at every width, with no swipe.
+assert "minmax(min(100%, 31rem), 1fr)" in page_css and "@media (max-width: 24rem) { #vo-bands .lm-bar { min-width: 1.5rem; } }" in page_css and "@media (max-width: 22rem) { #vo-bands :is(th, td):nth-child(2) { display: none; } }" in page_css, "the card's tables"
 assert "event.target.querySelector('.vx-chart, table, .vx-note, .vx-sec-h')) draw();" in page_js, "a fold of plain text keeps a selection and a focused term"
+# The market tab opens on the sizes, with the assumption on by default and labelled.
+page_market = (dashboard_page / "market.js").read_text()
+tpl_market = page_index[page_index.index('<template id="tpl-market">'):page_index.index('<template id="tpl-method">')]
+assert tpl_market.index('id="size-sec"') < tpl_market.index('id="market-sec"') < tpl_market.index('id="mk-lender-more"') and '<summary id="mk-lender-h">Which lenders named what?' in tpl_market and all(f'id="{i}"' in tpl_market[tpl_market.index('id="mk-lender-more"'):] for i in ("mk-lender-bars", "mk-lender-years", "mk-lender-table")) and 'class="vx-more" id="mk-lender-more"' in tpl_market, "the protected ask stays, closed, whatever the view"
+assert 'data-param="mfollow"' in tpl_market and "if (p.mfollow !== 'off') p.mfollow = 'on';" in page_js and "on: 'Assumption, on:" in page_market and "    drawLenderYears(p);\n" in page_market and "vx.pieceTrack = pieceTrack;" in page_market and "vx.PIECE_FILL = PIECE_FILL;" in page_market, "the assumption is on by default and labelled, the lender table draws in any view, and the first screen shares the bar"
+assert "const scores = bureaus * borrowers;\n    const perLoan = (n, at) => scores * (n * at + fee);" in page_tools, "the page's calculator keeps exposure.fico_per_loan's sum"
+new_words = re.sub(r"<[^>]+>", " ", tpl_market[:tpl_market.index('id="market-sec"')]) + page_market[page_market.index("// ---- How big each piece"):page_market.index("function drawWholeMarket")]
+assert not re.search(r"\b(?:a|the|this|that) read\b|\bfold\b|\brung\b|\bthe pick\b|has no FICO", new_words), re.search(r"\b(?:a|the|this|that) read\b|\bfold\b|\brung\b|\bthe pick\b|has no FICO", new_words)
+assert "fico_per_loan(a[\"bureaus\"]" in Path(sys.modules[build_workbook.__module__].__file__).read_text(), "the workbook's values go through the one function"
+assert "white-space: nowrap" not in page_css[page_css.index(".ms-brace {"):page_css.index("#ms-tie-more {")] and "@media (max-width: 72rem) {\n    #ms-piece-table thead" in page_css and "#ms-piece-table :is(th:nth-child(3), th:nth-child(5)) { min-width: 5rem; }" in page_css, "the dollar bar's label wraps on a phone, and the piece table turns to rows before it would need a swipe"
+assert "root.querySelector('.ms-lead').hidden = st !== 'loading' && !sizeSaid(rows, 'lead');" in page_market and "document.getElementById('ms-breaks-h').hidden = st !== 'loading' && !said.length;" in page_market and "document.getElementById('ms-parts-card').hidden = st !== 'loading' && !rows.some((r) => r.view === 'part' || r.view === 'break');" in page_market and "!rows.some((r) => r.view === 'follow')) document.getElementById('ms-follow-card').hidden = true;" in page_market, "no input file: no dash for a lead, and no table of heads alone"
 
 # What is withdrawn stays off the page sources, on both pages.
 RATE_LABELS_GONE = ("net_bp", "premium_bp", "reaches_fee", "option_annual_usd", "Shows in the rate", "None visible", "against the FICO model", "Before that check", "VS4 loans compared", "typical miss", "Where does the fee saving go?", "About all",
@@ -3232,7 +4339,7 @@ PUBLIC_GONE = RATE_LABELS_GONE + ("rate_readout", "m.option_bp")
 DASHBOARD_GONE = RATE_LABELS_GONE + ("rowsOf('pricing')", 'rowsOf("pricing")', "Missed (est.)", "Missed, both scores", "All three", "Same fee tier", "Likely to finish", "f it moves as", "No FICO today", "Your no FICO", "if others keep starting", "Taken to match", "unchecked", "no worse",
                                      "saves a fee", "Credit score used for pricing", "±", "r.left_usd", "r.est_usd", "fee.option_bp", "r.on_better", "where the fee often does not change", "on the one fee grid",
                                      "rate_readout", "one-off", "One-off", "being rebuilt", "A version that rebuilds", "Used VS4", "no sign of", "discount beyond", "single-grid", "By LLPA on today's grid", "track both", "Clearest at",
-                                     "lenders not redrawn", "redrawing", "Solid does not mean", "disclosure week", "Too few loans to read", "before points and credits", "first useful file is listed", "three reads", "Three reads", "like FICO", "not like loans", "Central figure", "Fuller methods", "Spread across", "Rough 95%", "Words:", "these reads", "use bp", "Thin (rough)", "squares with", "steps_line", "method_more", "old 20-point")
+                                     "lenders not redrawn", "redrawing", "Solid does not mean", "disclosure week", "Too few loans to read", "before points and credits", "first useful file is listed", "three reads", "Three reads", "like FICO", "not like loans", "Central figure", "Fuller methods", "Spread across", "Rough 95%", "Words:", "these reads", "use bp", "Thin (rough)", "squares with", "steps_line", "method_more", "old 20-point", "drawReach", "reach-bars", "h-top2", "TOP_SHORT", "Shows no FICO", "have only VS4", "Rates tab", "Outlook tab", "Lighter: week not over", "first with second scores", "From pull to loan, each on its own base", "This is the live read", "needs a read", "the cleaner read", "What the pick is worth", "VS4-only loan")
 for folder, gone in ((public_page, PUBLIC_GONE), (dashboard_page, DASHBOARD_GONE)):
     sources = [f for f in folder.iterdir() if f.suffix in (".html", ".js", ".css")]
     assert len(sources) >= 5, sources
@@ -3243,9 +4350,9 @@ for folder, gone in ((public_page, PUBLIC_GONE), (dashboard_page, DASHBOARD_GONE
 
 # The public contract: on the planted files, every public dataset keeps to the fields and views reference/public_contract.json lists, and a row of a listed view has that view's fields.
 contract = json.loads(site.CONTRACT.read_text())
-assert set(contract) == set(PUBLIC_DATASETS), set(contract) ^ set(PUBLIC_DATASETS)
+assert set(contract) == set(PUBLIC_DATASETS) and "market_size" not in contract, set(contract) ^ set(PUBLIC_DATASETS)
 assert all(re.fullmatch(r"\w+", k) for want in contract.values() for k in [*want["fields"], *want["views"], *(x for keys in want["views"].values() for x in keys)]), "names only, so no findings"
-assert not {d for d in PUBLIC_DROP["fees"] if "." not in d} & set(contract["fees"]["fields"]) and not {"option_bp", "est_usd", "one_loans"} & set(contract["fees"]["views"]["market"]) and "option_bp" in contract["fees"]["views"]["lender"], contract["fees"]
+assert not {d for d in PUBLIC_DROP["fees"] if "." not in d} & set(contract["fees"]["fields"]) and not {"option_bp", "est_usd", "one_loans"} & {*contract["fees"]["views"]["market"], *contract["fees"]["views"]["lender"]}, contract["fees"]
 planted_rows = {name: public_rows(name, json.loads((gse_paths.SITE_DATA / f"{name}.json").read_text())["rows"]) for name in PUBLIC_DATASETS}
 reached = set()
 
@@ -3275,24 +4382,41 @@ for name, got in (("fees", fee), ("outlook", res), ("week_note", wn), ("closing"
     holds_contract(name, public_rows(name, got))  # the views these builders reach only on the planted tables above
 assert {(name, view) for name, want in contract.items() for view in want["views"]} - reached == {("score_mix", "vs_only")}, reached  # no VS4-only loans in records with the indicator here
 
-# The public build: the fees file loses the withdrawn figure and what scales to it, a lender keeps option_bp, and a file the page no longer reads goes.
+# The public build: the fees file loses the withdrawn figure and what scales to it, on market and lender rows alike, and a file the page no longer reads goes.
 site.STANDALONE, site.PUBLIC_PAGE, site.DASHBOARD_PAGE = gse_paths.REPO / "site" / "standalone", public_page / "index.html", dashboard_page / "index.html"
 assert site.DOCS == home / "docs" and site.PREVIEW == home / "build" / "preview"
 (site.DOCS / "data").mkdir(parents=True)
 (site.DOCS / "data" / "pricing.json").write_text('{"rows":[]}')
 assert "data/fees.json" in site.build_site() and not (site.DOCS / "data" / "pricing.json").exists() and (site.DOCS / "data" / "rates.json").exists()
+assert not (site.DOCS / "data" / "market_size.json").exists(), "not on the public site"
+assert not (site.DOCS / "data" / "front.json").exists() and not (site.DOCS / "data" / "vs4_only.json").exists(), "private datasets stay off the public build"
 pub_fees = json.loads((site.DOCS / "data" / "fees.json").read_text())["rows"]
 pub_market, pub_lender = [r for r in pub_fees if r["view"] == "market"], [r for r in pub_fees if r["view"] == "lender"]
 assert pub_market and pub_lender and pub_market == public_rows("fees", [r for r in json.loads((gse_paths.SITE_DATA / "fees.json").read_text())["rows"] if r["view"] == "market"]), pub_market
 assert not {"option_annual_usd", "option_usd", "annual_upb", "upb"} & {k for r in pub_fees for k in r}, pub_fees[0]
-assert not {"option_bp", "est_usd"} & {k for r in pub_market for k in r} and all("option_bp" in r and "est_usd" in r for r in pub_lender), pub_market[0]
+assert not {"option_bp", "est_usd", "one_loans"} & {k for r in pub_market + pub_lender for k in r} and all(r.get(k) is None for r in pub_fees for k in ("option_bp", "est_usd", "one_loans")), pub_lender[0]
 assert {"taken_annual_usd", "taken_all_usd", "left_usd", "left_loans"} <= set(pub_market[0]), pub_market[0]  # the fee tiles that stay
 assert (site.DOCS / "data" / "fees.json").read_text().startswith('{"rows":[{') and set(PUBLIC_DROP) == {"fees"}
 for name in PUBLIC_DATASETS:
     assert (site.DOCS / "data" / f"{name}.json").read_text() == (gse_paths.SITE_DATA / f"{name}.json").read_text() or name in PUBLIC_DROP, name
 # The private preview keeps the whole fees file and carries the rate read.
 preview = site.build_preview()
-assert "data/rates.json" in preview and "data/rate_readout.json" not in preview and "data/pricing.json" not in preview and "option_annual_usd" in json.loads((site.PREVIEW / "data" / "fees.json").read_text())["rows"][0], preview
+assert "data/rates.json" in preview and "data/market_size.json" in preview and "data/front.json" in preview and "data/vs4_only.json" in preview and "data/rate_readout.json" not in preview and "data/pricing.json" not in preview and "option_annual_usd" in json.loads((site.PREVIEW / "data" / "fees.json").read_text())["rows"][0], preview
+# Every mark on the first screen and the card names a row these builders can write, and the code reads only their fields. A sentence whose guard fails has no row, so a mark may find none; a row of the first screen is always there.
+front_built = json.loads((gse_paths.SITE_DATA / "front.json").read_text())["rows"]
+vo_built = json.loads((gse_paths.SITE_DATA / "vs4_only.json").read_text())["rows"]
+for source, built in (("front", front_built), ("vs4_only", vo_built)):
+    for mark_field, mark_where in re.findall(rf'data-source="{source}" data-field="(\w+)" data-where="([^"]+)"', page_index):
+        mark_hit = [r for r in built if all(str(r.get(k)) == v for k, v in (p.split("=", 1) for p in html.unescape(mark_where).split("&")))]
+        assert len(mark_hit) <= 1 and (not mark_hit or mark_field in mark_hit[0]), (source, mark_field, mark_where, len(mark_hit))
+built_rows = [r for r in front_built if r["view"] == "row"]
+assert [r["key"] for r in sorted(built_rows, key=lambda r: r["order"])] == ["adoption", "vs4_only", "market", "rate", "price"], built_rows
+assert all(f'data-go="{r["go"]}"' in page_index[:page_index.index(f'data-key="{r["key"]}"')].rsplit('<div class="fr"', 1)[1] and f'<div class="fr-l">{r["label"]}</div>' in page_index for r in built_rows), "the data's tab and label are the page's own, so the row reads the same before the data arrives"
+assert all(f'view=sentence&amp;key={key}' in page_index for key in ("lead", "allowed", "why_rare", "pull", "lenders", "bands")) and all(f"'{key}'" in front_js for key in ("weeks", "trend", "freddie", "ties", "first")), "the sentences the card prints"
+front_reads = set(re.findall(r"\b[rms]\.(\w+)", front_js)) - {"left", "right", "top", "bottom"}
+assert front_reads <= {k for r in front_built + vo_built for k in r} | {"tag", "short", "outside", "open", "only", "dot", "tl", "th", "ref", "rest", "total", "url", "source"}, front_reads
+# Private inputs live under data/, which .gitignore covers and GSESCORE_HOME moves.
+assert "/data/" in (gse_paths.REPO / ".gitignore").read_text().splitlines() and gse_paths.PRIVATE == home / "data" / "private"
 
 # The weekly report's warnings: a contract view or field missing from docs/data, or a file that cannot be read, is a warning and never a stop. Nothing here reads real data or today's date.
 docs_data = site.DOCS / "data"
@@ -3329,6 +4453,8 @@ for planted_read in ('{"rows":[{"view":"meta","as_of":"not a date"}]}', '{"rows"
 as_of, old = site.rate_read_status(date(2026, 11, 11))
 assert as_of is None and len(old) == 1 and old[0].startswith("rate read:"), old
 assert "rates" not in {c["id"] for c in site.dashboard_changes()}, "a dataset missing from site/data stops nothing: the warning above says so"
+(gse_paths.SITE_DATA / "market_size.json").write_text("{not json")
+assert market.market_warnings()[0].startswith("market size: could not read"), market.market_warnings()
 
 # And all of it on the weekly command itself: no new bundles, then ingest, build, the public site and the workbook on the planted files, with no rate read to find.
 import contextlib  # noqa: E402
@@ -3340,8 +4466,10 @@ said_out = io.StringIO()
 with contextlib.redirect_stdout(said_out):
     cli.cmd_refresh(SimpleNamespace(downloads=home / "no_downloads"))
 weekly_report = json.loads(said_out.getvalue())
+assert next(r for r in json.loads((gse_paths.SITE_DATA / "market_size.json").read_text())["rows"] if r["view"] == "meta")["ok"], weekly_report
 assert weekly_report["rate_read_as_of"] is None and isinstance(weekly_report["warnings"], list) and any(w.startswith("rate read:") for w in weekly_report["warnings"]), weekly_report
 assert "rates" in {c["id"] for c in site.dashboard_changes()} and "rate_readout" not in {c["id"] for c in site.dashboard_changes()}, "every run writes rates.json, and the upload step reads it"
+assert {"front", "vs4_only"} <= {c["id"] for c in site.dashboard_changes()}, "the weekly upload picks both up, so each needs its store doc before Monday"
 assert "option_annual_usd" not in (site.DOCS / "data" / "fees.json").read_text(), weekly_report
 with zipfile.ZipFile(home / weekly_report["workbook"]) as z:
     last_strings = ["".join(t.text or "" for t in si.iter(f"{{{ns['m']}}}t")) for si in ET.fromstring(z.read("xl/sharedStrings.xml"))]
@@ -3355,5 +4483,25 @@ with contextlib.redirect_stdout(said_out):
     cli.cmd_refresh(SimpleNamespace(downloads=home / "no_downloads"))
 weekly_report = json.loads(said_out.getvalue())
 assert weekly_report["rate_read_as_of"] == "2026-10-27" and any(w.startswith("rate check: A check") for w in weekly_report["warnings"]), said_out.getvalue()
+# The first screen's warnings reach the weekly report. A builder that stops leaves the run going, says so and keeps the last good files. Nothing here reads real data.
+assert any(w.startswith("first screen check: The first screen's private file is missing or thin") for w in weekly_report["warnings"]), weekly_report["warnings"]
+front_good, real_front = (gse_paths.SITE_DATA / "front.json").read_text(), gsescore.aggregate.build_front_datasets
+gsescore.aggregate.build_front_datasets = lambda *a: 1 / 0
+said_out = io.StringIO()
+with contextlib.redirect_stdout(said_out):
+    cli.cmd_refresh(SimpleNamespace(downloads=home / "no_downloads"))
+gsescore.aggregate.build_front_datasets = real_front
+weekly_report = json.loads(said_out.getvalue())
+assert any(w.startswith("first screen: it did not build") and "ZeroDivisionError" in w for w in weekly_report["warnings"]) and (gse_paths.SITE_DATA / "front.json").read_text() == front_good, weekly_report["warnings"]
+(gse_paths.SITE_DATA / "vs4_only.json").write_text(json.dumps({"rows": [{"view": "check", "label": "A check", "pass": True}, {"view": "check", "label": "B check", "pass": False, "detail": "(1, 2) against (1, 3)"}]}))
+assert "first screen check: B check. (1, 2) against (1, 3)" in site.front_warnings(), site.front_warnings()
+(gse_paths.SITE_DATA / "vs4_only.json").write_text("{not json")
+assert any("could not read" in w for w in site.front_warnings()), site.front_warnings()
+
+# `gsescore ginnie` writes only ginnie_va.json, so it rebuilds this one too: the VA figures and their date sit here as well.
+(gse_paths.SITE_DATA / "market_size.json").write_text("{not json")
+with contextlib.redirect_stdout(io.StringIO()):
+    cli.cmd_ginnie(SimpleNamespace(files=[issuers, old_file, new_file]))
+assert next(r for r in json.loads((gse_paths.SITE_DATA / "market_size.json").read_text())["rows"] if r["view"] == "meta")["ok"] and all(w.startswith("market size:") for w in market.market_warnings()), "ginnie rebuilds the sizes"
 
 print("ok:", home)

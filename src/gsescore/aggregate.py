@@ -28,6 +28,9 @@ Loan-level data never leaves the local warehouse; only these aggregates are publ
   whole_market which score lenders named across every kind of loan, from the federal HMDA record, built in hmda.py
   private_label which score model private-label deal reports name, from SEC filings, built in edgar.py
   ginnie_va    which lenders' VA loans show scores Classic FICO almost never reaches, from Ginnie Mae's loan files, built in ginnie.py
+  market_size  how big each piece of the market is and what "FHA and VA follow" would mean for FICO, built in market.py; private, on DASHBOARD_DATASETS only
+  front, vs4_only
+               the first screen's five rows and the VS4-only card, with their sentences under guards, built in front.py; private, on DASHBOARD_DATASETS only
 """
 import json
 from datetime import date, datetime, timezone
@@ -39,14 +42,16 @@ from .closing import build_datasets as build_closing_datasets
 from .exposure import build_datasets as build_exposure_datasets
 from .edgar import build_datasets as build_edgar_datasets
 from .fees import build_datasets as build_fee_datasets
+from .front import build_datasets as build_front_datasets
 from .ginnie import build_datasets as build_ginnie_datasets
 from .hmda import build_datasets as build_hmda_datasets
 from .lenders import build_datasets as build_lender_datasets
+from .market import build_datasets as build_market_datasets
 from .notes import build_datasets as build_note_datasets
 from .outlook import build_datasets as build_outlook_datasets
 from .pricing import WEEKLY_START, build_rates
 from .scores import build_datasets as build_score_datasets
-from .warehouse import INTRADAY_ISSUE_MONTH_SQL, SCORE_MODEL_SQL, connect
+from .warehouse import INTRADAY_ISSUE_MONTH_SQL, SCORE_MODEL_SQL, connect, register_through, week_whole_sql
 from .why import build_datasets as build_why_datasets
 
 # VS4 fields went live Nov 17, 2025; the first month-end file on the portal is December 2025.
@@ -61,7 +66,7 @@ ASOF_START = "2026-08-01"
 
 EVENTS = [
     ("2026-05-01", "Limited VS4 rollout"),
-    ("2026-09-08", "VS4 open to all sellers"),
+    ("2026-09-09", "VS4 open to all sellers"),
     ("2026-10-01", "Aligned pricing for VS4"),
     ("2026-10-19", "Pricing Indicator disclosed"),
 ]
@@ -152,6 +157,7 @@ def build(out_dir: Path = paths.SITE_DATA) -> dict:
           CASE WHEN g.agency = 'All' THEN (SELECT count(*) FROM fin WHERE fin.month = g.month) = 2
                ELSE EXISTS (SELECT 1 FROM fin WHERE fin.month = g.month AND fin.agency = g.agency) END AS final
         FROM g""")
+    register_through(con)
 
     # Each final month's share as the intraday files published by each day of the month gave it, under the
     # loans view's rules: a loan's latest record sets its issue month and model, a later delete removes
@@ -205,7 +211,7 @@ def build(out_dir: Path = paths.SITE_DATA) -> dict:
             SELECT g.*, {_SHARES},
               CASE WHEN count(*) OVER w4 = 4 THEN sum(vs4_loans) OVER w4 / sum(scored_loans) OVER w4 END AS vs4_share_4wk,
               CASE WHEN count(*) OVER w4 = 4 THEN sum(vs4_upb) OVER w4 / sum(scored_upb) OVER w4 END AS vs4_upb_share_4wk,
-              week + 7 <= current_date AS complete
+              {week_whole_sql("week", "g.agency")} AS complete
             FROM g WINDOW w4 AS (PARTITION BY agency ORDER BY week ROWS BETWEEN 3 PRECEDING AND CURRENT ROW)
             ORDER BY week, agency""",
         "daily": f"""
@@ -257,7 +263,7 @@ def build(out_dir: Path = paths.SITE_DATA) -> dict:
                    (SELECT count(*) FROM sel) AS sellers, DATE '{LENDER_START}' AS sellers_since, (SELECT count(*) FILTER (WHERE v > 0) FROM sel) AS sellers_with_vs4,
                    (SELECT top2.v FROM top2) / (SELECT sum(v) FROM sel) AS top2_share_of_vs4,
                    (SELECT names FROM top2) AS top2_sellers,
-                   (SELECT max(first_intraday_date) FROM loans) AS data_through
+                   (SELECT max(first_intraday_date) FROM loans x WHERE lf.agency = 'All' OR x.agency = lf.agency) AS data_through
             FROM lf
             JOIN m f ON f.agency = lf.agency AND f.month = lf.final_month
             LEFT JOIN m p ON p.agency = lf.agency AND p.month = (lf.final_month - INTERVAL 1 MONTH)::DATE
@@ -305,6 +311,12 @@ def build(out_dir: Path = paths.SITE_DATA) -> dict:
     more |= build_hmda_datasets()
     more |= build_edgar_datasets()
     more |= build_ginnie_datasets(con)
+    more |= build_market_datasets(more, out_dir)  # needs the rows above, and monthly and summary on disk
+    front_error = None
+    try:
+        more |= build_front_datasets(con, more, MIX_START)  # last: it reads what the others wrote
+    except Exception as e:  # a sentence on a shape not seen before must not stop the weekly run: the last good files stay and the report says so
+        front_error = repr(e)
     for name, rows in more.items():
         (out_dir / f"{name}.json").write_text(json.dumps({"rows": rows}, separators=(",", ":")))
         written[name] = len(rows)
@@ -324,6 +336,7 @@ def build(out_dir: Path = paths.SITE_DATA) -> dict:
         "loans": totals[0], "upb": totals[1],
         "first_issue_month": iso(totals[2]), "last_issue_month": iso(totals[3]),
         "first_disclosed": iso(totals[4]), "last_disclosed": iso(totals[5]),
+        "front_error": front_error,
         "datasets": written,
     }
     (out_dir / "meta.json").write_text(json.dumps(meta, indent=1))

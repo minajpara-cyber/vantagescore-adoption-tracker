@@ -45,7 +45,7 @@ MODEL_SQL = f"""CASE WHEN applicant_credit_score_type = {EXEMPT} OR co_applicant
     WHEN {_IN((VS4, VS4))} THEN 'vs4' WHEN {_IN(VS_OLD)} THEN 'vs_old' WHEN {_IN(FICO_NEW)} THEN 'fico_new' WHEN {_IN(CLASSIC)} THEN 'classic'
     WHEN {_IN((MULTI, MULTI))} THEN 'multi' WHEN {_IN((OTHER, OTHER))} THEN 'other' ELSE 'none' END"""
 # (key, label); tried in this order, so a home equity loan or a loan sold to a GSE is never also counted below. Loans not in a listed segment (multifamily, reverse) are left out.
-SEGMENTS = [("gse", "Sold to Fannie or Freddie"), ("fha", "FHA"), ("va", "VA"), ("usda", "USDA"), ("jumbo", "Jumbo"), ("private", "Conforming size, sold to a private securitizer"),
+SEGMENTS = [("gse", "Sold straight to Fannie or Freddie that year"), ("fha", "FHA"), ("va", "VA"), ("usda", "USDA"), ("jumbo", "Jumbo"), ("private", "Conforming size, sold to a private securitizer"),
             ("other_buyer", "Conforming size, sold to another buyer"), ("not_sold", "Conforming size, not sold that year"), ("business", "Business purpose"), ("equity", "Home equity and second liens")]
 _BIZ = "business_or_commercial_purpose = 1"
 SEGMENT_SQL = f"""CASE WHEN open_end_line_of_credit = 1 OR lien_status = 2 THEN 'equity'

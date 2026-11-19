@@ -10,5 +10,6 @@ WAREHOUSE = DATA / "warehouse"  # one parquet per ingested file: warehouse/{loan
 MANIFEST = WAREHOUSE / "manifest.jsonl"
 HMDA = DATA / "hmda"              # the federal mortgage record, one parquet per year
 GINNIE = DATA / "ginnie"          # counts from Ginnie Mae's monthly loan files, one parquet per issue month
+PRIVATE = DATA / "private"        # hand-kept inputs not fit for the public repo: git-ignored with data/, optional, moved by GSESCORE_HOME
 DB = DATA / "gse.duckdb"
 SITE_DATA = ROOT / "site" / "data"

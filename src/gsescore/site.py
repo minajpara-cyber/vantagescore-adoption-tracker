@@ -32,10 +32,10 @@ PUBLIC_DATASETS = ["monthly", "weekly", "summary", "events", "sellers", "seller_
 DASHBOARD_DATASETS = ["monthly", "weekly", "summary", "events", "sellers", "seller_monthly", "seller_weekly",
                       "seller_splits", "adoption", "adopters", "series", "borrowers", "borrower_profile",
                       "rates", "choice", "ceiling", "outlook", "rules", "score_mix", "lender_stage", "statements", "fees",
-                      "week_note", "assumptions", "lender_mix", "closing", "whole_market", "private_label", "ginnie_va"]
+                      "week_note", "assumptions", "lender_mix", "closing", "whole_market", "private_label", "ginnie_va", "market_size", "front", "vs4_only"]
 # Fields the public copy of a dataset leaves out: "field" on every row, "view.field" on that view's rows. fees: the yearly figure "if every lender
 # took the lower fee", withdrawn Oct 31, 2026, and what reads or scales to it.
-PUBLIC_DROP = {"fees": ["option_annual_usd", "option_usd", "annual_upb", "upb", "market.option_bp", "market.est_usd", "market.one_loans"]}
+PUBLIC_DROP = {"fees": ["option_annual_usd", "option_usd", "annual_upb", "upb", "market.option_bp", "market.est_usd", "market.one_loans", "lender.option_bp", "lender.est_usd", "lender.one_loans"]}
 RATE_READ_DAYS = 14  # the weekly report warns once the rate read's data is older than this
 UPLOADS = paths.DATA / "dashboard_uploads.json"
 CONTRACT = paths.REPO / "reference" / "public_contract.json"
@@ -167,3 +167,16 @@ def rate_read_status(today: date | None = None) -> tuple[str | None, list[str]]:
     if age > timedelta(days=RATE_READ_DAYS):
         return as_of, [f"rate read: data through {as_of} is {age.days} days old, past the {RATE_READ_DAYS}-day limit", *checks]
     return as_of, checks
+
+
+def front_warnings() -> list[str]:
+    """The first screen's checks that missed, and a build that stopped, as plain text for the weekly report. Never raises: these files are private, and a thin week must not stop a run."""
+    out = []
+    try:
+        error = json.loads((paths.SITE_DATA / "meta.json").read_text()).get("front_error")
+        if error:
+            out.append(f"first screen: it did not build, so the last good files stay: {error}")
+        rows = json.loads((paths.SITE_DATA / "vs4_only.json").read_text())["rows"]
+    except Exception as e:
+        return [*out, f"first screen: could not read its files in site/data: {e!r}"]
+    return out + [f"first screen check: {r['label']}. {r.get('detail') or ''}".strip() for r in rows if r.get("view") == "check" and not r.get("pass")]

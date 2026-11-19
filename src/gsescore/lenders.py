@@ -33,6 +33,7 @@ import re
 from datetime import date, timedelta
 
 from . import paths
+from .warehouse import week_whole_sql
 
 SELLERS_CSV = paths.REPO / "reference" / "sellers.csv"
 SELLER_TOP = 100
@@ -197,7 +198,7 @@ def build_datasets(con, in_range: str, weekly_start: str, rows) -> dict[str, lis
         SELECT level, id, week, scored, vs4, vs4 / scored AS vs4_share, vs4_upb / nullif(scored_upb, 0) AS vs4_upb_share,
           CASE WHEN count(*) OVER w4 = 4 THEN sum(vs4) OVER w4 / sum(scored) OVER w4 END AS vs4_share_4wk,
           CASE WHEN count(*) OVER w4 = 4 THEN sum(vs4_upb) OVER w4 / sum(scored_upb) OVER w4 END AS vs4_upb_share_4wk,
-          week + 7 <= current_date AS complete
+          {week_whole_sql("week")} AS complete
         FROM g WINDOW w4 AS (PARTITION BY level, id ORDER BY week ROWS BETWEEN 3 PRECEDING AND CURRENT ROW)
         ORDER BY level DESC, id, week""")
     split_rows = "SELECT level, id FROM sellers_out WHERE rank <= {} OR vs4_loans >= {}".format(SPLITS_TOP, SPLITS_MIN_VS4)
@@ -326,7 +327,7 @@ def build_datasets(con, in_range: str, weekly_start: str, rows) -> dict[str, lis
                FROM adopt_wk GROUP BY ALL),
         months AS (SELECT 'month' AS period, month AS start, agency, final AS complete, scored_loans AS scored,
                           vs4_share AS actual, vs4_upb_share AS actual_upb FROM monthly),
-        weeks AS (SELECT 'week' AS period, start, agency, start + 7 <= current_date AS complete, n AS scored, actual, actual_upb FROM tw)
+        weeks AS (SELECT 'week' AS period, start, agency, {week_whole_sql("start", "tw.agency")} AS complete, n AS scored, actual, actual_upb FROM tw)
         SELECT m.*, fm.fixed, fm.fixed_upb, em.ex_top2, em.ex_top2_upb, '{excluded}' AS excluded
         FROM months m LEFT JOIN fm USING (agency, start) LEFT JOIN em USING (agency, start)
         UNION ALL

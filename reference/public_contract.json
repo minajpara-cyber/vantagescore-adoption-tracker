@@ -115,7 +115,7 @@
     "views": {
       "choice": ["cohort", "key", "loans", "scope", "scope_label", "scope_rank", "view", "vs4_share"],
       "gse": ["diff", "key", "label", "loans", "scope", "scope_label", "view"],
-      "lender": ["est_usd", "id", "left_loans", "left_usd", "loans", "month", "one_loans", "option_bp", "priced_loans", "rank", "saved_bp", "saving_avg_usd", "saving_share", "short", "taken_all_usd", "taken_usd", "ticker", "view", "vs4_loans"],
+      "lender": ["id", "left_loans", "left_usd", "loans", "month", "priced_loans", "rank", "saved_bp", "saving_avg_usd", "saving_share", "short", "taken_all_usd", "taken_usd", "ticker", "view", "vs4_loans"],
       "lift": ["diff", "key", "label", "loans", "scope", "view"],
       "market": ["agency", "key", "left_loans", "left_usd", "loans", "month", "priced_loans", "saved_bp", "saving_avg_usd", "saving_share", "taken_all_usd", "taken_annual_usd", "taken_usd", "view", "vs4_loans"],
       "option": ["avg_upb", "fee_actual_bp", "fee_best_bp", "fee_fico_bp", "fee_vs_bp", "higher_share", "key", "loans", "lower_share", "same_share", "scope", "scope_label", "scope_rank", "view"]

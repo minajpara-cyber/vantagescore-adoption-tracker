@@ -23,7 +23,7 @@ data/warehouse/manifest.jsonl              what was ingested, with header and ro
 data/gse.duckdb                            DuckDB with the views below, for ad-hoc SQL
 site/data/*.json                           aggregates the pages read (git-ignored; docs/data holds the public site's copies)
 site/data/rates.json                       the weekly rate read, built in src/gsescore/pricing.py
-site/dashboard/                            the private dashboard page (claude.ai Dashboard type): index.html, page.css, app.js, tools.js, visuals.js, market.js. Tabs: Overview, Rates, Outlook, Lenders, Why lenders choose, Borrowers, Whole market, Method
+site/dashboard/                            the private dashboard page (claude.ai Dashboard type): index.html, page.css, app.js, tools.js, visuals.js, market.js. Tabs: Overview, FHFA adoption, VS4 only and outlook, Rest of market, Rate, Why lenders choose, Borrowers, Method
 site/public/                               the public site's own copy of the page, pinned until a new view goes public
 site/standalone/                           template + `dash` stand-in that turn a page into a static site
 docs/                                      the public site (GitHub Pages serves main:/docs), aggregates only
@@ -32,6 +32,7 @@ reference/llpa.csv                         the GSEs' upfront fee grids, by hand 
 reference/statements.csv                   dated company and press statements with links, shown on the dashboard
 reference/assumptions.csv                  inputs to the FICO exposure calculator, with sources
 reference/public_contract.json             each public file's fields and views, names only; kept by hand when a builder changes on purpose
+data/private/                              hand-kept inputs read by the build if present (git-ignored)
 collector/collect.js                       browser-side collector run in a signed-in portal tab
 exports/                                   the analyst workbook, rebuilt by `refresh` or `export` (git-ignored: it holds findings)
 src/gsescore/                              layouts, unpack, ingest, views, aggregates, site, CLI
@@ -65,7 +66,7 @@ The weekly refresh is a scheduled task in the Claude app (Mondays 9:00): it open
 Chrome, asks you to sign in if needed, runs the collector, then `refresh`, uploads the dashboard
 datasets `dashboard-changes` lists (and records them with `dashboard-record`), and `publish`. The report
 `refresh` prints has `warnings` (a public contract view or field missing from docs/data; the rate read in
-site/data/rates.json past 14 days old, or unreadable; a rate build check that missed) and `rate_read_as_of`;
+site/data/rates.json past 14 days old, or unreadable; a rate build check that missed; a first-screen check that missed) and `rate_read_as_of`;
 none of them stops the run.
 
 Files on the portal (Oct 2026): intraday loan files `fl{YYMMDD}[_N].zip` / `FNM_ILLD_{YYYYMMDD}_{N}.zip`

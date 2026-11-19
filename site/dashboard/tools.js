@@ -43,19 +43,21 @@
     const cur = weeks[at], prev = weeks[at + 1];
     document.getElementById('note-title').textContent = `Week of ${shortDay(cur.week)}${cur.partial ? ', so far' : ''}`;
     document.getElementById('note-compare').hidden = !prev;
+    const dated = (rowsOf('front').find((r) => r.view === 'meta') || {}).dated;
+    if (dated) document.getElementById('note-dated').textContent = `${dated} ${cur.fnma_loans === cur.loans ? 'Fannie only this week' : !cur.fnma_loans ? 'Freddie only this week' : 'Both GSEs'}, share of loans.`;
     const mix = new Map(rowsOf('score_mix').filter((r) => r.view === 'week' && r.agency === 'All').map((r) => [r.start, r]));
     const m = mix.get(noteWeek) || {}, was = (prev && mix.get(prev.week)) || {};
     const covered = coveredWeek('All');
-    const frozen = (r, f) => (r.start && covered(r) ? r[f] : null);
+    const frozen = (r, f) => (r.start && statusOf('weekly') === 'ok' && covered(r) ? r[f] : null);
     const card = (label, now, before, fmt = pct1) => {
       const c = node('div');
       c.append(node('div', 'vx-lbl', label), node('div', 'nc-v', now == null ? '—' : fmt(now)));
       if (now != null && before != null) c.append(node('div', 'nc-d', `${signed((now - before) * 100)} pts`));
       return c;
     };
-    const items = [card('Carrying VS4, mix frozen', frozen(m, 'steady_carrying'), frozen(was, 'steady_carrying')), card('Priced on VS4, mix frozen', frozen(m, 'steady_priced'), frozen(was, 'steady_priced')), card('Priced on VS4, as delivered', cur.vs4_share, prev && prev.vs4_share)];
+    const items = [card('Carrying VS4, mix frozen', frozen(m, 'steady_carrying'), frozen(was, 'steady_carrying')), card('Priced on VS4, mix frozen', frozen(m, 'steady_priced'), frozen(was, 'steady_priced')), card('Priced on VS4, as delivered', cur.vs4_share, covered(m) && !(cur.partial && cur.loans < OPEN_MIN) ? prev && prev.vs4_share : null)];
     const loans = node('div');
-    loans.append(node('div', 'vx-lbl', 'Loans first seen'), node('div', 'nc-v', int(cur.loans)));
+    loans.append(node('div', 'vx-lbl', 'Loans that could show both scores'), node('div', 'nc-v', int(cur.loans)));
     cards.replaceChildren(...items, loans);
     const lines = rows.filter((r) => r.view === 'line' && r.week === noteWeek && r.kind !== 'mix' && r.kind !== 'rate').sort((a, b) => a.order - b.order);
     list.replaceChildren(...lines.map((r) => {
@@ -68,6 +70,7 @@
   // ---- Loans carrying VS4 over time ----
   // Bottom to top: the two groups priced on VS4, which line up with the earlier bars, then the loans that carry VS4 but priced on FICO.
   const CELL_MIN = 20;
+  const OPEN_FILL = 0.45, OPEN_KEY = 'color-mix(in srgb, var(--color-fg) 25%, transparent)';  // a week not over, so a day's deliveries do not read as a jump
   const group = (k) => MIX_GROUPS.find((g) => g[0] === k);
   const carrying = () => [group('both_vs'), group('vs_only'), group('both_fico')];
   const earlier = () => `color-mix(in srgb, ${group('both_vs')[2]} 45%, transparent)`;
@@ -75,7 +78,7 @@
   function drawCarry(box, legendBox, st, periods, lab, title, noneText = 'No loans show a VS4 score.') {
     const groups = carrying();
     const hasPre = periods.some((r) => r.pre != null);
-    legend(legendBox, [...(hasPre ? [[earlier(), 'Priced on VS4, other scores not shown yet', 'box']] : []), ...groups.map(([, l, c]) => [c, l, 'box'])]);
+    legend(legendBox, [...(hasPre ? [[earlier(), 'Priced on VS4, other scores not shown yet', 'box']] : []), ...groups.map(([, l, c]) => [c, l, 'box']), ...(periods.some((r) => r.open && !r.gap) ? [[OPEN_KEY, 'Fainter: week not over', 'box']] : [])]);
     const total = (r) => (r.pre != null ? r.pre : d3.sum(groups, ([g]) => r[g] || 0));
     const none = st === 'ok' && !periods.some((r) => total(r) > 0);
     box.hidden = none;
@@ -108,8 +111,8 @@
       let base = 0;
       parts.forEach(([v, color], i) => {
         const top = y(base + v), h = Math.max(0, y(base) - top - (i ? 2 : 0));
-        if (i === parts.length - 1) svg.append('path').attr('d', cap(bx, top, h)).attr('fill', color);
-        else svg.append('rect').attr('x', bx).attr('width', bw).attr('y', top).attr('height', h).attr('fill', color);
+        if (i === parts.length - 1) svg.append('path').attr('d', cap(bx, top, h)).attr('fill', color).attr('fill-opacity', r.open ? OPEN_FILL : 1);
+        else svg.append('rect').attr('x', bx).attr('width', bw).attr('y', top).attr('height', h).attr('fill', color).attr('fill-opacity', r.open ? OPEN_FILL : 1);
         base += v;
       });
     }
@@ -121,18 +124,28 @@
       const roomy = at - m.left > label.node().getComputedTextLength() + 8;
       label.attr('x', roomy ? at - 4 : at + 4).attr('text-anchor', roomy ? 'end' : 'start');
     }
-    bandHover(svg, box, x, periods, 'key', m, H, (r) => [r.title, r.gap ? [[null, 'Too few of its loans show every score']] : [...(r.pre != null ? [[earlier(), 'Priced on VS4', pct1(r.pre)]]
+    bandHover(svg, box, x, periods, 'key', m, H, (r) => [r.title, r.gap ? [[null, 'Too few loans show every score so far']] : [...(r.pre != null ? [[earlier(), 'Priced on VS4', pct1(r.pre)]]
       : [...groups.map(([g, l, c]) => [c, l, pct1(r[g] || 0)]), [null, 'Carrying VS4', pct1(total(r))]]), ...(r.more || [])]]);
   }
 
   // By closing month. Bars split into scores once at least half of a month's loans are in records that show every score.
-  const SPLIT_MIN = 0.5, IN_MIN = 0.9, COVER_MIN = 0.9;
-  // A week with under COVER_MIN of its loans in records that show every score cannot be split by score, so its charts leave it out and keep its place.
+  const SPLIT_MIN = 0.5, IN_MIN = 0.9, COVER_MIN = 0.9, OPEN_MIN = 2000;
+  // A week with under COVER_MIN of its loans in records that show every score cannot be split by score, and a week not over with under OPEN_MIN such loans is a day's deliveries, so its charts leave it out and keep its place.
   const coveredWeek = (agency) => {
     const scored = new Map(rowsOf('weekly').filter((r) => r.agency === agency).map((r) => [r.week, r.scored_loans]));
-    return (r) => !scored.get(r.start) || r.loans / scored.get(r.start) >= COVER_MIN;
+    const open = openWeek(agency);
+    return (r) => !(open(r.start) && r.loans < OPEN_MIN) && (!scored.get(r.start) || r.loans / scored.get(r.start) >= COVER_MIN);
   };
   vx.coveredWeek = coveredWeek;
+  // A week is not over until that GSE's files reach its Friday: the weekly file's complete flag.
+  const openWeek = (agency) => {
+    const whole = new Map(rowsOf('weekly').filter((r) => r.agency === agency).map((r) => [r.week, r.complete]));
+    return (week) => whole.get(week) === false;
+  };
+  vx.openWeek = openWeek;
+  vx.OPEN_FILL = OPEN_FILL;
+  vx.OPEN_MIN = OPEN_MIN;
+  vx.OPEN_KEY = OPEN_KEY;
   const inPct = (a) => (a < 0.025 ? 'under 5%' : `${Math.round(a * 20) * 5}%`);  // a month that has barely begun does not print as none in
   const inLabel = (a) => (a != null && a < IN_MIN ? `${inPct(a)} in` : null);
   vx.inLabel = inLabel;
@@ -161,7 +174,8 @@
       note.textContent = `${NOTE_CLOSE} Every lender keeps a fixed weight here, since recent months otherwise hold mostly the fastest deliverers. Always a share of loans. ${NOTE_FLOOR}`;
       return drawCarry(box, document.getElementById('score-mix-legend'), statusOf('closing'), periods, monthLabel(periods.map((r) => r.key)), 'Share of loans carrying VS4 by estimated closing month, lender mix frozen');
     }
-    note.textContent = `${NOTE_FLOOR} ${NOTE_EARLY}${p.cperiod === 'month' ? ' Issue month ties to GSE volume and sets the fee grid.' : ' Weeks swing with which lenders delivered.'}`;
+    const slice = p.agency === 'All' ? (rowsOf('front').find((r) => r.view === 'meta') || {}).slice_note : null;
+    note.textContent = `${slice ? `${slice} ` : ''}${NOTE_FLOOR} ${NOTE_EARLY}${p.cperiod === 'month' ? ' Issue month ties to GSE volume and sets the fee grid.' : ' Weeks swing with which lenders delivered.'}`;
     if (p.cperiod === 'month') {
       const head = mix.find((r) => r.view === 'month' && r.agency === 'All' && r.headline);
       const months = mix.filter((r) => r.view === 'month' && r.agency === p.agency && head && r.start <= head.start).sort(asc('start'));
@@ -178,8 +192,9 @@
     const pre = rowsOf('weekly').filter((r) => r.agency === p.agency && (!first || r.week < first)).sort(asc('week'))
       .map((r) => ({ key: r.week, pre: r[`vs4${k}_share`], title: `Week of ${shortDay(r.week)}, ${int(r.scored_loans)} loans` }));
     const covered = coveredWeek(p.agency);
-    const post = weeks.map((r) => ({ key: r.start, ...(covered(r) ? split(r) : {}), title: `Week of ${shortDay(r.start)}${covered(r) ? `, ${int(r.loans)} loans` : ': left out'}`, gap: !covered(r) }));
-    if (post.some((r) => r.gap)) note.textContent = `A week with too few loans showing every score is left out. ${note.textContent}`;
+    const open = openWeek(p.agency);
+    const post = weeks.map((r) => ({ key: r.start, ...(covered(r) ? split(r) : {}), open: open(r.start), title: `Week of ${shortDay(r.start)}${open(r.start) ? ' so far' : ''}${covered(r) ? `, ${int(r.loans)} loans` : ': left out'}`, gap: !covered(r) }));
+    if (post.some((r) => r.gap)) note.textContent = `A week with too few loans showing every score so far is left out. ${note.textContent}`;
     drawCarry(box, document.getElementById('score-mix-legend'), st, [...pre, ...post], shortDay, 'Share of loans carrying VS4 by week first disclosed');
   }
 
@@ -208,7 +223,8 @@
       const months = mix.filter((r) => r.view === 'month' && r.agency === 'All' && head && r.start <= head.start).map((r) => r.start).sort();
       const pre = rowsOf('seller_monthly').filter((r) => r.id === l.id && r.level === 'seller' && r.agency === p.agency && r.month >= ADOPT_FROM && (!months.length || r.month < months[0]) && r.scored >= CELL_MIN).sort(asc('month'))
         .map((r) => ({ key: r.month, pre: r.vs4_share, title: `${monthYear(r.month)}, ${int(r.scored)} loans` }));
-      const post = mine.filter((r) => r.view === 'month' && months.includes(r.start)).sort(asc('start')).map((r) => ({ key: r.start, ...split(r), title: `${monthYear(r.start)}, ${int(r.n)} loans` }));
+      const finals = new Map(rowsOf('monthly').filter((r) => r.agency === p.agency).map((r) => [r.month, r.final]));
+      const post = mine.filter((r) => r.view === 'month' && months.includes(r.start)).sort(asc('start')).map((r) => ({ key: r.start, ...split(r), title: `${monthYear(r.start)}${finals.get(r.start) === false ? ' so far' : ''}, ${int(r.n)} loans` }));
       const periods = [...pre, ...post];
       note.textContent = st === 'ok' && !periods.length ? 'No month has 20 or more loans at the GSE picked above.' : `Share of loans. Months with 20 or more loans. ${NOTE_FLOOR} ${NOTE_EARLY}`;
       return drawCarry(box, document.getElementById('co-carry-legend'), st, periods, monthLabel(periods.map((r) => r.key)), `Share of ${l.short}'s loans carrying VS4 by issue month`, noneText);
@@ -218,7 +234,8 @@
     const pre = p.agency === 'All' ? rowsOf('seller_weekly').filter((r) => r.id === l.id && r.level === 'seller' && r.scored >= CELL_MIN && (!firstWeek || r.week < firstWeek)).sort(asc('week'))
       .map((r) => ({ key: r.week, pre: r.vs4_share, title: `Week of ${shortDay(r.week)}, ${int(r.scored)} loans` })) : [];
     note.textContent = st === 'ok' && !pre.length && !weeks.length ? 'No week has 20 or more loans at the GSE picked above.' : `Share of loans. Weeks with 20 or more loans. ${NOTE_FLOOR}${pre.length ? ` ${NOTE_EARLY}` : p.agency === 'All' ? ' Earlier weeks are kept for lenders with 50 or more VS4 loans.' : ' Earlier weeks are kept across both GSEs; the issue-month view goes back by GSE.'}`;
-    drawCarry(box, document.getElementById('co-carry-legend'), st, [...pre, ...weeks.map((r) => ({ key: r.start, ...split(r), title: `Week of ${shortDay(r.start)}, ${int(r.n)} loans` }))], shortDay, `Share of ${l.short}'s loans carrying VS4 by week first disclosed`, noneText);
+    const open = openWeek(p.agency);
+    drawCarry(box, document.getElementById('co-carry-legend'), st, [...pre, ...weeks.map((r) => ({ key: r.start, ...split(r), open: open(r.start), title: `Week of ${shortDay(r.start)}${open(r.start) ? ' so far' : ''}, ${int(r.n)} loans` }))], shortDay, `Share of ${l.short}'s loans carrying VS4 by week first disclosed`, noneText);
   }
 
   // ---- Every large lender's split ----
@@ -406,7 +423,7 @@
       if (l.rule === 'whenever' && l.below_late != null) out.push(`It uses VS4 on ${pct0(l.below_late)} of loans under 20 points higher. What does it gain?`);
     }
     if (l.fhlmc_vs_only != null && l.fnma_vs_only != null && l.fhlmc_vs_only - l.fnma_vs_only >= 0.05) {
-      out.push(`Freddie Mac's files show VS4 alone on ${pct1(l.fhlmc_vs_only)} of its loans, Fannie Mae's on ${pct1(l.fnma_vs_only)}. Does it run both scores through Freddie Mac's underwriting system?`);
+      out.push(`Freddie Mac's files show VS4 only on ${pct1(l.fhlmc_vs_only)} of its loans, Fannie Mae's on ${pct1(l.fnma_vs_only)}. Does it run both scores through Freddie Mac's underwriting system?`);
     }
     if (l.kind === 'Bank' && banks && !banks.using) out.push('No bank prices on VS4 regularly so far. What would it take, and who moves first?');
     return out.slice(0, 4);
@@ -642,7 +659,7 @@
     put('scn-v-val', t ? pct1(t.v) : null);
     put('scn-v-sub', t && v0 != null ? (moved(t.v, v0) ? `${pct1(v0)} today, ${signed(moved(t.v, v0))} pts` : 'same as today') : null);
     put('scn-nf-val', t ? pct1(t.nf) : null);
-    put('scn-nf-sub', t && nf0 != null ? `at most ${pct1(nf0)} today at Fannie Mae${moved(t.nf, nf0) ? `, ${signed(moved(t.nf, nf0))} pts` : ''}` : null);
+    put('scn-nf-sub', t && nf0 != null ? `shows VS4 only, at most ${pct1(nf0)} today at Fannie Mae${moved(t.nf, nf0) ? `, ${signed(moved(t.nf, nf0))} pts` : ''}` : null);
     const ready = t && [loans, borrowers, bureaus, pulls, price, fee, q, company, nf0].every((x) => x != null);
     if (!ready) {
       ['expo-today', 'expo-today-sub', 'expo-scn', 'expo-scn-sub', 'expo-share', 'expo-share-sub', 'expo-point', 'expo-offset', 'expo-offset-sub', 'expo-lender', 'expo-lender-sub', 'scn-rev-val', 'scn-rev-sub'].forEach((id) => put(id, null));

@@ -38,7 +38,8 @@ def _r(v):
 
 def build_datasets(con, statements: list[dict], score_mix: list[dict] = ()) -> dict[str, list[dict]]:
     """Needs scw (scores.py) and seller_map and entity_names (lenders.py)."""
-    through = con.execute("SELECT max(first_intraday_date) FROM loans").fetchone()[0]
+    lasts = [d for _, d in con.execute("SELECT agency, max(first_intraday_date) FROM loans GROUP BY 1").fetchall() if d]
+    through, whole_to = max(lasts, default=None), min(lasts, default=None)  # a week of both GSEs is whole once the earlier GSE's files reach its Friday, as week_whole_sql reads 'All'
     weeks: dict[date, dict] = {}
     for week, agency, n, v, b, vo, fo in con.execute(f"""
             SELECT week, coalesce(agency, 'All'), count(*), count(*) FILTER (WHERE is_v), count(*) FILTER (WHERE has_fico AND has_vs4),
@@ -72,13 +73,13 @@ def build_datasets(con, statements: list[dict], score_mix: list[dict] = ()) -> d
         return [f"{name} {_pct(was)} to {_pct(now)}" for _, name, was, now in sorted(out, key=lambda x: (-x[0], x[1]))[:TOP]]
 
     ordered = sorted(weeks)
-    full = [w for w in ordered if through >= w + timedelta(days=4)]
+    full = [w for w in ordered if whole_to >= w + timedelta(days=4)]
     opening = full[-1] if full else ordered[-1]
     out = []
     for i, week in enumerate(ordered):
         end = week + timedelta(days=6)
         last = min(end, through)
-        partial = through < week + timedelta(days=4)
+        partial = whole_to < week + timedelta(days=4)
         label = f"{_day(week)} to {_day(last)}" if last != week else _day(week)
         cur, prev = weeks[week], weeks[ordered[i - 1]] if i else {}
         a, f = cur["All"], cur.get("FNMA")
@@ -91,7 +92,7 @@ def build_datasets(con, statements: list[dict], score_mix: list[dict] = ()) -> d
         lines.append(("mix", f"{a['n']:,} loans first disclosed {label}{', so far' if partial else ''}: priced on VS4 {ago(a['v'], pa and pa['v'])}, both scores show on "
                              f"{ago(a['b'], pa and pa['b'])}, only VS4 shows on {ago(a['vo'], pa and pa['vo'])}."))
         if f:
-            lines.append(("mix", f"At Fannie Mae, whose files show both scores more fully: priced on VS4 {ago(f['v'], pf and pf['v'])}, both scores show on {ago(f['b'], pf and pf['b'])}."))
+            lines.append(("mix", f"At Fannie Mae{', whose files show both scores more fully' if f['b'] > a['b'] else ''}: priced on VS4 {ago(f['v'], pf and pf['v'])}, both scores show on {ago(f['b'], pf and pf['b'])}."))
         now_s, was_s = steady.get(week.isoformat()), steady.get(ordered[i - 1].isoformat()) if i else None
         if now_s:
             lines.append(("mix", f"With the lender mix frozen, VS4 shows on {ago(now_s['steady_carrying'], was_s and was_s['steady_carrying'])} and priced on {ago(now_s['steady_priced'], was_s and was_s['steady_priced'])}. "

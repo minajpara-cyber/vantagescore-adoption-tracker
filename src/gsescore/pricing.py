@@ -215,6 +215,13 @@ def _day(iso, year=False):
     return f"{d:%b} {d.day}, {d.year}" if year else f"{d:%b} {d.day}"
 
 
+def _through_words(lasts, as_of, year=False):
+    """The data's last day, and each GSE's when they differ, so a GSE whose files stop earlier is not taken as covered to the later day."""
+    if len(lasts) == 2 and lasts["FNMA"] != lasts["FHLMC"]:
+        return f"{_day(lasts['FNMA'], year)} at Fannie, {_day(lasts['FHLMC'])} at Freddie"
+    return _day(as_of, year)
+
+
 def _month(iso):
     return month_name[int(iso[5:7])]
 
@@ -2391,6 +2398,7 @@ def build_rates(con, closing=None) -> list[dict]:
     llpa_rows = _llpa_rate(s, names)
     follows = _follows(s, names)
     as_of = str(np.unique(s.first_date)[-1])
+    lasts = {a: str(np.unique(s.first_date[s.agency == a])[-1]) for a in ("FNMA", "FHLMC") if (s.agency == a).any()}
     by_key = {r["key"]: r for r in beside}
     mid = lambda r: sum(_finite(r["cell5"], r["tier"])) / max(len(_finite(r["cell5"], r["tier"])), 1)  # noqa: E731
     milliman_line = said = None
@@ -2404,7 +2412,7 @@ def build_rates(con, closing=None) -> list[dict]:
         if _finite(by_key["window_plain"]["cell5"], by_key["window_plain"]["tier"]):
             milliman_line += f" Without channel, with VS4 820+{' and Rocket correspondent' if by_key['window_plain']['rc_kept'] else ''} kept, about {_signed(_near(mid(by_key['window_plain'])))} in its window; any gap left to its figure is not explained here."
         if rows["same_number"]["dot"] is not None:
-            said = f"{basis} Same score number under 820 is about {_signed(rows['same_number']['dot'])} bp, data through {_day(as_of)}. See Rates."
+            said = f"{basis} Same score number under 820 is about {_signed(rows['same_number']['dot'])} bp, data through {_through_words(lasts, as_of)}. See the Rate tab."
     newest = _newest_file(con)
     closed = _mean(s.close[s.tv] <= ANNOUNCED)
     rc = _rc_shares(s)
@@ -2435,7 +2443,7 @@ def build_rates(con, closing=None) -> list[dict]:
     meta = {"view": "meta", "shape": RATES_SHAPE, "as_of": as_of, "answer": " ".join(t for _, t in answer), "stamp": _stamp(set(s.agency), bool(s.rc.any())), "rc_reason": rc[2] if rc else None, "sample": _sample_line(s),
             "stamp_more": ("Three methods: exact match with a 5-point score band; exact match with one LLPA tier as the band (20 points under 640); and a model fitted on FICO loans, by lender and channel where possible, that also controls for "
                            f"{MODEL_HOLDS}. The dot is the midpoint of the first two and the bar the range across all three. Closing month is estimated from the first payment date. The grid matches Fannie Mae's matrix of {_day(GRID_MATRIX, True)}."),
-            "dated": f"Data through {_day(as_of, True)}.", "changed": f"Replaces the rate figures shown here before {_day(RATES_CHANGED)}, which blended two comparisons, and restates the dated figures of {_day(RATES_CHANGED)} with Rocket correspondent out of every all-lender row, the LLPA tier split under {SCORE_CUTS[0]} and the 95% range on the estimate.", "said_check": said, "milliman_line": milliman_line,
+            "dated": f"Data through {_through_words(lasts, as_of, True)}.", "changed": f"Replaces the rate figures shown here before {_day(RATES_CHANGED)}, which blended two comparisons, and restates the dated figures of {_day(RATES_CHANGED)} with Rocket correspondent out of every all-lender row, the LLPA tier split under {SCORE_CUTS[0]} and the 95% range on the estimate.", "said_check": said, "milliman_line": milliman_line,
             "expected": expected, "rule_at_lock": rule_at_lock, "test_line": test_line, "offset_tail": ", though most of these rates were likely set before it" if closed > 0.5 else None,
             "score_lead": "Each test below stops short." if any((follow.get("sentence"), limit.get("same_loans"), limit.get("line"), limit.get("past"), expected, rule_at_lock, test_line)) else None,
             "number_blend": number_blend, "number_why": number_why, "number_caption": " ".join(t for t in (number_blend, number_why) if t) or None, "number_bands": _number_bands(number, _high_share(s), _high_like(s)), "gap_line": _gap_line(gaps, number, book, at_book, rest), "lender_line": _lender_line(lenders), "lender_rates": _lender_rates_line(lender_rates, mix),

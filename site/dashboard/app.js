@@ -3,8 +3,8 @@
   const AGENCIES = ['All', 'FNMA', 'FHLMC'];
   const AG_NAME = { All: 'Both GSEs', FNMA: 'Fannie Mae', FHLMC: 'Freddie Mac' };
   const AG_NOUN = { All: 'GSE', FNMA: 'Fannie Mae', FHLMC: 'Freddie Mac' };
-  const TABS = ['overview', 'pricing', 'outlook', 'lenders', 'scores', 'borrowers', 'market', 'method'];
-  // The tab reads Rates and its id stays pricing, so a link to #rates opens it as well.
+  const TABS = ['overview', 'lenders', 'outlook', 'market', 'pricing', 'scores', 'borrowers', 'method'];
+  // The tab reads Rate and its id stays pricing, so a link to #rates opens it as well.
   const tabOf = (name) => (name === 'rates' ? 'pricing' : name);
   const DEF_FIRST = { any: 'first_vs4_month', ten: 'first_10_month', pct5: 'first_5pct_month' };
   // Months drawn on the adoption and seller charts: VS4 deliveries begin in April 2026.
@@ -31,6 +31,7 @@
   const agencyColor = (a) => col(Math.max(0, AGENCIES.indexOf(a)));
   const C_VS4 = col(0), C_WITHIN = col(2), C_FIXED = col(1), C_EX = col(3), C_NEW = col(2), C_DEEP = col(0), C_MIX = col(1);
   const PARTIAL = 0.6;  // how strongly a part-month or part-week bar is drawn
+  const OPEN_LENDER_MIN = 20;  // a lender's week not over with fewer loans is left off its weekly chart
 
   // A color as the browser works it out, vars and mixes included.
   const probe = document.createElement('span');
@@ -69,7 +70,8 @@
     if (!['carrying', 'rising'].includes(p.lsort)) p.lsort = 'share';
     if (p.ccohort !== 'latest') p.ccohort = 'all';
     if (!['all', 'first', 'equity', 'vs', 'fico_new'].includes(p.mscope)) p.mscope = 'all';
-    if (!['pl', 'va'].includes(p.mview)) p.mview = 'hmda';
+    if (!['pl', 'hmda'].includes(p.mview)) p.mview = 'va';
+    if (p.mfollow !== 'off') p.mfollow = 'on';
     if (!['all', 'first', 'gse', 'fha', 'va', 'jumbo', 'equity'].includes(p.myseg)) p.myseg = 'all';
     if (!['classic', 'fico_new', 'vs'].includes(p.mmeasure)) p.mmeasure = 'classic';
     if (!['pulled', 'filed', 'kind'].includes(p.pbasis)) p.pbasis = 'pulled';
@@ -104,7 +106,7 @@
       panels[k].hidden = k !== t;
       root.querySelector(`.vx-tabs [data-tab="${k}"]`).setAttribute('aria-selected', String(k === t));
     }
-    document.getElementById('controls').hidden = t === 'borrowers' || t === 'pricing' || t === 'market' || t === 'method';
+    document.getElementById('controls').hidden = t === 'overview' || t === 'borrowers' || t === 'pricing' || t === 'market' || t === 'method';  // the Overview's rows do not move with them; its chart has its own
     document.getElementById('agency-seg').hidden = t === 'outlook';  // the outlook covers both GSEs together
   }
   function show(t) {
@@ -183,46 +185,11 @@
     });
   }
 
-  const TOP_SHORT = { 'ROCKET MORTGAGE, LLC': 'Rocket', 'UNITED WHOLESALE MORTGAGE, LLC': 'UWM' };
-  function drawSummary(p) {
-    const status = dash.data('summary').status;
-    const all = rowsOf('summary');
-    const mine = all.find((r) => r.agency === p.agency) || {};
-    const both = all.find((r) => r.agency === 'All') || {};
-    const upb = p.measure === 'upb';
-    const put = (cls, field, fmt, row, agency) => mark(`.${cls}`, field, `agency=${agency}`, status, row[field] == null ? null : fmt(row[field]));
-    put('s-final-month', 'final_month', monthYear, mine, p.agency);
-    put('s-prior-month', 'prior_month', monthYear, mine, p.agency);
-    put('s-cur-month', 'current_month', monthYear, mine, p.agency);
-    put('s-final-share', upb ? 'final_vs4_upb_share' : 'final_vs4_share', pct1, mine, p.agency);
-    put('s-change', upb ? 'vs4_upb_share_change_pts' : 'vs4_share_change_pts', ptsSigned, mine, p.agency);
-    put('s-cur-share', upb ? 'current_vs4_upb_share' : 'current_vs4_share', pct1, mine, p.agency);
-    put('s-fico', upb ? 'final_fico_upb_share' : 'final_fico_share', pct1, mine, p.agency);
-    put('s-through', 'data_through', longDay, both, 'All');
-    put('s-top2', 'top2_share_of_vs4', pct1, both, 'All');
-    // The page header always reads both GSEs and share of loans; the filters move the tiles, not this sentence.
-    put('h-final-month', 'final_month', monthYear, both, 'All');
-    put('h-cur-month', 'current_month', monthYear, both, 'All');
-    put('h-final-share', 'final_vs4_share', pct1, both, 'All');
-    put('h-cur-share', 'current_vs4_share', pct1, both, 'All');
-    // It names the two largest where the file's two have short names here, and any other two stay unnamed.
-    const topNames = String(both.top2_sellers ?? '').split(' and ').map((name) => TOP_SHORT[name]);
-    root.querySelectorAll('.h-top2').forEach((el) => { el.textContent = topNames.length === 2 && topNames.every(Boolean) ? topNames.join(' and ') : 'Two lenders'; });
-    // Between a month's final file and the next month joining the series, the latest month is the final one: nothing is "so far".
-    root.querySelectorAll('.h-so-far').forEach((el) => { el.hidden = !!both.final_month && both.current_month === both.final_month; });
-    root.querySelectorAll('.s-so-far').forEach((el) => { el.hidden = !!mine.final_month && mine.current_month === mine.final_month; });
-  }
-
-  function drawTiles(p) {
-    const upb = p.measure === 'upb';
-    const sum = rowsOf('summary').find((r) => r.agency === p.agency) || {};
-    const ad = rowsOf('adoption').find((r) => r.agency === p.agency && r.month === sum.current_month) || {};
-    const where = `agency=${enc(p.agency)}&month=${enc(sum.current_month ?? '')}`;
-    const as = statusOf('adoption', 'summary');
-    const af = upb ? 'active_upb_share' : 'active_share';
-    mark('.a-active', 'active_sellers', where, as, ad.active_sellers == null ? null : int(ad.active_sellers));
-    mark('.a-active-share', af, where, as, ad[af] == null ? null : pct1(ad[af]));
-    root.querySelectorAll('.a-active-unit').forEach((el) => { el.textContent = upb ? 'balance' : 'loans'; });
+  // The week card and Method print the data's last day. The headline figures now come from the front dataset.
+  function drawSummary() {
+    const last = (agency) => (rowsOf('summary').find((r) => r.agency === agency) || {}).data_through;
+    const both = last('All'), fn = last('FNMA'), fh = last('FHLMC');
+    mark('.s-through', 'data_through', 'agency=All', dash.data('summary').status, both == null ? null : fn && fh && fn !== fh ? `${longDay(fn)} at Fannie, ${shortDay(fh)} at Freddie` : longDay(both));
   }
 
   function prep(box, status) {
@@ -473,7 +440,7 @@
         return wk ? x(wk.week) + x.bandwidth() * ((t - parse(wk.week).getTime()) / (7 * DAY)) : null;
       }, m.top, H - m.bottom);
     }
-    bandHover(svg, box, x, data, 'week', m, H, (r) => [`Week of ${shortDay(r.week)}${r.complete ? '' : ' (partial)'}`, [
+    bandHover(svg, box, x, data, 'week', m, H, (r) => [`Week of ${shortDay(r.week)}${r.complete ? '' : ', so far'}`, [
       ['var(--cds-chart-muted)', 'Weekly share', `${pct1(r[f])}${f.includes('upb') ? '' : ` of ${int(r[countKey])} loans`}`],
       [color, 'Four-week share', r[f4] == null ? 'not enough weeks' : pct1(r[f4])],
     ]]);
@@ -493,7 +460,9 @@
     const color = agencyColor(p.agency);
     legend(document.getElementById('weekly-legend'), [['var(--cds-chart-muted)', 'Weekly share', 'box'], [color, `Four-week rolling share, ${p.agency === 'All' ? 'both GSEs' : AG_NAME[p.agency]}`, 'line', true]]);
     const upb = p.measure === 'upb';
-    weeklyBars(box, statusOf('weekly', 'events'), rowsOf('weekly').filter((r) => r.agency === p.agency),
+    // A week not over with under OPEN_MIN loans is a day's deliveries, so this chart leaves it out, and the line ends on the last bar drawn. tools.js sets the limit and loads after this file, so it is read here, at draw time.
+    const openMin = window.vx?.OPEN_MIN ?? 0;
+    weeklyBars(box, statusOf('weekly', 'events'), rowsOf('weekly').filter((r) => r.agency === p.agency && !(r.complete === false && r.scored_loans < openMin)),
       upb ? 'vs4_upb_share' : 'vs4_share', upb ? 'vs4_upb_share_4wk' : 'vs4_share_4wk', color, 'scored_loans',
       'VS4 share by week of first disclosure', true);
   }
@@ -617,7 +586,8 @@
   function drawClean(p) {
     const k = p.measure === 'upb' ? '_upb' : '';
     const st = dash.data('series').status;
-    const rows = rowsOf('series').filter((r) => r.period === p.period && r.agency === p.agency && (p.period === 'week' || r.start >= RECENT_FROM));
+    const openMin = window.vx?.OPEN_MIN ?? 0;  // a week not over with fewer loans is a day's deliveries, left out as on Priced on VS4, by week
+    const rows = rowsOf('series').filter((r) => r.period === p.period && r.agency === p.agency && (p.period === 'week' || r.start >= RECENT_FROM) && !(r.complete === false && r.scored < openMin));
     const without = rows.length && rows[0].excluded ? `Without ${rows[0].excluded}` : 'Without the two largest VS4 sellers';
     const unit = p.period === 'week' ? 'week of first disclosure' : 'issue month';
     legend(document.getElementById('clean-a-legend'), [[C_VS4, 'Actual', 'line', true], [C_FIXED, 'Lender mix held at Jan–Jun 2026', 'line', true]]);
@@ -729,7 +699,7 @@
     const box = document.getElementById('sx-weekly-chart');
     const lg = document.getElementById('sx-weekly-legend');
     const st = dash.data('seller_weekly').status;
-    const rows = e ? rowsOf('seller_weekly').filter((r) => r.id === e.id && r.level === e.level) : [];
+    const rows = e ? rowsOf('seller_weekly').filter((r) => r.id === e.id && r.level === e.level && !(r.complete === false && r.scored < OPEN_LENDER_MIN)) : [];
     const none = st === 'ok' && !rows.length;
     document.getElementById('sx-weekly').hidden = none;
     if (none) return;
@@ -1155,7 +1125,7 @@
     yAxis(svg, y, yf, m.left, W - m.right);
     bandAxis(svg, x, keys, lab, widest, H - m.bottom + 8);
     svg.append('text').attr('x', (m.left + W - m.right) / 2).attr('y', H - 4).attr('text-anchor', 'middle')
-      .text('VS4 score bucket minus Classic FICO bucket');
+      .text(W < 275 ? 'VS4 bucket minus FICO bucket' : 'VS4 score bucket minus Classic FICO bucket');
     const bw = Math.min(40, x.bandwidth()), off = (x.bandwidth() - bw) / 2, cx = (r) => x(r.key) + x.bandwidth() / 2;
     svg.append('g').selectAll('rect').data(data).join('rect')
       .attr('x', (r) => x(r.key) + off).attr('width', bw).attr('y', (r) => y(r.vs4_share))
@@ -1309,9 +1279,7 @@
     const st = dash.data('outlook').status;
     const k = p.measure === 'upb' ? '_upb' : '';
     const r = olRung('recent');
-    const pr = olRows('params')[0] || {};
     mark('.ol-recent', `value${k}`, 'view=ladder&key=recent', st, r && r[`value${k}`] != null ? pct1(r[`value${k}`]) : null);
-    mark('.ol-recent-from', 'recent_from', 'view=params', st, pr.recent_from ? shortDay(pr.recent_from) : null);
   }
 
   function drawOutlook(p) {
@@ -1762,12 +1730,12 @@
     const fn = mix.find((d) => d.view === 'month' && d.agency === 'FNMA' && d.start === head.start) || {};
     if (r.check === 'fico') {
       if (head.fico_share == null) return '—';
-      return `At least ${pct1(head.fico_share)} of loans have a Classic FICO (${pct1(fn.fico_share)} at Fannie Mae); at most ${pct1(head.vs_only_share)} have only VS4 (${pct1(fn.vs_only_share)}).`;
+      return `At least ${pct1(head.fico_share)} of loans show a Classic FICO (${pct1(fn.fico_share)} at Fannie Mae); shows VS4 only, at most ${pct1(head.vs_only_share)} (${pct1(fn.vs_only_share)}).`;
     }
     if (r.check === 'lenders') {
       const pr = olRows('params')[0] || {};
       const using = d3.sum(whyRows('stage').filter((d) => d.key === 'pricing' || d.key === 'some'), (d) => d.lenders);
-      return `${pr.users == null ? '—' : int(pr.users)} lenders have delivered a VS4 loan to the GSEs since September, and ${int(using)} price on it regularly. At most ${head.vs_only_share == null ? '—' : pct1(head.vs_only_share)} of loans have only VS4. This covers GSE loans only.`;
+      return `${pr.users == null ? '—' : int(pr.users)} lenders have delivered a VS4 loan to the GSEs since September, and ${int(using)} price on it regularly. Shows VS4 only, at most ${head.vs_only_share == null ? '—' : pct1(head.vs_only_share)} of loans. This covers GSE loans only.`;
     }
     if (r.check === 'pricing') return (rateRows(rowsOf('rates')).find((d) => d.view === 'meta') || {}).said_check || '—';
     if (r.check === 'fees') {
@@ -1778,6 +1746,7 @@
       const a = rowsOf('monthly').find((d) => d.agency === 'All' && d.month === '2026-08-01');
       return a ? `${pct1(a.vs4_share)} in August here.` : '—';
     }
+    if (r.check === 'gse_q3') return (rowsOf('front').find((d) => d.view === 'said_check' && d.key === 'gse_q3') || {}).text || 'No loan-data check';
     return 'No loan-data check';
   }
 
@@ -1810,27 +1779,11 @@
 
   // ---- Score mix, on the Overview ----
   const MIX_GROUPS = [['fico_only', 'Shows Classic FICO only', 'var(--cds-chart-muted)'], ['both_fico', 'Shows both, priced on Classic FICO', col(1)],
-    ['both_vs', 'Shows both, priced on VS4', C_VS4], ['vs_only', 'Shows VS4 only', col(4)]];
+    ['both_vs', 'Shows both, priced on VS4', C_VS4], ['vs_only', 'Shows VS4 only, at most', col(4)]];
 
-  function drawScoreMix(p) {
-    const st = dash.data('score_mix').status;
-    const rows = rowsOf('score_mix');
-    const k = p.measure === 'upb' ? '_upb' : '';
-    const head = rows.find((r) => r.view === 'month' && r.agency === 'All' && r.headline) || {};
-    const month = (a) => rows.find((r) => r.view === 'month' && r.agency === a && r.start === head.start);
-    const where = (a) => `view=month&start=${enc(head.start ?? '')}&agency=${a}`;
-    mark('.mx-month', 'start', where('All'), st, head.start ? monthYear(head.start) : null);
-    const fico = `fico${k}_share`;
-    root.querySelector('.mx-fico-lbl').textContent = k ? 'Balance' : 'Loans';
-    root.querySelector('.mx-fico-unit').textContent = k ? 'the balance of loans' : 'loans';
-    mark('.mx-fico-tile', fico, where('All'), st, head[fico] == null ? null : pct1(head[fico]));
-    mark('.h-fico', 'fico_share', where('All'), st, head.fico_share == null ? null : pct1(head.fico_share));
-    const fn = month('FNMA') || {};
-    mark('.mx-fico-fn', fico, where('FNMA'), st, fn[fico] == null ? null : pct1(fn[fico]));
-    const top = rows.filter((r) => r.view === 'vs_only' && r.agency === 'FNMA').sort((a, b) => b.loans - a.loans)[0] || {};
-    const tw = `view=vs_only&agency=FNMA&seller_id=${enc(top.seller_id ?? '')}`;
-    mark('.mx-top-name', 'scope_label', tw, st, top.scope_label || null);
-    mark('.mx-top-share', 'of_vs_only', tw, st, top.of_vs_only == null ? null : pct1(top.of_vs_only));
+  function drawScoreMix() {
+    const head = rowsOf('score_mix').find((r) => r.view === 'month' && r.agency === 'All' && r.headline) || {};
+    mark('.mx-month', 'start', `view=month&start=${enc(head.start ?? '')}&agency=All`, dash.data('score_mix').status, head.start ? monthYear(head.start) : null);
   }
 
   function drawQuarters(p) {
@@ -1858,7 +1811,7 @@
   const GRP_NAME = { vs4: 'Priced on VS4', fico: 'Priced on FICO' };
   const COVER_NOTE = {
     both: 'Loans disclosed with every score (records since Oct 19, 2026) that show both scores: priced on VS4 against priced on Classic FICO.',
-    vs4only: 'VS4-priced loans that show no Classic FICO among loans disclosed with every score (records since Oct 19, 2026), against every FICO-priced loan disclosed that way. Read with care: a loan can have a FICO that does not show, so this group mixes loans with one score and loans with a hidden FICO. Fannie Mae\'s few such loans are the cleaner read.',
+    vs4only: 'VS4-priced loans that show no Classic FICO among loans disclosed with every score (records since Oct 19, 2026), against every FICO-priced loan disclosed that way. Read with care: a loan can have a FICO that does not show, so this group mixes loans with one score and loans with a hidden FICO. Fannie Mae\'s few such loans are the better guide.',
   };
   const keyPart = (v) => encodeURIComponent(String(v));
   const bpTick = (v) => (v === 0 ? '0' : d3.format('+')(v));
@@ -2871,11 +2824,9 @@
       const v = String(p[seg.dataset.param]);
       seg.querySelectorAll('button[data-v]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === v)));
     });
-    drawSummary(p);
-    drawScoreMix(p);  // the header reads it on every page
+    drawSummary();
     if (current === 'overview') {
-      drawTiles(p);
-      drawOutlookRecent(p);
+      drawScoreMix();
       drawQuarters(p);
       drawMonthly(p);
       drawWeekly(p);
