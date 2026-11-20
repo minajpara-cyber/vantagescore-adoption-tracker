@@ -24,8 +24,10 @@ def cmd_refresh(args):
     from .export import build_workbook
     from .ingest import ingest_paths
     from .market import market_warnings
+    from .pl_hmda import pl_hmda_warnings
     from .site import build_site, contract_warnings, front_warnings, rate_read_status
     from .warehouse import refresh_db
+    from .watch import watch_warnings
     report = {"bundles": [], "kept_in_inbox": []}
     for b in sorted(p for p in args.downloads.glob("*.zip") if BUNDLE.match(p.name)):
         box = paths.DATA / "inbox" / b.stem.replace(" ", "_")
@@ -51,7 +53,7 @@ def cmd_refresh(args):
     report.update({k: meta[k] for k in ("loans", "last_issue_month", "last_disclosed")})
     report["workbook"] = str(build_workbook().relative_to(paths.ROOT))
     report["rate_read_as_of"], rate_warnings = rate_read_status()
-    report["warnings"] = contract_warnings() + rate_warnings + market_warnings() + front_warnings()
+    report["warnings"] = contract_warnings() + rate_warnings + market_warnings() + front_warnings() + pl_hmda_warnings() + watch_warnings()
     print(json.dumps(report, indent=1))
 
 
@@ -119,8 +121,20 @@ def cmd_hmda(args):
 
 
 def cmd_edgar(args):
-    from .edgar import collect
-    print(json.dumps(collect(since=args.since, until=args.until, limit=args.limit, log=lambda s: print(s, flush=True)), indent=1))
+    """The deal reports, then the VantageScore watch's search. One that stops leaves the other to run, and the command fails at the end."""
+    from .edgar import collect, collect_watch
+    log = lambda s: print(s, flush=True)  # noqa: E731
+    out, failed = {}, []
+    for name, run in (("deal_reports", lambda: collect(since=args.since, until=args.until, limit=args.limit, log=log)),
+                      ("watch", lambda: collect_watch(since=args.since, until=args.until, limit=args.limit, log=log))):
+        try:
+            out[name] = run()
+        except Exception as e:
+            out[name] = {"error": repr(e)}
+            failed.append(name)
+    print(json.dumps(out, indent=1))
+    if failed:
+        raise SystemExit(f"edgar: {' and '.join(failed)} did not finish")
 
 
 def cmd_ginnie(args):
@@ -197,7 +211,7 @@ def main():
     s = sub.add_parser("hmda", help="load a year's HMDA zips from data/hmda/raw/<year>/ into a small parquet, then delete them")
     s.add_argument("year", type=int)
     s.set_defaults(fn=cmd_hmda)
-    s = sub.add_parser("edgar", help="search EDGAR for private-label deal reports and read the new ones")
+    s = sub.add_parser("edgar", help="search EDGAR for private-label deal reports and read the new ones, then for filings naming VantageScore (the watch)")
     s.add_argument("--since", help="search from this date, YYYY-MM-DD (default: a little before the last filing found)")
     s.add_argument("--until", help="search to this date (default: today)")
     s.add_argument("--limit", type=int, help="read at most this many exhibits and filings")

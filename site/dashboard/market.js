@@ -15,9 +15,13 @@
   };
   const CLASSIC = col(1), NEWER = col(2), VS = col(0), UNNAMED = 'var(--cds-chart-muted)', NONE = 'color-mix(in srgb, var(--cds-chart-muted) 70%, transparent)';
   const GROUPS = [['classic', 'Classic FICO', CLASSIC], ['fico_new', 'Newer FICO', NEWER], ['vs', 'VantageScore', VS], ['unnamed', 'Model not named', UNNAMED], ['none', 'No score reported', NONE]];
+  // The private securitizers' card draws "No score reported" hatched and outlined in the muted ink, so it never reads as one grey with "Model not named", in light
+  // or dark: a CSS background for swatches and bars, and an SVG pattern in the yearly columns (mixColumns).
+  const HATCH = 'repeating-linear-gradient(135deg, var(--color-fg-muted) 0 1px, transparent 1px 4px)';
+  const PH_GROUPS = GROUPS.map(([k, label, color]) => [k, label, k === 'none' ? HATCH : color]);
   const FAMILY = { classic: CLASSIC, fico_new: NEWER, vs4: VS, vs_old: VS, multi: UNNAMED, other: UNNAMED };
   const SHARE_CELLS = ['classic', 'fico_new', 'vs4', 'vs_old', 'multi', 'other', 'none'];
-  const OPTIONAL = new Set(['usd_bn', 'vs_old', 'multi', 'other', 'equity_share', 'filer', 'k_high', 'ms_p5', 'ms_rev']);
+  const OPTIONAL = new Set(['usd_bn', 'vs_old', 'multi', 'other', 'equity_share', 'filer', 'k_high', 'ms_p5', 'ms_rev', 'ph_buyer', 'ph_classic', 'ph_fico_new']);
   const CHART_LENDERS = 15;
 
   const WHOLE_LINES = (r) => [[CLASSIC, 'Classic FICO', pct1(r.classic)], [NEWER, 'Newer FICO', pct1(r.fico_new)], [VS, 'VS4', pct1(r.vs4)], [VS, 'VantageScore 2.0, 3.0', pct1(r.vs_old)],
@@ -44,6 +48,7 @@
         const part = node('span');
         part.style.flex = `${r[k]} 1 0`;
         part.style.background = color;
+        if (color === HATCH) part.style.boxShadow = 'inset 0 0 0 1px var(--color-fg-muted)';
         track.append(part);
       });
       row.append(name, val, track);
@@ -144,7 +149,7 @@
     mark('.pl-from', 'from', 'view=meta', st, meta.from ? day(meta.from) : null);
     mark('.pl-vs', 'vs', 'view=meta', st, meta.vs == null ? null : pct2(meta.vs));
     mark('.pl-vs-n', 'vs4_n', 'view=meta', st, num(meta.vs4_n));
-    mark('.pl-vs-only', 'vs_no_fico_n', 'view=meta', st, num(meta.vs_no_fico_n));
+    mark('.pl-vs-only', 'vs4_no_fico_n', 'view=meta', st, num(meta.vs4_no_fico_n));  // of the VS4 loans just before it, so the two counts agree
     mark('.pl-recent', 'recent_vs', 'view=meta', st, meta.recent_vs == null ? null : pct2(meta.recent_vs));
     mark('.pl-recent-k', 'recent_vs_n', 'view=meta', st, num(meta.recent_vs_n));
     mark('.pl-recent-n', 'recent_n', 'view=meta', st, num(meta.recent_n));
@@ -170,6 +175,34 @@
     table('pl-filer-table', filers, (r) => key('filer', r.key), (r) => [['label', r.label, true], ['filings', int(r.filings)], ['with_model', int(r.with_model)], ['n', int(r.n)], ['fico', r.named ? pct1(r.fico) : '—'], ['vs', r.named ? pct2(r.vs) : '—']]);
   }
 
+  // ---- The VantageScore watch: SEC filings from the weekly search and what is kept by hand, newest first. Each date carries the word that says what it is, a filing's
+  // own words sit in quotes, and a mark goes on what was first listed in the week to the build's day. Every word comes from the file. ----
+  function drawWatch() {
+    const card = document.getElementById('vw-card');
+    if (!card) return;
+    const st = statusOf('vs_watch');
+    const rows = rowsOf('vs_watch');
+    const meta = rows.find((r) => r.view === 'meta') || {};
+    card.hidden = st === 'ok' && !meta.items_n;  // nothing to list, or a build that stopped, which the weekly report says
+    if (card.hidden) return;
+    [['vw-lead', 'lead'], ['vw-search', 'search']].forEach(([id, said]) => sizeLine(id, rows, st, said));
+    const items = rows.filter((r) => r.view === 'item').sort((a, b) => a.order - b.order);
+    tableBox('vw-table', st, !items.length);
+    document.querySelector('#vw-table tbody').replaceChildren(...items.map((r) => {
+      const tr = node('tr');
+      tr.dataset.key = key('item', r.key);
+      const when = node('td', 'vx-l vw-when');
+      if (r.new) when.append(node('span', 'vw-new', 'New'), ' ');
+      when.append(`${r.basis} `, node('span', 'vw-day', day(r.date)));
+      const src = node('td', 'vx-l vw-src');
+      src.append(srcLink(r.source, r.url));
+      const what = node('td', 'vx-l vw-what', r.quote ? `“${r.what}”` : r.what);
+      if (r.also) what.append(' ', node('span', 'vw-also', r.also));  // the other filings that repeat a company's sentence word for word
+      tr.append(when, node('td', 'vx-l vw-kind', r.kind_label), node('td', 'vx-l vw-who', r.who), what, src);
+      return tr;
+    }));
+  }
+
   // A column with a rounded top, from the baseline up.
   const capped = (x, y, w, h, r = 4) => {
     const c = Math.min(r, w / 2, h);
@@ -183,36 +216,49 @@
     ends.forEach((e) => svg.append('text').attr('x', e.x + 8).attr('y', e.y).attr('dy', '0.35em').style('fill', 'var(--color-fg)').text(e.text));
   };
 
+  // A column of 100 a year, stacked by the score named in the groups' order and colors (GROUPS, or the private securitizers' card's PH_GROUPS, whose hatch draws
+  // as an SVG pattern), with the share naming a FICO model on top where the places allow. The yearly chart above and the private securitizers' card draw with it.
+  // The axis thins counting out from anchor, so that year always has its label. Where only the ends have room for their numbers, the first stands over the first
+  // column the axis names, so no number sits over a year left unnamed.
+  function mixColumns(box, data, H, label, tipOf, anchor = 0, groups = GROUPS) {
+    const W = box.clientWidth, m = { top: 20, right: 6, bottom: 24, left: 0 };
+    const keys = data.map((d) => d.slot);
+    const svg = vx.svgFor(box, W, H, label);
+    const hatch = `${box.id}-hatch`;
+    if (groups.some(([, , color]) => color === HATCH)) {
+      const pattern = svg.append('defs').append('pattern').attr('id', hatch).attr('patternUnits', 'userSpaceOnUse').attr('width', 4).attr('height', 4).attr('patternTransform', 'rotate(45)');
+      pattern.append('rect').attr('width', 1.25).attr('height', 4).style('fill', 'var(--color-fg-muted)');
+    }
+    const paint = (piece, color) => (color === HATCH ? piece.style('fill', `url(#${hatch})`).style('stroke', 'var(--color-fg-muted)').style('stroke-width', 1) : piece.attr('fill', color));
+    const y = d3.scaleLinear([0, 1], [H - m.bottom, m.top]);
+    const ticks = [0, 0.25, 0.5, 0.75, 1];
+    const { x, widest } = vx.bandFrame(svg, keys, yearOf, y, pct0, ticks, W, m);
+    vx.yAxis(svg, y, pct0, m.left, W - m.right, ticks);
+    const named = new Set(vx.bandAxis(svg, x, keys, yearOf, widest, H - m.bottom + 8, anchor));
+    const firstNamed = data.find((d) => named.has(d.slot)) || data[0];
+    const bw = Math.min(24, x.bandwidth()), off = (x.bandwidth() - bw) / 2;
+    for (const d of data) {
+      const parts = groups.filter(([k]) => d[k] >= 0.0005);
+      let below = 0;
+      parts.forEach(([k, , color], i) => {
+        const y0 = y(below), y1 = y(below + d[k]);
+        below += d[k];
+        const h = Math.max(0, y0 - y1 - (i ? 2 : 0));
+        if (i === parts.length - 1) paint(svg.append('path').attr('d', capped(x(d.slot) + off, y1, bw, h)), color);
+        else paint(svg.append('rect').attr('x', x(d.slot) + off).attr('width', bw).attr('y', y1 + 0).attr('height', h), color);
+      });
+      if (d.fico != null && (x.step() >= 32 || d === firstNamed || d === data[data.length - 1])) svg.append('text').attr('x', x(d.slot) + x.bandwidth() / 2).attr('y', y(1) - 5).attr('text-anchor', 'middle').style('fill', 'var(--color-fg)').text(pct0(d.fico));
+    }
+    vx.bandHover(svg, box, x, data, 'slot', m, H, tipOf);
+  }
+
   function drawYears(p) {
     const st = statusOf('whole_market');
     const data = rowsOf('whole_market').filter((r) => r.view === 'trend' && r.key === p.myseg).sort((a, b) => a.year - b.year).map((r) => ({ ...r, slot: String(r.year) }));
     const keys = data.map((d) => d.slot);
     const tipOf = (d) => [`${d.year}, ${d.label}, ${int(d.n)} loans`, WHOLE_LINES(d)];
     const box = document.getElementById('mk-year-stack');
-    if (box && prep(box, st) && data.length) {
-      const W = box.clientWidth, H = 260, m = { top: 20, right: 6, bottom: 24, left: 0 };
-      const svg = vx.svgFor(box, W, H, 'Which score lenders named each year');
-      const y = d3.scaleLinear([0, 1], [H - m.bottom, m.top]);
-      const yf = d3.format('.0%');
-      const ticks = [0, 0.25, 0.5, 0.75, 1];
-      const { x, widest } = vx.bandFrame(svg, keys, yearOf, y, yf, ticks, W, m);
-      vx.yAxis(svg, y, yf, m.left, W - m.right, ticks);
-      vx.bandAxis(svg, x, keys, yearOf, widest, H - m.bottom + 8);
-      const bw = Math.min(24, x.bandwidth()), off = (x.bandwidth() - bw) / 2;
-      for (const d of data) {
-        const parts = GROUPS.filter(([k]) => d[k] >= 0.0005);
-        let below = 0;
-        parts.forEach(([k, , color], i) => {
-          const y0 = y(below), y1 = y(below + d[k]);
-          below += d[k];
-          const h = Math.max(0, y0 - y1 - (i ? 2 : 0));
-          if (i === parts.length - 1) svg.append('path').attr('d', capped(x(d.slot) + off, y1, bw, h)).attr('fill', color);
-          else svg.append('rect').attr('x', x(d.slot) + off).attr('width', bw).attr('y', y1 + 0).attr('height', h).attr('fill', color);
-        });
-        if (x.step() >= 32 || d === data[0] || d === data[data.length - 1]) svg.append('text').attr('x', x(d.slot) + x.bandwidth() / 2).attr('y', y(1) - 5).attr('text-anchor', 'middle').style('fill', 'var(--color-fg)').text(pct0(d.fico));
-      }
-      vx.bandHover(svg, box, x, data, 'slot', m, H, tipOf);
-    }
+    if (box && prep(box, st) && data.length) mixColumns(box, data, 260, 'Which score lenders named each year', tipOf);
     const SERIES = [['fico_new', 'Newer FICO', NEWER], ['vs', 'VantageScore', VS], ['other', 'Other model', UNNAMED]];
     legend(document.getElementById('mk-zoom-legend'), SERIES.map(([, label, color]) => [color, label, 'line']));
     const zoom = document.getElementById('mk-year-zoom');
@@ -373,9 +419,16 @@
   }
 
   // ---- How big each piece is, and what if FHA and VA follow. Every sentence comes from the file, where its guard is. ----
-  const SIZE_INK = col(7);
-  const withPanel = (color, share) => `color-mix(in srgb, ${color} ${share}%, var(--color-panel))`;
-  const PIECE_FILL = { gse: SIZE_INK, fha: withPanel(SIZE_INK, 65), va: withPanel(SIZE_INK, 40), usda: 'var(--cds-chart-muted)', other_conforming: withPanel('var(--cds-chart-muted)', 80), business: withPanel('var(--cds-chart-muted)', 60), jumbo: withPanel('var(--cds-chart-muted)', 40), rest: withPanel('var(--cds-chart-muted)', 60), equity: NONE };
+  // The pieces' colors, one set for the size bar, the yearly chart, the piece table and the first screen's small picture. Fannie and Freddie the strongest: the size ink
+  // halfway to the text color. FHA, VA and USDA one ramp of the size ink, Other conforming size, Business purpose and Jumbo one ramp of a second ink, each from half way
+  // toward the page background up to full strength as the stack rises. The middle and top steps are theme variables in page.css (--ms-step-mid, --ms-step-top): in
+  // dark the middle step sits nearer its ink, so the figures printed in it read at 4.5:1, and the top step leans toward the text color, so it stays apart from the
+  // middle. Neighbours sit 1.5:1 apart or more and every piece 2:1 or more on the panel, in both themes. A share is a number, or the step mid or top.
+  const SIZE_INK = col(7), REST_INK = col(3);
+  const STEP = { mid: 76, top: 100 };  // light's steps, as page.css sets them, for a fill drawn where those variables do not reach
+  const toward = (color, share, end) => `color-mix(in srgb, ${color} ${typeof share === 'number' ? `${share}%` : `var(--ms-step-${share}, ${STEP[share]}%)`}, var(${end}))`;
+  const PIECE_FILL = { gse: toward(SIZE_INK, 50, '--color-fg'), fha: toward(SIZE_INK, 50, '--color-bg'), va: toward(SIZE_INK, 'mid', '--color-bg'), usda: toward(SIZE_INK, 'top', '--color-fg'),
+    other_conforming: toward(REST_INK, 50, '--color-bg'), business: toward(REST_INK, 'mid', '--color-bg'), jumbo: toward(REST_INK, 'top', '--color-fg'), rest: toward(REST_INK, 50, '--color-bg'), equity: NONE };
   const ASSUME = {
     on: 'Assumption, on: FHA and VA reach the same level of VS4 only as the GSEs. No file can show VS4 only on FHA or VA, so the rows for today stay on the GSEs alone.',
     off: 'Assumption off: Fannie and Freddie alone. FHA and VA add nothing here.',
@@ -385,6 +438,7 @@
   function sizeLine(id, rows, st, key) {
     const el = document.getElementById(id);
     if (!el) return;
+    el.dataset.where = `view=sentence&key=${key}`;  // the row it prints, as a line that follows a toggle changes rows
     const text = sizeSaid(rows, key);
     el.textContent = text || (st === 'loading' ? '—' : '');
     el.hidden = st !== 'loading' && !text;
@@ -446,6 +500,211 @@
     };
     box.append(block(`First-lien loans made in ${meta.year}`, `${int(meta.first_n)} loans`, 'share_n', (r) => `${int(r.n)} loans`, meta.three_share));
     if (pieces.every((r) => r.share_usd != null)) box.append(block(`First-lien dollars, ${meta.year}`, vx.usdM(meta.first_usd_bn * 1e9), 'share_usd', (r) => vx.usdM(r.usd_bn * 1e9), meta.usd_own));
+  }
+
+  // The bar above for every year, built the same way, stacked in its order and colors. Home equity stays off the stack, in the hover and the table under the chart.
+  // A year the file leaves out keeps its place and says why in a word. Every year, word and figure comes from the file.
+  const millions = (v) => `${d3.format('.1f')(v / 1e6)}m`;
+  const shortYear = (k) => `’${k.slice(2)}`;  // ’18, where four figures do not fit
+  const GAP = 1;  // px of panel between two pieces of a column
+
+  // Each piece's height in whole pixels: every edge where the sums put it on the axis, rounded, so on a 1x screen a 1px piece paints its own color and not a blend.
+  // Less the gap below it, and never under 1px, so every kind shows; what the small pieces gain comes off the biggest, so the column still ends on its rounded total.
+  function stackHeights(vals, y) {
+    let below = 0;
+    const edges = [y(0), ...vals.map((v) => y(below += v))].map(Math.round);
+    const hs = vals.map((v, i) => edges[i] - edges[i + 1] - (i ? GAP : 0));
+    const lift = d3.sum(hs, (h) => Math.max(0, 1 - h)), big = d3.maxIndex(hs);
+    return hs.map((h, i) => Math.max(1, h) - (i === big ? lift : 0));
+  }
+
+  // Whether what stands at a place, a column or a left-out year's word, leaves room for a total of this width over a column dist places off whose top is at top: no
+  // taller than that column, or far enough to the side for half the total's width and 2px. Each place gives its top and half its width as reach.
+  const clearOf = (n, top, width, dist, step) => n.reach.top >= top || width / 2 + 2 <= dist * step - n.reach.half;
+
+  // Which columns print their total over them: each one where every total fits its place; else every k-th counting back from the newest, k the places the widest needs,
+  // as the axis is thinned. Of those, a total prints only where it clears what stands in the places beside it (clearOf). Where that leaves fewer than two, as on a phone
+  // where the thinned places stand beside taller columns, every total that clears its neighbours and the totals already kept, counting back from the newest, if that
+  // keeps more.
+  function totalsAt(data, newest, widthOf, step) {
+    const drawn = data.filter((d) => d.ok), last = data.indexOf(newest);
+    const every = Math.max(1, Math.ceil((d3.max(drawn, widthOf) + 6) / step));
+    const clears = (d) => {
+      const i = data.indexOf(d);
+      return data.every((n, j) => j === i || !n.reach || clearOf(n, d.reach.top, widthOf(d), Math.abs(j - i), step));
+    };
+    const picked = drawn.filter((d) => (last - data.indexOf(d)) % every === 0 && clears(d));
+    if (picked.length >= 2) return picked;
+    const kept = [];
+    drawn.slice().reverse().forEach((d) => {
+      const i = data.indexOf(d);
+      if (clears(d) && kept.every((k) => Math.abs(data.indexOf(k) - i) * step >= (widthOf(k) + widthOf(d)) / 2 + 6)) kept.push(d);
+    });
+    return kept.length > picked.length ? kept.reverse() : picked;
+  }
+
+  function drawMix(p, rows, st) {
+    const usd = p.munit === 'usd', share = p.mscale === 'share';
+    sizeLine('ms-mix-cap', rows, st, usd ? 'mix_caption_usd' : 'mix_caption');  // the caption speaks of the view's own unit
+    const list = rows.filter((r) => r.view === 'mix_year');
+    const kinds = d3.groups(list.filter((r) => r.first_lien).sort((a, b) => a.order - b.order), (r) => r.key);
+    legend(document.getElementById('ms-mix-legend'), kinds.map(([key, of]) => [PIECE_FILL[key], of[0].label, 'box']));
+    drawMixTable(p, rows, st);
+    const box = document.getElementById('ms-mix-chart');
+    if (!box || !prep(box, st)) return;
+    const gaps = rows.filter((r) => r.view === 'mix_gap');
+    const gapOf = (year) => gaps.find((r) => r.year === year && r.measure === (usd ? 'usd' : 'n'));
+    const shareOf = (r) => r[usd ? 'share_usd' : 'share_n'];
+    const valueOf = (r) => (share ? shareOf(r) : usd ? (r.usd_bn == null ? null : r.usd_bn * 1e9) : r.n);
+    const sizeOf = (r) => (!usd ? millions(r.n) : r.usd_bn >= 999.5 ? vx.usdM(r.usd_bn * 1e9) : `$${d3.format(',.0f')(r.usd_bn)}bn`);  // whole $bn, short enough to sit in a column
+    const data = [...new Set([...list, ...gaps].map((r) => r.year))].sort((a, b) => a - b).map((year) => {
+      const of = list.filter((r) => r.year === year).sort((a, b) => a.order - b.order);
+      const parts = of.filter((r) => r.first_lien);
+      const ok = !gapOf(year) && parts.length > 0 && parts.every((r) => valueOf(r) != null);
+      return { year, slot: String(year), of, parts, ok, total: ok ? (usd ? parts[0].first_usd_bn * 1e9 : parts[0].first_n) : null, sum: ok ? d3.sum(parts, valueOf) : 0 };
+    });
+    if (!data.length) return;
+    const drawn = data.filter((d) => d.ok), newest = drawn[drawn.length - 1];
+    const W = box.clientWidth, H = 280;
+    const svg = vx.svgFor(box, W, H, `First-lien loans made each year, by kind: ${share ? `share of each year's ${usd ? 'dollars' : 'loans'}` : usd ? 'dollars' : 'loans'}`);
+    // From 768px wide the kinds are named beside the newest column, as the VA chart names its lines, when it is the last place on the axis. The legend names them below
+    // that width, where the names would crowd the columns, and where a left-out year's place follows the newest column, as the names would then stand beside nothing.
+    const names = newest ? newest.parts.filter((r) => valueOf(r) > 0).map((r) => r.label) : [];
+    const nameW = names.length && window.matchMedia('(min-width: 768px)').matches ? Math.ceil(vx.textWidth(svg, names)) : 0;
+    const named = nameW > 0 && W - nameW >= 420 && newest === data[data.length - 1];
+    const m = { top: 22, right: named ? nameW + 20 : 6, bottom: 24, left: 0 };
+    const y = d3.scaleLinear([0, share ? 1 : d3.max(data, (d) => Math.max(d.sum, d.total || 0)) || 1], [H - m.bottom, m.top]);
+    if (!share) y.nice(4);
+    const inTn = y.domain()[1] >= 1e12;
+    const yf = share ? pct0 : usd ? (v) => (v ? `$${d3.format('~g')(v / (inTn ? 1e12 : 1e9))}${inTn ? 'tn' : 'bn'}` : '$0') : (v) => (v ? `${d3.format('~g')(v / 1e6)}m` : '0');
+    const ticks = share ? [0, 0.25, 0.5, 0.75, 1] : 4;
+    const keys = data.map((d) => d.slot);
+    const { x, widest } = vx.bandFrame(svg, keys, yearOf, y, yf, ticks, W, m);
+    vx.yAxis(svg, y, yf, m.left, W - m.right, ticks);
+    // Years in four figures where they fit, else in two; where even those would meet, thinned counting back from the newest year with a column, so it always has its year.
+    const four = widest + 10 <= x.step();
+    const labelled = new Set(vx.bandAxis(svg, x, keys, four ? yearOf : shortYear, four ? widest : vx.textWidth(svg, keys.map(shortYear)), H - m.bottom + 8, keys.indexOf((newest || data[data.length - 1]).slot)));
+    const bw = Math.min(56, x.bandwidth()), off = (x.bandwidth() - bw) / 2;
+    const cx = (d) => x(d.slot) + x.bandwidth() / 2;
+    // Whole pixels from the baseline up, as stackHeights gives them.
+    drawn.forEach((d) => {
+      const parts = d.parts.filter((r) => valueOf(r) > 0), hs = stackHeights(parts.map(valueOf), y);
+      let at = Math.round(y(0));
+      d.boxes = parts.map((r, i) => {
+        at -= hs[i] + (i ? GAP : 0);
+        return { r, top: at, h: hs[i] };
+      });
+      d.reach = { top: at, half: bw / 2 };
+      d.boxes.forEach(({ r, top, h }, i) => {
+        if (i === d.boxes.length - 1) svg.append('path').attr('d', capped(x(d.slot) + off, top, bw, h)).attr('fill', PIECE_FILL[r.key]);
+        else svg.append('rect').attr('x', x(d.slot) + off).attr('width', bw).attr('y', top).attr('height', h).attr('fill', PIECE_FILL[r.key]);
+      });
+    });
+    // A year left out keeps its place with a word for why, across its place where the word fits and up it where it does not; where the axis thins its year away, the
+    // word carries the year, unless the year would stand the word over the newest column beside it and too near for that column's total (clearOf), as on a phone when
+    // a left-out year is the last place. The caption, the hover and the table name that year. Its reach, for the totals beside it: the word's top and half its width,
+    // as drawn.
+    const said = (d) => (usd ? vx.usdM(d.total) : millions(d.total)), saidWidth = (d) => vx.textWidth(svg, [said(d)]);
+    data.filter((d) => !d.ok).forEach((d) => {
+      const short = (gapOf(d.year) || {}).short || '—';
+      const word = svg.append('text');
+      const put = (text) => {
+        word.text(text).attr('text-anchor', 'middle').attr('dy', null).attr('transform', null);
+        const across = word.node().getComputedTextLength() + 4 <= x.step();
+        if (across) word.attr('x', cx(d)).attr('y', y(0) - 6);
+        else word.attr('x', null).attr('y', null).attr('text-anchor', 'start').attr('dy', '0.35em').attr('transform', `translate(${cx(d)},${y(0) - 6}) rotate(-90)`);
+        const b = word.node().getBBox();  // before its turn, if it is turned
+        d.reach = across ? { top: b.y, half: b.width / 2 } : { top: y(0) - 6 - b.x - b.width, half: Math.max(-b.y, b.y + b.height) };
+      };
+      put(labelled.has(d.slot) ? short : `${d.year}: ${short}`);
+      const beside = newest && Math.abs(data.indexOf(d) - data.indexOf(newest)) === 1;
+      const room = (n) => clearOf(n, newest.reach.top, saidWidth(newest), Math.abs(data.indexOf(n) - data.indexOf(newest)), x.step());
+      if (!share && beside && !labelled.has(d.slot) && !room(d) && drawn.every((n) => n === newest || room(n))) put(short);
+    });
+    // Inside every piece 16px tall or more: its share of the year, or in Totals its size where the sizes fit, in whichever ink reads on its fill. One form across the
+    // chart: where any size would not fit its column every piece prints its share, and where any share would not fit to one place, every share prints whole.
+    const ink = {}, fits = (text) => vx.textWidth(svg, [text]) + 6 <= bw;
+    const tall = drawn.flatMap((d) => d.boxes.filter(({ r, h }) => h >= 16 && shareOf(r) != null).map((b) => ({ d, ...b })));
+    const forms = [...(share ? [] : [sizeOf]), (r) => pct1(shareOf(r)), (r) => pct0(shareOf(r))];
+    const form = forms.find((f) => tall.every(({ r }) => fits(f(r)))) || forms[forms.length - 1];
+    tall.forEach(({ d, r, top, h }) => {
+      const text = form(r);
+      ink[r.key] ??= vx.inkOn(PIECE_FILL[r.key]);
+      if (fits(text)) svg.append('text').attr('x', cx(d)).attr('y', top + h / 2).attr('dy', '0.35em').attr('text-anchor', 'middle').style('fill', ink[r.key]).text(text);
+    });
+    // Totals over the columns: over each where they all fit, else thinned from the newest as the axis is, and only where one clears what stands beside it (totalsAt).
+    if (!share) {
+      totalsAt(data, newest, saidWidth, x.step()).forEach((d) => svg.append('text').attr('x', cx(d)).attr('y', d.reach.top - 5).attr('text-anchor', 'middle').style('fill', 'var(--color-fg)').text(said(d)));
+    }
+    if (named) {
+      // Each name at its piece's middle, spread so none meets the next; a name moved off its middle is tied back to it by a short line.
+      const right = x(newest.slot) + off + bw;
+      const ends = newest.boxes.map(({ r, top, h }) => ({ x: right + 6, y: top + h / 2, mid: top + h / 2, text: r.label }));
+      endLabels(svg, ends, H - m.bottom - 4);
+      ends.filter((e) => Math.abs(e.y - e.mid) > 2).forEach((e) => svg.append('line').attr('x1', right + 1).attr('x2', right + 11).attr('y1', e.mid).attr('y2', e.y).attr('stroke', 'var(--cds-chart-reference)'));
+    }
+    const head = (d) => `First-lien loans made in ${d.year}`;
+    vx.bandHover(svg, box, x, data, 'slot', m, H, (d) => {
+      if (!d.ok) return [head(d), [[null, (gapOf(d.year) || {}).text || '—']]];
+      const lines = d.parts.map((r) => [PIECE_FILL[r.key], r.label, `${pct1(shareOf(r))}, ${usd ? vx.usdM(r.usd_bn * 1e9) : `${int(r.n)} loans`}`]);
+      d.of.filter((r) => !r.first_lien).forEach((r) => lines.push([null, `${r.label}, not in the bar`, usd ? vx.usdM(r.usd_bn * 1e9) : `${int(r.n)} loans`]));
+      return [`${head(d)}, ${usd ? vx.usdM(d.total) : `${int(d.total)} loans`}`, lines];
+    });
+  }
+
+  // Each year's numbers, under the chart: a row a year, a column a kind, then the year's first-lien total and home equity, which is not in the bars. Loans or dollars as
+  // the chart shows them, each kind's share of the year beside its size, dollars all in $bn so a column copies as one unit. A year left out says why across its row.
+  // It serves phones, where the hover does not open.
+  const bn = d3.format(',.1f');
+
+  function drawMixTable(p, rows, st) {
+    const table = document.getElementById('ms-mix-table');
+    if (!table) return;
+    const usd = p.munit === 'usd', sizeF = usd ? 'usd_bn' : 'n', shareF = usd ? 'share_usd' : 'share_n';
+    const list = rows.filter((r) => r.view === 'mix_year');
+    const gaps = rows.filter((r) => r.view === 'mix_gap' && r.measure === (usd ? 'usd' : 'n'));
+    const kinds = d3.groups(list.filter((r) => r.first_lien).sort((a, b) => a.order - b.order), (r) => r.key).map(([k, of]) => [k, of[0].label]);
+    const equity = list.find((r) => !r.first_lien);
+    const size = (v) => (v == null ? '—' : usd ? `$${bn(v)}bn` : int(v));
+    const th = (text, field, where, cls) => {
+      const e = node('th', cls, text);
+      e.scope = 'col';
+      e.dataset.field = field;
+      if (where) e.dataset.where = where;
+      return e;
+    };
+    const head = node('tr');
+    head.append(th('Year made', 'year', null, 'vx-l'), ...kinds.map(([k, label]) => th(label, sizeF, `view=mix_year&key=${k}`)), th(usd ? 'First-lien dollars' : 'First-lien loans', usd ? 'first_usd_bn' : 'first_n'),
+      ...(equity ? [th(`${equity.label}, not in the bars`, sizeF, 'view=mix_year&key=equity')] : []));
+    table.tHead.replaceChildren(head);
+    table.closest('.vx-tablebox').classList.toggle('dash-skeleton', st === 'loading');
+    const years = [...new Set([...list, ...gaps].map((r) => r.year))].sort((a, b) => a - b);
+    table.tBodies[0].replaceChildren(...years.map((year) => {
+      const tr = node('tr');
+      tr.dataset.key = key('mix_year', year);
+      tr.append(node('td', 'vx-l', String(year)));
+      const gap = gaps.find((r) => r.year === year);
+      if (gap) {
+        const td = node('td', 'vx-l ms-why');
+        td.colSpan = head.cells.length - 1;
+        td.append(node('span', null, gap.text));
+        tr.append(td);
+        return tr;
+      }
+      const of = list.filter((r) => r.year === year);
+      kinds.forEach(([k]) => {
+        const r = of.find((c) => c.key === k), td = node('td', null, r ? size(r[sizeF]) : '—');
+        if (r && r[shareF] != null) td.append(' ', node('span', 'ms-of', pct1(r[shareF])));
+        tr.append(td);
+      });
+      const first = of.find((r) => r.first_lien) || {};
+      tr.append(node('td', null, size(usd ? first.first_usd_bn : first.first_n)));
+      if (equity) {
+        const e = of.find((r) => !r.first_lien);
+        tr.append(node('td', null, e ? size(e[sizeF]) : '—'));
+      }
+      return tr;
+    }));
   }
 
   function drawPieceTable(rows) {
@@ -546,6 +805,10 @@
     mark('.ms-year', 'year', 'view=meta', st, meta.year == null ? null : String(meta.year));
     [['ms-dollars', 'dollars'], ['ms-all', 'all_loans'], ['ms-fhfa', 'fhfa_count'], ['ms-gap', 'hmda_gap'], ['ms-rest', 'rest_mix'], ['ms-pl', 'private_label'], ['ms-reach', 'reach'], ['ms-basis', 'basis'], ['ms-pulls', 'pulls_check'], ['mk-hmda-gap', 'hmda_gap'], ['va-fha-note', 'fha_note'], ['va-fha-check', 'fha_check']]
       .forEach(([id, key]) => sizeLine(id, rows, st, key));
+    // The yearly card stands on its own rows: it shows whatever years can be built, and goes only when none can, which the weekly report says.
+    const mixCard = document.getElementById('ms-mix-card');
+    mixCard.hidden = st === 'ok' && !rows.some((r) => r.view === 'mix_year');
+    if (!mixCard.hidden) drawMix(p, rows, st);
     if (ready) {
       drawSizeBars(rows, st, meta);
       drawPieceTable(rows);
@@ -553,6 +816,71 @@
     }
     drawParts(rows, st);
     document.getElementById('ms-parts-card').hidden = st !== 'loading' && !rows.some((r) => r.view === 'part' || r.view === 'break');
+  }
+
+  // ---- Loans sold to private securitizers, from HMDA, beside the SEC deal reports: the latest year in tiles, the score named each year and by kind; below the pair,
+  // the biggest sellers and every lender putting VS4 on loans sold outside the agencies. Every figure and sentence comes from the file; a year before the form named
+  // VS4 says so, and a seller's count the year before that is not comparable carries a mark and the file's words on why. ----
+  const soldLines = (r) => WHOLE_LINES(r).map((line) => (line[1] === 'VS4' && r.vs4_on_form === false ? [line[0], 'VS4', 'not on the form that year'] : line[0] === NONE ? [HATCH, line[1], line[2]] : line));
+
+  function tableBox(id, st, empty) {
+    const box = document.getElementById(id).closest('.vx-tablebox');
+    box.classList.toggle('dash-skeleton', st === 'loading');
+    box.hidden = st === 'ok' && empty;
+  }
+
+  function drawPlHmda() {
+    const card = document.getElementById('ph-card');
+    if (!card) return;
+    const more = document.getElementById('ph-more-card');
+    const st = statusOf('pl_hmda');
+    const rows = rowsOf('pl_hmda');
+    const meta = rows.find((r) => r.view === 'meta') || {};
+    card.hidden = st === 'ok' && meta.year == null;  // no HMDA file on disk, or a build that stopped, which the weekly report says
+    if (more) more.hidden = card.hidden;
+    if (card.hidden) return;
+    const pc = (v) => (v == null ? null : pct1(v));
+    mark('.ph-year', 'year', 'view=meta', st, meta.year == null ? null : String(meta.year));
+    mark('.ph-n', 'n', 'view=meta', st, meta.n == null ? null : int(meta.n));
+    mark('.ph-usd', 'usd_bn', 'view=meta', st, meta.usd_bn == null ? null : vx.usdM(meta.usd_bn * 1e9));
+    mark('.ph-fico', 'fico', 'view=meta', st, pc(meta.fico));
+    mark('.ph-classic', 'classic', 'view=meta', st, pc(meta.classic));
+    mark('.ph-unknown', 'unknown', 'view=meta', st, pc(meta.unknown));
+    mark('.ph-vs4', 'vs4_n', 'view=meta', st, meta.vs4_n == null ? null : meta.vs4_n ? int(meta.vs4_n) : 'None');  // a word, not a lone 0 in old-style figures
+    [['ph-vs4-sub', 'vs4_tile'], ['ph-route', 'route'], ['ph-dips', 'dips'], ['ph-form', 'form'], ['ph-kinds', 'kinds'], ['ph-unsold', 'unsold'], ['ph-outside', 'outside'], ['ph-next', 'next']]
+      .forEach(([id, said]) => sizeLine(id, rows, st, said));
+    if (meta.lender_file_url && sizeSaid(rows, 'next')) document.getElementById('ph-next').append(' ', srcLink('CFPB', meta.lender_file_url));
+    legend(document.getElementById('ph-legend'), PH_GROUPS.map(([, label, color]) => [color, label, color === HATCH ? 'hatch' : 'box']));
+    const years = rows.filter((r) => r.view === 'year').sort((a, b) => a.year - b.year).map((r) => ({ ...r, slot: String(r.year) }));
+    const chart = document.getElementById('ph-chart');
+    if (chart && prep(chart, st) && years.length) {
+      mixColumns(chart, years, 200, 'Which score lenders named on loans sold to private securitizers, each year', (d) => [`${d.year}, ${int(d.n)} loans sold to private securitizers, ${vx.usdM(d.usd_bn * 1e9)}`,
+        d.n ? soldLines(d) : [[null, 'None sold to them that year']]], years.length - 1, PH_GROUPS);
+    }
+    // By kind, the biggest first, each with the year before in its hover.
+    const kinds = rows.filter((r) => r.view === 'kind');
+    const before = (r) => kinds.find((c) => c.year === meta.prior && c.key === r.key);
+    bars(document.getElementById('ph-kind-bars'), kinds.filter((r) => r.year === meta.year).sort((a, b) => b.n - a.n), st, (r) => r.label, null, (r) => {
+      const was = before(r);
+      return meta.prior == null ? soldLines(r) : [...soldLines(r), [null, String(meta.prior), was ? `${int(was.n)} loans, Classic FICO ${pct1(was.classic)}, VS4 loans ${int(was.vs4_n)}` : 'none sold to them']];
+    }, pct1, PH_GROUPS);
+    // The biggest sellers: any FICO model and no score reported right after the name, before Loans, so a phone from 320px shows both; Classic and newer FICO where
+    // there is room. Dollars all in $bn, so the column copies as one unit.
+    const sellers = rows.filter((r) => r.view === 'lender').sort((a, b) => a.rank - b.rank);
+    document.getElementById('ph-prior-h').textContent = meta.prior == null ? 'Loans the year before' : `Loans in ${meta.prior}`;
+    tableBox('ph-lender-table', st, !sellers.length);
+    const priorCell = (r) => (r.prior_n == null ? '—' : r.prior_mark ? `${int(r.prior_n)}*` : int(r.prior_n));
+    table('ph-lender-table', sellers, (r) => key('lender', r.rank), (r) => [['name', r.name, true], ['fico', pct1(r.fico)], ['none', pct1(r.none)], ['n', int(r.n)], ['usd_bn', `$${bn(r.usd_bn)}bn`],
+      ['ph_classic', pct1(r.classic)], ['ph_fico_new', pct1(r.fico_new)], ['vs4_n', int(r.vs4_n)], ['prior_n', priorCell(r)]]);
+    root.querySelectorAll('#ph-lender-table tbody tr').forEach((tr, i) => {
+      const r = sellers[i];
+      if (r.prior_n == null) return;
+      const was = `${meta.prior}: ${int(r.prior_n)} loans, ${vx.usdM(r.prior_usd_bn * 1e9)}, Classic FICO ${pct1(r.prior_classic)}, VS4 loans ${int(r.prior_vs4_n)}`;
+      tr.lastChild.title = r.prior_mark ? `${r.name} reported ${pct1(r.prior_unsold)} of its ${meta.prior} loans as not sold that year, so its ${meta.prior} count of loans sold to private securitizers is not comparable. ${was}` : was;
+    });
+    const users = rows.filter((r) => r.view === 'vs4_lender').sort((a, b) => a.rank - b.rank);
+    tableBox('ph-vs4-table', st, !users.length);
+    table('ph-vs4-table', users, (r) => key('vs4_lender', r.rank), (r) => [['name', r.name, true], ['n', int(r.n)], ['vs4_n', int(r.vs4_n)], ['vs4', pct1(r.vs4)], ['ph_buyer', r.buyer || '—', true]]);
   }
 
   root.addEventListener('click', (event) => {
@@ -571,6 +899,8 @@
     if (p.mview === 'hmda') drawYears(p);
     drawLenderYears(p);
     drawPrivate(p);
+    if (p.mview === 'pl') drawPlHmda();
+    if (p.mview === 'pl') drawWatch();
     if (p.mview === 'va') drawVa();
   }
 

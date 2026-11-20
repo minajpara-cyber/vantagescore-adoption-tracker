@@ -27,6 +27,9 @@ Loan-level data never leaves the local warehouse; only these aggregates are publ
                where each lender stands and what goes with it, and what companies have said, built in why.py
   whole_market which score lenders named across every kind of loan, from the federal HMDA record, built in hmda.py
   private_label which score model private-label deal reports name, from SEC filings, built in edgar.py
+  pl_hmda      loans sold to private securitizers and every lender putting VS4 on loans sold outside the agencies, from HMDA, built in pl_hmda.py; private, on DASHBOARD_DATASETS only
+  vs_watch     SEC filings naming VantageScore that matter for mortgages, from edgar.py's weekly search, and rating-agency, lender-guide and press items kept by hand in
+               data/private/vs_watch.csv, newest first with a mark on what is new, built in watch.py; private, on DASHBOARD_DATASETS only
   ginnie_va    which lenders' VA loans show scores Classic FICO almost never reaches, from Ginnie Mae's loan files, built in ginnie.py
   market_size  how big each piece of the market is and what "FHA and VA follow" would mean for FICO, built in market.py; private, on DASHBOARD_DATASETS only
   front, vs4_only
@@ -49,9 +52,11 @@ from .lenders import build_datasets as build_lender_datasets
 from .market import build_datasets as build_market_datasets
 from .notes import build_datasets as build_note_datasets
 from .outlook import build_datasets as build_outlook_datasets
+from .pl_hmda import build_datasets as build_pl_hmda_datasets
 from .pricing import WEEKLY_START, build_rates
 from .scores import build_datasets as build_score_datasets
 from .warehouse import INTRADAY_ISSUE_MONTH_SQL, SCORE_MODEL_SQL, connect, register_through, week_whole_sql
+from .watch import build_datasets as build_watch_datasets
 from .why import build_datasets as build_why_datasets
 
 # VS4 fields went live Nov 17, 2025; the first month-end file on the portal is December 2025.
@@ -310,6 +315,8 @@ def build(out_dir: Path = paths.SITE_DATA) -> dict:
     more |= build_exposure_datasets(con, more["score_mix"])
     more |= build_hmda_datasets()
     more |= build_edgar_datasets()
+    more |= build_pl_hmda_datasets(more, out_dir)  # the data's date from summary, on disk, and the SEC reports' VS4 count from private_label, just built
+    more |= build_watch_datasets(out_dir)  # each item's first day on the list, from the last build's file, before this run writes it
     more |= build_ginnie_datasets(con)
     more |= build_market_datasets(more, out_dir)  # needs the rows above, and monthly and summary on disk
     front_error = None

@@ -158,7 +158,7 @@
   const picOf = (key) => frontOf('pic').filter((r) => r.key === key);
   const vsOnly = () => group('vs_only')[2];
   const FR_H = 78, OPEN = 0.6;  // a row's picture; how strongly a month or a week not over is drawn, as on the main charts
-  const SHORT = { tu_pull_share: 'TransUnion pulls', du_app_share: 'DU applications', shows: 'Shows VS4', priced: 'Priced on VS4', vs_only: 'Shows VS4 only', gse: 'GSEs', rest: 'Other' };
+  const SHORT = { tu_pull_share: 'TransUnion pulls', du_app_share: 'DU applications', shows: 'Shows VS4', priced: 'Priced on VS4', vs_only: 'Shows VS4 only', gse: 'GSEs', rest: 'All else' };
 
   // The header, on every tab.
   function drawFrontLine() {
@@ -209,7 +209,31 @@
     });
   }
 
-  // One bar of 100: each piece named above it and sized below it, where the words fit.
+  // Where each size goes under the bar, from the last piece back: each starts at its piece and keeps room clear of the next size actually drawn, so two sizes side by
+  // side never read as one run, and the last may sit as far right as the bar's end to make that room. Each takes the first of its forms that fits, one decimal and then
+  // whole, or none. The last then comes back toward its piece's start as far as that room allows, so it moves only where the one before needs it to. pieces:
+  // [{ x0, forms: [[text, width], ...] }]; it returns { text, x, len } or null for each, in the pieces' order.
+  function sizesAt(pieces, W, room = 8) {
+    const out = [], end = pieces.length - 1;
+    let next = W + room;
+    for (let i = end; i >= 0; i -= 1) {
+      const { x0, forms } = pieces[i];
+      out[i] = null;
+      for (const [text, len] of forms) {
+        const left = i === end ? Math.max(x0, W - len) : x0;
+        if (left + len <= next - room) {
+          out[i] = { text, x: left, len };
+          next = left;
+          break;
+        }
+      }
+    }
+    const before = out.slice(0, end).reverse().find(Boolean);
+    if (out[end]) out[end].x = Math.max(pieces[end].x0, before ? before.x + before.len + room : pieces[end].x0);
+    return out;
+  }
+
+  // One bar of 100: each piece named above it where its name fits, and sized below it as sizesAt places the sizes.
   function frShare(box, st, rows) {
     if (!box || !prep(box, st) || !rows.length) return;
     const W = box.clientWidth, H = FR_H, top = 22, h = 24;
@@ -217,7 +241,7 @@
     const fills = vx.PIECE_FILL || {}, tones = [col(0), col(2), col(3)];  // the Rest of market tab's colors, once market.js has loaded
     const x = d3.scaleLinear([0, d3.sum(rows, (r) => r.v) || 1], [0, W]);
     let at = 0;
-    rows.forEach((r, i) => {
+    const starts = rows.map((r, i) => {
       const x0 = x(at), w = x(at + r.v) - x0;
       at += r.v;
       svg.append('rect').attr('x', x0).attr('width', Math.max(0, w - 2)).attr('y', top).attr('height', h).attr('rx', 2).attr('fill', fills[r.x] || tones[i] || 'var(--cds-chart-muted)');
@@ -225,10 +249,10 @@
       const piece = svg.append('text').attr('x', x0).attr('y', top - 6).text(r.label);
       if (!fit(piece) && SHORT[r.x]) piece.text(SHORT[r.x]);
       if (!fit(piece)) piece.remove();
-      const size = svg.append('text').attr('x', x0).attr('y', top + h + 15).style('fill', 'var(--color-fg)').text(r.text);
-      if (!fit(size)) size.text(pct0(r.v));
-      if (!fit(size)) size.remove();
+      return x0;
     });
+    const sizes = sizesAt(rows.map((r, i) => ({ x0: starts[i], forms: [r.text, pct0(r.v)].map((text) => [text, textWidth(svg, [text])]) })), W);
+    sizes.forEach((s) => { if (s) svg.append('text').attr('x', s.x).attr('y', top + h + 15).style('fill', 'var(--color-fg)').text(s.text); });
   }
 
   // A dot and its 95% range about a zero line, one row each.
@@ -647,6 +671,7 @@
     ['hmda', 'HMDA', 'The Home Mortgage Disclosure Act record: a yearly federal filing by nearly every mortgage lender, covering each application whatever became of it. It names the score model the lender relied on for the credit decision.'],
     ['fullsignal', 'Would reach 830 if all on VS4', 'How many of a group of VA loans would reach 830 if every loan showed VS4, from the odds at each Classic score on Fannie loans showing both scores. It sizes what a full move would look like at the top of the score range.'],
     ['abs15g', 'Form ABS-15G', 'Where a mortgage deal to be rated, registered or not, files its due diligence findings with the SEC, at least five business days before first sale. Some of these reports list each loan and the score model on it.'],
+    ['privsec', 'Private securitizer', 'A buyer that pools mortgages into private-label securities, with no Fannie, Freddie or Ginnie backing. HMDA names it as the buyer only when the sale comes in the calendar year the loan was made, and not when the loan goes through an aggregator first.'],
     ['classic', 'Classic FICO', 'The older FICO versions the GSEs have long required: Equifax Beacon 5.0, Experian Fair Isaac v2 and TransUnion FICO Classic 04 or 98.'],
     ['ficonew', 'Newer FICO', 'FICO 8, FICO 9, FICO 10 and FICO 10T. Still FICO, but not the versions the GSEs have long required.'],
     ['unnamed', 'Model not named', 'The lender said it relied on more than one model, or on another model, without saying which. It could be FICO or VantageScore, so it counts as neither.'],

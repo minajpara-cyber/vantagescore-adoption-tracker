@@ -1078,6 +1078,24 @@
           </ul>
         </details>
       </section>
+      <section class="vx-card" id="ms-mix-card" aria-labelledby="ms-mix-h">
+        <div class="vx-row">
+          <h2 id="ms-mix-h"><span data-term="firstlien">First-lien</span> loans made each year, by kind</h2>
+          <div class="vx-row ms-mix-segs">
+            <div class="vx-seg" data-param="munit" role="group" aria-label="Loans or dollars"><button type="button" data-v="loans">Loans</button><button type="button" data-v="usd">Dollars</button></div>
+            <div class="vx-seg" data-param="mscale" role="group" aria-label="Totals or shares"><button type="button" data-v="total">Totals</button><button type="button" data-v="share">Share of each year</button></div>
+          </div>
+        </div>
+        <div class="vx-legend" id="ms-mix-legend" data-source="market_size"></div>
+        <div class="vx-chart" id="ms-mix-chart" data-source="market_size"></div>
+        <p class="vx-sub" id="ms-mix-cap" data-source="market_size" data-field="text" data-where="view=sentence&amp;key=mix_caption" hidden></p>
+        <details class="vx-more" id="ms-mix-more">
+          <summary>Each year's numbers</summary>
+          <div class="vx-tablebox">
+            <table class="vx-table" id="ms-mix-table" data-source="market_size" data-row-key="view,year"><thead></thead><tbody></tbody></table>
+          </div>
+        </details>
+      </section>
       <section class="vx-card" id="ms-piece-card" aria-labelledby="ms-piece-h">
         <h2 id="ms-piece-h">Piece by piece: its size, which score its loans use today, when it can move</h2>
         <div class="vx-tablebox">
@@ -1134,11 +1152,11 @@
         <div class="vx-row">
           <h2 id="market-h">Beyond Fannie and Freddie: which score do lenders rely on?</h2>
           <div class="vx-seg" data-param="mview" role="group" aria-label="Which view">
-            <button type="button" data-v="va">VA loans, monthly</button><button type="button" data-v="hmda">Every kind of loan, by year</button><button type="button" data-v="pl">Private-label deals, weekly</button>
+            <button type="button" data-v="va">VA loans, monthly</button><button type="button" data-v="hmda">Every kind of loan, by year</button><button type="button" data-v="pl">Private-label, weekly and yearly</button>
           </div>
         </div>
         <p class="mk-only-hmda"><span data-term="hmda">HMDA</span>, the federal record nearly every lender files, names the score model behind each credit decision. <span class="mk-year" data-source="whole_market" data-field="year" data-where="view=meta">—</span> is the starting line: lenders began delivering VS4 to Fannie and Freddie in 2026. The next file arrives about June <span class="mk-next">—</span>.</p>
-        <p class="mk-only-pl" hidden>Deals to be rated file their due diligence findings with the SEC on <span data-term="abs15g">Form ABS-15G</span> before first sale, and some of those reports name the score model on each loan. This is the live view, updated weekly. It covers only rated deals and only reports with a model column, and the loans are months old by the time a deal files.</p>
+        <p class="mk-only-pl" hidden>Three sources: SEC deal reports (weekly), <span data-term="hmda">HMDA</span> (yearly) and the VantageScore watch (weekly). Deals to be rated file their due diligence findings with the SEC on <span data-term="abs15g">Form ABS-15G</span> before first sale, and some of those reports name the score model on each loan; they cover only rated deals and only reports with a model column, and the loans are months old by the time a deal files. HMDA adds the loans lenders made and sold to a private securitizer, and the score each named. The watch lists the filings, rating-agency reports and lender guides that name VantageScore.</p>
         <p class="mk-only-va" hidden>Ginnie Mae's monthly loan files show one score on each FHA and VA loan and don't name its model. But on Fannie and Freddie loans showing both scores, <span class="va-ref-vs4" data-source="ginnie_va">—</span> reach 830 on <span data-term="vs4">VS4</span> and <span class="va-ref-classic" data-source="ginnie_va">—</span> on <span data-term="classic">Classic FICO</span>. So a VA loan at 830 or above is very likely not on Classic FICO. <span id="va-fha-note" data-source="market_size" data-field="text" data-where="view=sentence&amp;key=fha_note" hidden></span> This is inference: no file names a model, and a VS4 score doesn't mean no FICO was bought.</p>
       </header>
       <div class="vx-tiles mk-only-va" hidden>
@@ -1303,7 +1321,7 @@
         <div class="vx-card">
           <div class="vx-lbl">Of those loans, share naming VantageScore</div>
           <div class="vx-val pl-vs dash-skeleton" data-source="private_label" data-field="vs" data-where="view=meta">—</div>
-          <div class="vx-sub">A floor. <span class="pl-vs-n" data-source="private_label" data-field="vs4_n" data-where="view=meta">—</span> on VS4. On <span class="pl-vs-only" data-source="private_label" data-field="vs_no_fico_n" data-where="view=meta">—</span>, no FICO model is named</div>
+          <div class="vx-sub">A floor. <span class="pl-vs-n" data-source="private_label" data-field="vs4_n" data-where="view=meta">—</span> on VS4. On <span class="pl-vs-only" data-source="private_label" data-field="vs4_no_fico_n" data-where="view=meta">—</span> of them, no FICO model is named</div>
         </div>
         <div class="vx-card">
           <div class="vx-lbl">Recent loans naming VantageScore</div>
@@ -1316,21 +1334,109 @@
           <div class="vx-sub">In <span class="pl-gse-month" data-source="score_mix" data-field="start">—</span>, a floor too</div>
         </div>
       </div>
-      <section class="vx-card mk-only-pl" id="pl-chart-card" aria-labelledby="pl-chart-h" hidden>
+      <p class="vx-sub mk-only-pl" id="pl-two" hidden>How the SEC reports and HMDA differ: the reports cover rated deals each week as they file, on loans months old, and name a model only where a report has a column for it. HMDA covers, once a year, the loans nearly every lender made and sold to a private securitizer within the same calendar year.</p>
+      <div class="vx-grid mk-only-pl" id="pl-pair" hidden>
+      <section class="vx-card" id="pl-chart-card" aria-labelledby="pl-chart-h">
         <div class="vx-row">
           <h2 id="pl-chart-h">Out of every 100 loans in these reports, which model is named?</h2>
           <div class="vx-seg" data-param="pbasis" role="group" aria-label="How to split the loans">
             <button type="button" data-v="pulled">By month of credit report</button><button type="button" data-v="filed">By quarter filed</button><button type="button" data-v="kind">By kind of deal</button>
           </div>
         </div>
-        <p class="vx-note">Only a named model counts. Grey is unknown: a code this cannot read, or a report that names nothing for the loan. The credit report date is the one date these reports show, on some loans, and it runs a median of <span class="pl-lag" data-source="private_label" data-field="lag_months" data-where="view=meta">—</span> months before the filing. Application, lock and note dates are masked. Kind of deal goes by the deal's name.</p>
+        <p class="vx-note" data-clamp="0">Only a named model counts. Grey is unknown: a code this cannot read, or a report that names nothing for the loan. The credit report date is the one date these reports show, on some loans, and it runs a median of <span class="pl-lag" data-source="private_label" data-field="lag_months" data-where="view=meta">—</span> months before the filing. Application, lock and note dates are masked. Kind of deal goes by the deal's name.</p>
         <div class="vx-legend pl-legend"></div>
         <div class="vx-chart mk-bars" id="pl-bars" data-source="private_label"></div>
+      </section>
+      <section class="vx-card" id="ph-card" aria-labelledby="ph-h">
+        <h2 id="ph-h">Loans sold to <span data-term="privsec">private securitizers</span>, from HMDA</h2>
+        <p class="vx-note">Lenders tell <span data-term="hmda">HMDA</span> who bought each loan they made and which score model they relied on. HMDA counts a sale to a private securitizer only in the calendar year the loan was made: a loan sold the next year shows as not sold, and one sold through an aggregator shows the aggregator.</p>
+        <div class="vx-tiles">
+          <div class="vx-card">
+            <div class="vx-lbl">Share naming a FICO model</div>
+            <div class="vx-val ph-fico dash-skeleton" data-source="pl_hmda" data-field="fico" data-where="view=meta">—</div>
+            <div class="vx-sub"><span class="ph-classic" data-source="pl_hmda" data-field="classic" data-where="view=meta">—</span> <span data-term="classic">Classic FICO</span>. A floor: <span class="ph-unknown" data-source="pl_hmda" data-field="unknown" data-where="view=meta">—</span> name no FICO or VantageScore model</div>
+          </div>
+          <div class="vx-card">
+            <div class="vx-lbl">Loans made and sold in <span class="ph-year" data-source="pl_hmda" data-field="year" data-where="view=meta">—</span></div>
+            <div class="vx-val ph-n dash-skeleton" data-source="pl_hmda" data-field="n" data-where="view=meta">—</div>
+            <div class="vx-sub">Worth <span class="ph-usd" data-source="pl_hmda" data-field="usd_bn" data-where="view=meta">—</span></div>
+          </div>
+          <div class="vx-card">
+            <div class="vx-lbl">Loans naming <span data-term="vs4">VS4</span> in <span class="ph-year" data-source="pl_hmda" data-field="year" data-where="view=meta">—</span></div>
+            <div class="vx-val ph-vs4 dash-skeleton" data-source="pl_hmda" data-field="vs4_n" data-where="view=meta">—</div>
+            <div class="vx-sub" id="ph-vs4-sub" data-source="pl_hmda" data-field="text" data-where="view=sentence&amp;key=vs4_tile">—</div>
+          </div>
+        </div>
+        <p class="vx-sub" id="ph-route" data-source="pl_hmda" data-field="text" data-where="view=sentence&amp;key=route" hidden></p>
+        <h3 id="ph-years-h">Out of every 100 of these loans, which score did the lender name? <span class="mk-sub">By year made. The number on top is the share naming a FICO model</span></h3>
+        <div class="vx-legend" id="ph-legend"></div>
+        <div class="vx-chart vx-chart-sm" id="ph-chart" data-source="pl_hmda"></div>
+        <p class="vx-sub" id="ph-dips" data-source="pl_hmda" data-field="text" data-where="view=sentence&amp;key=dips" hidden></p>
+        <p class="vx-sub" id="ph-form" data-source="pl_hmda" data-field="text" data-where="view=sentence&amp;key=form" hidden></p>
+        <p class="vx-sub" id="ph-kinds" data-source="pl_hmda" data-field="text" data-where="view=sentence&amp;key=kinds" hidden></p>
+        <details class="vx-more" id="ph-kind-more">
+          <summary>By kind of loan <span>made in <span class="ph-year" data-source="pl_hmda" data-field="year" data-where="view=meta">—</span></span></summary>
+          <div class="vx-chart mk-bars" id="ph-kind-bars" data-source="pl_hmda"></div>
+        </details>
+      </section>
+      </div>
+      <section class="vx-card mk-only-pl" id="ph-more-card" aria-labelledby="ph-lender-h" hidden>
+        <h2 id="ph-lender-h">Who sold the most to private securitizers in <span class="ph-year" data-source="pl_hmda" data-field="year" data-where="view=meta">—</span>? <span class="mk-sub">From HMDA, by legal entity, with each one's loans the year before</span></h2>
+        <div class="vx-tablebox">
+          <table class="vx-table" id="ph-lender-table" data-source="pl_hmda" data-row-key="view,rank">
+            <thead><tr>
+              <th scope="col" class="vx-l" data-field="name">Lender</th>
+              <th scope="col" data-field="fico">Any FICO model</th>
+              <th scope="col" data-field="none">No score reported</th>
+              <th scope="col" data-field="n">Loans</th>
+              <th scope="col" class="vx-opt" data-field="usd_bn">Dollars</th>
+              <th scope="col" class="vx-opt" data-field="classic">Classic FICO</th>
+              <th scope="col" class="vx-opt" data-field="fico_new">Newer FICO</th>
+              <th scope="col" data-field="vs4_n">VS4 loans</th>
+              <th scope="col" id="ph-prior-h" data-field="prior_n">Loans the year before</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="vx-sub" id="ph-unsold" data-source="pl_hmda" data-field="text" data-where="view=sentence&amp;key=unsold" hidden></p>
+        <h3 class="ph-h3">Lenders putting VS4 on loans sold outside Fannie, Freddie, Ginnie and Farmer Mac</h3>
+        <p class="vx-sub" id="ph-outside" data-source="pl_hmda" data-field="text" data-where="view=sentence&amp;key=outside" hidden></p>
+        <div class="vx-tablebox">
+          <table class="vx-table" id="ph-vs4-table" data-source="pl_hmda" data-row-key="view,rank">
+            <thead><tr>
+              <th scope="col" class="vx-l" data-field="name">Lender</th>
+              <th scope="col" data-field="n">Loans sold to other buyers</th>
+              <th scope="col" data-field="vs4_n">VS4 loans</th>
+              <th scope="col" data-field="vs4">Share naming VS4</th>
+              <th scope="col" class="vx-l vx-opt" data-field="buyer">VS4 loans sold mostly to</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="vx-note" id="ph-next" data-clamp="0" data-source="pl_hmda" data-field="text" data-where="view=sentence&amp;key=next" hidden></p>
+      </section>
+      <section class="vx-card mk-only-pl" id="vw-card" aria-labelledby="vw-h" hidden>
+        <h2 id="vw-h">VantageScore watch: filings, rating agencies and lender guides</h2>
+        <p class="vx-note">What names VantageScore and matters for mortgages, newest first. SEC filings come from a weekly search and show the filing's own words, in quotes. Rating agencies, lender and loan-buyer guides and the press are kept by hand, in our words. <span class="vw-new">New</span> marks what was first listed in the past week.</p>
+        <p class="vx-sub" id="vw-lead" data-source="vs_watch" data-field="text" data-where="view=sentence&amp;key=lead" hidden></p>
+        <div class="vx-tablebox">
+          <table class="vx-table" id="vw-table" data-source="vs_watch" data-row-key="view,key">
+            <thead><tr>
+              <th scope="col" class="vx-l" data-field="date">Date</th>
+              <th scope="col" class="vx-l" data-field="kind_label">Kind</th>
+              <th scope="col" class="vx-l" data-field="who">Who</th>
+              <th scope="col" class="vx-l" data-field="what">What it says</th>
+              <th scope="col" class="vx-l" data-field="source">Source</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="vx-note" id="vw-search" data-source="vs_watch" data-field="text" data-where="view=sentence&amp;key=search" hidden></p>
       </section>
       <div class="vx-grid mk-only-pl" hidden>
         <section class="vx-card vx-wide" id="pl-deal-card" aria-labelledby="pl-deal-h">
           <h2 id="pl-deal-h">Deals with a loan naming VantageScore</h2>
-          <p class="vx-note">Newest first. Each links to the filing.</p>
+          <p class="vx-note">Newest first. Each links to the filing. Each loan counts once, under the first deal whose report lists it, so a deal can show fewer loans here than its report holds.</p>
           <div class="vx-tablebox">
             <table class="vx-table" id="pl-deal-table" data-source="private_label" data-row-key="view,key">
               <thead><tr>

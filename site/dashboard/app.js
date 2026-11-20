@@ -72,6 +72,8 @@
     if (!['all', 'first', 'equity', 'vs', 'fico_new'].includes(p.mscope)) p.mscope = 'all';
     if (!['pl', 'hmda'].includes(p.mview)) p.mview = 'va';
     if (p.mfollow !== 'off') p.mfollow = 'on';
+    if (p.munit !== 'usd') p.munit = 'loans';
+    if (p.mscale !== 'share') p.mscale = 'total';
     if (!['all', 'first', 'gse', 'fha', 'va', 'jumbo', 'equity'].includes(p.myseg)) p.myseg = 'all';
     if (!['classic', 'fico_new', 'vs'].includes(p.mmeasure)) p.mmeasure = 'classic';
     if (!['pulled', 'filed', 'kind'].includes(p.pbasis)) p.pbasis = 'pulled';
@@ -239,7 +241,7 @@
         return item;
       }
       const sw = document.createElement('span');
-      sw.className = kind === 'line' || kind === 'diamond' || kind === 'dot' || kind === 'outline' || kind === 'hollow' ? `vx-sw vx-sw-${kind}` : 'vx-sw';
+      sw.className = kind === 'line' || kind === 'diamond' || kind === 'dot' || kind === 'outline' || kind === 'hollow' || kind === 'hatch' ? `vx-sw vx-sw-${kind}` : 'vx-sw';
       if (kind === 'diamond' || kind === 'outline') sw.style.borderColor = color;
       else if (kind === 'hollow') sw.style.color = color;
       else sw.style.background = color;
@@ -308,11 +310,14 @@
       .call(d3.axisLeft(y).tickValues(vals).tickFormat(yf).tickSize(0)).call(styleAxis);
   }
 
-  // A band axis of months or weeks, thinned so labels never meet.
-  function bandAxis(svg, x, keys, lab, widest, y0) {
+  // A band axis of months or weeks, thinned so labels never meet. The thinning counts out from anchor, the first key unless a chart names another, so that one is always labelled.
+  // Returns the keys it labels, for a chart that marks a place the thinning leaves bare.
+  function bandAxis(svg, x, keys, lab, widest, y0, anchor = 0) {
     const every = Math.max(1, Math.ceil((widest + 10) / x.step()));
+    const shown = keys.filter((_, i) => Math.abs(i - anchor) % every === 0);
     svg.append('g').attr('transform', `translate(0,${y0})`)
-      .call(d3.axisBottom(x).tickValues(keys.filter((_, i) => i % every === 0)).tickFormat(lab).tickSize(0)).call(styleAxis);
+      .call(d3.axisBottom(x).tickValues(shown).tickFormat(lab).tickSize(0)).call(styleAxis);
+    return shown;
   }
 
   // Margins and band scale for a chart of periods: left from the widest tick label, right from half the widest period label.

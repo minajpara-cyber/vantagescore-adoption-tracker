@@ -6,21 +6,30 @@ warning says so until then. Figures are built here and never typed: outside numb
 table is arithmetic on stated assumptions, not a forecast. A score that does not show is unknown, so what shows VS4 only is "at most".
 
   data/private/market_inputs.csv  kind, key, year, value, unit, text, when, after, source, url, date, standing, order. A missing file stops nothing: the dataset then holds a meta row, the
-                                  sentences that need no input, and a warning. kind: gse_count and gse_usd (fnma, fhlmc, by year); fhfa (tie-outs, by year); usd_share (published dollar shares);
-                                  piece, part and break (text, with after replacing it once the data reaches the date in when). What FICO itself reports sits in reference/assumptions.csv.
+                                  sentences that need no input, and a warning. kind: gse_count and gse_usd (fnma, fhlmc, by year); fhfa (by year: the tie-outs, and the yearly chart's
+                                  Fannie and Freddie before the pieces' year); usd_share (published dollar shares); piece, part and break (text, with after replacing it once the data reaches
+                                  the date in when). What FICO itself reports sits in reference/assumptions.csv.
 
   market_size  view meta: the year, the follow group's shares, the dollar range, the month and pulls behind the dollars, how the input file read.
                view piece: one row per piece: n, usd_bn, share_n, share_usd, share_all_n, first_lien, follow, label, note, uses (which score, in words), move (when it can move), fresh (how fresh our data is), its sources.
                view follow: today and FOLLOW_LEVELS: share of first-lien loans and FICO dollars a year, GSEs alone (gse_*) and with FHA and VA (both_*), at each of PULL_CASES, with share of FICO's revenue, as numbers and as text.
                view part: the three parts of "follow": permission, use, VS4 only. view break: what would break the assumption.
                view sentence: key, text, each under its guard here. view overview, overview_pic: the first screen's row and picture, so the two never disagree.
+               view mix_year: one row per year and kind, every year built as the pieces are (by _pieces), all by the year the loan was made: HMDA's rows for that year, and for
+                              Fannie and Freddie FHFA's count and dollars of the loans they bought, by the year each loan was made, in every year before the pieces' year, and their own
+                              count and dollars in the pieces' year, so the latest year's rows equal the piece rows. n, usd_bn, share_n, share_usd, share_all_n, first_n and first_usd_bn
+                              (that year's first-lien loans and $bn), first_lien; on the Fannie and Freddie row, basis (fhfa or own) and their own count and $bn for reference (own_n,
+                              own_usd_bn). The sentences mix_caption (loans) and mix_caption_usd (dollars) say the basis and the figures behind it, each for its
+                              own view.
+               view mix_gap: a year on the chart's axis left out, for loans (measure n) or dollars (measure usd), with text saying why in plain words and short, a word or two for
+                             its empty place. The report warns for each.
                view check: tie-outs. view warning: what the weekly report prints.
 """
 import csv
 import json
 import re
 from datetime import date
-from math import isfinite
+from math import ceil, isfinite
 from pathlib import Path
 
 from . import paths
@@ -30,6 +39,8 @@ from .hmda import SEGMENTS
 
 INPUTS = paths.PRIVATE / "market_inputs.csv"
 PIECES = [("gse", "Fannie and Freddie"), ("fha", "FHA"), ("va", "VA"), ("usda", "USDA"), ("other_conforming", "Other conforming size"), ("business", "Business purpose"), ("jumbo", "Jumbo")]
+EQUITY_LABEL = "Home equity and second liens"
+GSE_NAMES = (("fnma", "Fannie Mae"), ("fhlmc", "Freddie Mac"))
 CONFORMING_ROWS = ("gse", "private", "other_buyer", "not_sold")  # HMDA's rows holding conforming-size loans sold to a GSE, another buyer or no one that year
 OTHER_ROWS = ("private", "other_buyer", "not_sold")
 REST_ROWS = ("usda", "jumbo", "private", "other_buyer", "not_sold", "business")  # HMDA's first-lien rows outside the GSE, FHA and VA rows
@@ -44,6 +55,7 @@ VA_BEHIND = 2  # months the Ginnie Mae files can sit behind the GSE files before
 LEADER_MIN = 100  # GSE loans a lender needs in the two closing months for its comparison line
 HMDA_URL = "https://ffiec.cfpb.gov/data-publication/snapshot-national-loan-level-dataset"
 TIES = {"gse_n": 0.05, "gse_usd": 0.05, "gov_n": 0.05, "no_business_n": 0.05, "other_n": 0.15, "jumbo_n": 0.15}  # how far each piece may sit from FHFA's count before it warns
+BASIS_NEAR = 0.001  # the yearly chart's captions say the GSEs' own count or dollars sit "within" this of FHFA's; from it on, by how much and which way
 
 
 def pc0(v):
@@ -105,6 +117,74 @@ def _day(s):
 
 def _months_apart(a, b):
     return (int(b[:4]) - int(a[:4])) * 12 + int(b[5:7]) - int(a[5:7])
+
+
+def _pieces(seg: dict, gse_n: int, gse_usd: float | None) -> tuple[dict, int, float | None]:
+    """One year's first-lien pieces as key -> (loans, $bn), from HMDA's rows for that year and a count and dollars of the loans Fannie and Freddie bought. Other conforming
+    size is what is left of HMDA's conforming-size rows; its dollars are what is left of the year's first-lien dollars once the other six pieces are off, so the seven add to
+    the year's total. The tab's pieces and the yearly chart both come from here. Also returns both remainders; a dollar remainder below zero gives that piece no dollars."""
+    n_of = lambda k: (seg.get(k) or {}).get("n") or 0  # noqa: E731
+    usd_of = lambda k: (seg.get(k) or {}).get("usd_bn") or 0.0  # noqa: E731
+    residual = sum(n_of(k) for k in CONFORMING_ROWS) - gse_n
+    residual_usd = round(usd_of("first") - gse_usd - sum(usd_of(k) for k in ("fha", "va", "usda", "business", "jumbo")), 1) if gse_usd is not None else None
+    sizes = {"gse": (gse_n, gse_usd), "fha": (n_of("fha"), usd_of("fha")), "va": (n_of("va"), usd_of("va")), "usda": (n_of("usda"), usd_of("usda")),
+             "other_conforming": (residual, residual_usd if residual_usd is None or residual_usd >= 0 else None), "business": (n_of("business"), usd_of("business")), "jumbo": (n_of("jumbo"), usd_of("jumbo"))}
+    return sizes, residual, residual_usd
+
+
+def _shares(n, usd, first_lien, first_n, first_usd, all_n) -> dict:
+    """A piece's share of the year's first-lien loans and dollars, and of all home loans. One sum for the piece rows and the yearly rows."""
+    return {"share_n": _r(n / first_n) if first_lien else None, "share_usd": _r(usd / first_usd) if first_lien and usd is not None and first_usd else None, "share_all_n": _r(n / all_n) if all_n else None}
+
+
+def _count(n):
+    """A count in millions to one place, or in full under a tenth of a million."""
+    return f"{n / 1e6:.1f}m" if n >= 1e5 else f"{n:,}"
+
+
+def _clause(text):
+    """A sentence set after a colon: its first word in lower case, unless the sentence opens on a name."""
+    return text[0].lower() + text[1:] if text.startswith("No ") else text
+
+
+def _near(own, fhfa) -> str:
+    """How near the GSEs' own figure for the pieces' year sits to FHFA's, the count and the dollars alike: the same; "within" BASIS_NEAR, rounded up so it holds; or from
+    BASIS_NEAR on, by how much and which way. Nothing without both."""
+    if not own or not fhfa:
+        return ""
+    off = own / fhfa - 1
+    if not off:
+        return ", the same as FHFA's"
+    if abs(off) < BASIS_NEAR:
+        return f", within {max(ceil(abs(off) * 1000 - 1e-9), 1) / 10:.1f}% of FHFA's"  # rounded up, so "within" holds
+    return f", {pc1(abs(off))} {'above' if off > 0 else 'below'} FHFA's"
+
+
+def _mix_caption(measure, basis, year, own, fhfa, mix_rows, gaps, hmda_latest, as_of) -> str:
+    """The yearly chart's caption for one view, loans (measure n) or dollars (usd), every figure in it worked out here: whose count or dollars each year's Fannie and
+    Freddie piece is, how near their own for the pieces' year sits to FHFA's (by _near), the newest year's home equity in the view's unit, each year the view leaves out
+    and why, and when HMDA's next file comes out."""
+    usd = measure == "usd"
+    what = "dollars" if usd else "count"
+    gone = {g["year"]: g["text"] for g in gaps if g["measure"] == measure}
+    drawn = {y: b for y, b in basis.items() if y not in gone}  # the years this view draws, and whose figure each one is
+    own_year = drawn.get(year) == "own"
+    near = _near(own, fhfa) if own_year else ""
+    said = []
+    if "fhfa" in drawn.values():
+        said.append(f"Fannie and Freddie: FHFA's {what} {'for' if usd else 'of'} the loans they bought, by the year each loan was made" + (f"; {year} is their own {what}{near}." if own_year else "."))
+    elif own_year:
+        said.append(f"Fannie and Freddie: their own {what} for {year}{near}.")
+    if drawn:
+        said.append("The rest from HMDA, by the year the loan was made.")
+    size = (lambda r: f"${r['usd_bn']:,.1f}bn") if usd else (lambda r: f"{_count(r['n'])} loans")
+    equity = max((r for r in mix_rows if r["key"] == "equity" and r["usd_bn" if usd else "n"]), key=lambda r: r["year"], default=None)
+    said.append(f"{EQUITY_LABEL} ({size(equity)} in {equity['year']}) are not in the bars." if equity else f"{EQUITY_LABEL} are not in the bars.")
+    said += [f"{y} is left out: {_clause(text)}" for y, text in sorted(gone.items())]
+    nxt = hmda_latest + 1
+    if nxt not in gone and (not as_of or as_of[:7] <= f"{nxt + 1}-06"):  # a next year already left out says when its file comes out
+        said.append(f"HMDA's {nxt} file comes out about June {nxt + 1}.")
+    return " ".join(said)
 
 
 def load_inputs(path: Path | None = None) -> dict:
@@ -219,6 +299,12 @@ def build_rows(whole_market, assumptions, summary, score_mix, monthly, closing, 
         r = inp(kind, key, year)
         return r["value"] if r else None
 
+    def gse_of(y):
+        """The GSEs' own count and $bn for a year: a count only with both GSEs' counts above zero, dollars only with both GSEs' dollars."""
+        fn, fh = value("gse_count", "fnma", y), value("gse_count", "fhlmc", y)
+        fn_usd, fh_usd = value("gse_usd", "fnma", y), value("gse_usd", "fhlmc", y)
+        return (int(fn + fh) if fn and fh else None), (round(fn_usd + fh_usd, 1) if fn_usd is not None and fh_usd is not None else None)
+
     def say(key, text):
         sentences[key] = text
 
@@ -271,8 +357,8 @@ def build_rows(whole_market, assumptions, summary, score_mix, monthly, closing, 
     seg = hmda.get(year) or {}
     n_of = lambda k: (seg.get(k) or {}).get("n") or 0  # noqa: E731
     usd_of = lambda k: (seg.get(k) or {}).get("usd_bn") or 0.0  # noqa: E731
-    gse_n = int(value("gse_count", "fnma", year) + value("gse_count", "fhlmc", year)) if year else None
-    residual = sum(n_of(k) for k in CONFORMING_ROWS) - gse_n if year else None
+    gse_n, gse_usd = gse_of(year) if year else (None, None)
+    sizes, residual, residual_usd = _pieces(seg, gse_n, gse_usd) if year else ({}, None, None)
     if year and residual < 0:
         warnings.append(f"market size: the GSEs' {year} count tops HMDA's conforming-size rows by {-residual:,}, so the sizes are held back. Check the input file.")
         say("lead", f"The GSEs' own {year} count does not fit HMDA's conforming-size rows, so the sizes are held back until the input file is checked.")
@@ -283,12 +369,8 @@ def build_rows(whole_market, assumptions, summary, score_mix, monthly, closing, 
             return sum(((seg.get(k) or {}).get(field) or 0) * n_of(k) for k in keys) / total if total else None
 
         first_n, first_usd, all_n, all_usd = n_of("first"), usd_of("first"), n_of("all"), usd_of("all")
-        fnma_usd, fhlmc_usd = value("gse_usd", "fnma", year), value("gse_usd", "fhlmc", year)
-        gse_usd = round(fnma_usd + fhlmc_usd, 1) if fnma_usd is not None and fhlmc_usd is not None else None
-        residual_usd = round(sum(usd_of(k) for k in CONFORMING_ROWS) - gse_usd, 1) if gse_usd is not None else None
-        if residual_usd is not None and residual_usd < 0:
+        if residual_usd is not None and residual_usd < 0:  # _pieces gives other conforming size no dollars
             warnings.append(f"market size: the GSEs' {year} dollars top HMDA's conforming-size rows, so the dollar bar is held back. Check the input file.")
-            residual_usd = None
         fha_n, va_n, usda_n = n_of("fha"), n_of("va"), n_of("usda")
         three_n = gse_n + fha_n + va_n
         gse_share, three_share = gse_n / first_n, three_n / first_n
@@ -368,12 +450,11 @@ def build_rows(whole_market, assumptions, summary, score_mix, monthly, closing, 
             fresh["va"] = f"{hmda_fresh} {va['as_of']}, no model named."
         if pl_meta and pl_meta.get("through"):
             fresh["other_conforming"] = f"{hmda_fresh} Private-label deal reports weekly, filed through {_day(pl_meta['through'])}, on loans about {pl_meta['lag_months']} months older."
-        sizes = {"gse": (gse_n, gse_usd), "fha": (fha_n, usd_of("fha")), "va": (va_n, usd_of("va")), "usda": (usda_n, usd_of("usda")), "other_conforming": (residual, residual_usd), "business": (n_of("business"), usd_of("business")), "jumbo": (n_of("jumbo"), usd_of("jumbo"))}
 
         def piece_row(key, order, label, n, usd, first_lien, words, fresh_words, note):
             text_row = inp("piece", key) or {}
             own = (inp("gse_count", "fnma", year), inp("gse_count", "fhlmc", year)) if key == "gse" else (None, None)
-            return {"view": "piece", "key": key, "order": order, "label": label, "note": note, "first_lien": first_lien, "follow": key in ("gse", "fha", "va"), "n": n, "usd_bn": usd, "share_n": _r(n / first_n) if first_lien else None, "share_usd": _r(usd / first_usd) if first_lien and usd is not None and first_usd else None, "share_all_n": _r(n / all_n),
+            return {"view": "piece", "key": key, "order": order, "label": label, "note": note, "first_lien": first_lien, "follow": key in ("gse", "fha", "va"), "n": n, "usd_bn": usd, **_shares(n, usd, first_lien, first_n, first_usd, all_n),
                     "uses": words, "move": dated_text(text_row), "fresh": fresh_words, "standing": text_row.get("standing"), "size_src_label": f"Size: {own[0]['source']}" if own[0] else ("HMDA" if key != "other_conforming" else "HMDA less the GSEs' counts"), "size_src_url": own[0]["url"] if own[0] else HMDA_URL,
                     "size2_src_label": own[1]["source"] if own[1] else None, "size2_src_url": own[1]["url"] if own[1] else None, "move_src_label": text_row.get("source"), "move_src_url": text_row.get("url")}
 
@@ -382,7 +463,7 @@ def build_rows(whole_market, assumptions, summary, score_mix, monthly, closing, 
                 rows.append(piece_row(key, order, label, sizes[key][0], sizes[key][1], True, uses[key], fresh[key], notes.get(key)))
         if n_of("equity"):
             eq = seg["equity"]
-            rows.append(piece_row("equity", len(PIECES), "Home equity and second liens", n_of("equity"), usd_of("equity"), False, f"HMDA {year}: {pc1(eq['fico'])} name a FICO model, {pc1(eq['vs4'])} VS4.", hmda_fresh, "Not first-lien. Dollars count a line at its limit"))
+            rows.append(piece_row("equity", len(PIECES), EQUITY_LABEL, n_of("equity"), usd_of("equity"), False, f"HMDA {year}: {pc1(eq['fico'])} name a FICO model, {pc1(eq['vs4'])} VS4.", hmda_fresh, "Not first-lien. Dollars count a line at its limit"))
         if pl_meta and pl_meta.get("n"):
             say("private_label", f"Private-label deals cut across other conforming size, jumbo and business purpose. Of {pl_meta['n']:,} loans in deal reports filed {_day(pl_meta['from'])} to {_day(pl_meta['through'])}, {pc2(pl_meta['vs'])} name VantageScore, updated weekly.")
 
@@ -458,6 +539,89 @@ def build_rows(whole_market, assumptions, summary, score_mix, monthly, closing, 
         over_line = f"The other {rest_pct}% {fico_words}, with {vs4_words} ({year})." + (f" If FHA and VA follow, any level of VS4 only at the GSEs reaches {reach:.1f} times as much." if reach else "")
         rows.append({"view": "overview", "key": "market", "label": "Rest of the market", "big": f"{pc1(gse_share)} → {pc0(three_share)}", "big_value": _r(gse_share), "big_unit": "share", "big_what": f"of {year} first-lien loans: Fannie and Freddie by their own count, then with FHA and VA if they follow", "line": over_line, "year": year})
         rows += [{"view": "overview_pic", "order": i, "key": k, "label": label, "value": _r(v / first_n), "n": v, "what": f"Share of {first_n:,} first-lien loans, {year}"} for i, (k, label, v) in enumerate((("gse", "Fannie and Freddie", gse_n), ("fha", "FHA", fha_n), ("va", "VA", va_n), ("rest", "Everything else", first_n - three_n)))]
+
+    # ---- First-lien loans made each year, by kind, every piece on the year the loan was made. Before the pieces' year, Fannie and Freddie are FHFA's count of the loans
+    # they bought, by the year each was made; the pieces' year keeps their own count, so its bar equals the size bar, and the caption says how near FHFA's that count sits.
+    # Their own count rides on each year's row for reference only, so where it and FHFA's differ in a past year (the timing this basis fixes) nothing warns. Every year is
+    # built by _pieces. The axis runs from the first year to the last with HMDA rows or a count of their own; a year that cannot be built keeps its place, says why in a
+    # sentence and in a short word for its empty place, and the report warns. ----
+    gse_years = {r["year"] for r in in_rows if r["kind"] == "gse_count" and r["year"]}
+    if gse_years:  # no counts at all: the warning on the input file says so once
+        span = sorted(set(hmda) | gse_years)
+        mix_rows, gaps, basis = [], [], {}
+
+        def mix_row(y, s, key, order, label, n, usd, first_lien, **more):
+            first_y, first_usd_y, all_y = (s.get("first") or {}).get("n") or 0, (s.get("first") or {}).get("usd_bn") or 0.0, (s.get("all") or {}).get("n") or 0
+            return {"view": "mix_year", "key": key, "year": y, "order": order, "label": label, "first_lien": first_lien, "n": n, "usd_bn": usd, **_shares(n, usd, first_lien, first_y, first_usd_y, all_y),
+                    "first_n": first_y, "first_usd_bn": first_usd_y, **more}
+
+        def names(kind, y, have):
+            return " or ".join(name for key, name in GSE_NAMES if not have(value(kind, key, y)))
+
+        for y in range(span[0], span[-1] + 1):
+            s = hmda.get(y) or {}
+            own_n, own_usd = gse_of(y)
+            on_fhfa = year is not None and y < year  # the pieces' year, and any after it, stay on their own count
+            if on_fhfa:
+                f_n, f_usd = value("fhfa", "enterprise_n", y), value("fhfa", "enterprise_usd", y)
+                g_n, g_usd = (int(f_n) if f_n else None), (f_usd or None)
+                count_words, usd_words = f"FHFA's {y} count for Fannie and Freddie", f"FHFA's {y} dollars for Fannie and Freddie"
+                whose_n, whose_usd = f"FHFA's {y} count for the GSEs", f"FHFA's {y} dollars for the GSEs"
+            else:
+                g_n, g_usd = own_n, own_usd
+                count_words, usd_words = f"Fannie and Freddie's own {y} count", f"Fannie and Freddie's own {y} dollars"
+                whose_n, whose_usd = f"the GSEs' {y} count", f"the GSEs' {y} dollars"
+            whys, said, short = [], [], []  # the hover's and the caption's words, the report's, and a word for the empty place on the axis
+            if not (s.get("first") or {}).get("n"):
+                if s:
+                    whys.append(f"HMDA's {y} rows hold no first-lien loans.")
+                    short.append("file incomplete")
+                elif hmda_latest is None or y > hmda_latest:
+                    due_y = not as_of or as_of[:7] <= f"{y + 1}-06"
+                    whys.append(f"HMDA's {y} file comes out about June {y + 1}." if due_y else f"HMDA's {y} file is not loaded yet.")
+                    short.append("no file yet" if due_y else "not loaded")
+                else:
+                    whys.append(f"HMDA's {y} file is not loaded.")
+                    short.append("not loaded")
+                said.append("no HMDA first-lien rows for it")
+            if not g_n:
+                if on_fhfa:
+                    whys.append(f"No {y} count from FHFA yet.")
+                    said.append(f"the input file has no FHFA count for {y}")
+                else:
+                    missing = names("gse_count", y, bool)
+                    whys.append(f"No {y} count from {missing} yet.")
+                    said.append(f"the input file has no {y} count for {missing}")
+                short.append("no count yet")
+            if not whys:
+                sizes_y, residual_y, residual_usd_y = _pieces(s, g_n, g_usd)
+                if residual_y < 0:
+                    whys.append(f"{count_words} is more than all of HMDA's conforming-size loans that year, so the year is held back.")
+                    said.append(f"{whose_n} tops HMDA's conforming-size rows by {-residual_y:,}. Check the input file.")
+                    short.append("held back")
+            if whys:
+                gaps += [{"view": "mix_gap", "year": y, "measure": m, "text": " ".join(whys), "short": short[0]} for m in ("n", "usd")]
+                warnings.append(f"market size: the yearly chart leaves out {y}: {'; '.join(said)}")
+                continue
+            basis[y] = "fhfa" if on_fhfa else "own"
+            for order, (key, label) in enumerate(PIECES):
+                if sizes_y[key][0]:  # as on the pieces: a kind with no loans that year gets no row
+                    more = {"basis": basis[y], "own_n": own_n, "own_usd_bn": own_usd} if key == "gse" else {}
+                    mix_rows.append(mix_row(y, s, key, order, label, *sizes_y[key], True, **more))
+            if (s.get("equity") or {}).get("n"):
+                mix_rows.append(mix_row(y, s, "equity", len(PIECES), EQUITY_LABEL, s["equity"]["n"], s["equity"].get("usd_bn") or 0.0, False))
+            if g_usd is None:
+                missing = "FHFA" if on_fhfa else names("gse_usd", y, lambda v: v is not None)
+                gaps.append({"view": "mix_gap", "year": y, "measure": "usd", "text": f"No {y} dollar figure from {missing} yet.", "short": "no dollars yet"})
+                warnings.append(f"market size: the yearly chart leaves out {y}'s dollars: the input file has no {y} dollars {'from FHFA' if on_fhfa else f'for {missing}'}")
+            elif residual_usd_y < 0:
+                gaps.append({"view": "mix_gap", "year": y, "measure": "usd", "text": f"{usd_words} are more than all of HMDA's conforming-size dollars that year, so the year's dollars are held back.", "short": "held back"})
+                warnings.append(f"market size: the yearly chart leaves out {y}'s dollars: {whose_usd} top HMDA's conforming-size rows. Check the input file.")
+        if mix_rows:  # with no year to draw, the card stays off and the warnings above say why
+            rows += mix_rows + gaps
+            ours = dict(zip(("n", "usd"), gse_of(year) if year else (None, None)))
+            for key, measure, fhfa_key in (("mix_caption", "n", "enterprise_n"), ("mix_caption_usd", "usd", "enterprise_usd")):  # one sentence for each view, worked out alike
+                say(key, _mix_caption(measure, basis, year, ours[measure], value("fhfa", fhfa_key, year) if year else None, mix_rows, gaps, hmda_latest, as_of))
 
     g_meta = va["meta"]
     if g_meta and g_meta.get("last_issue") and as_of and _months_apart(g_meta["last_issue"], as_of) > VA_BEHIND:

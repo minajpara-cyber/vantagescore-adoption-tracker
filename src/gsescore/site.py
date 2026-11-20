@@ -32,10 +32,12 @@ PUBLIC_DATASETS = ["monthly", "weekly", "summary", "events", "sellers", "seller_
 DASHBOARD_DATASETS = ["monthly", "weekly", "summary", "events", "sellers", "seller_monthly", "seller_weekly",
                       "seller_splits", "adoption", "adopters", "series", "borrowers", "borrower_profile",
                       "rates", "choice", "ceiling", "outlook", "rules", "score_mix", "lender_stage", "statements", "fees",
-                      "week_note", "assumptions", "lender_mix", "closing", "whole_market", "private_label", "ginnie_va", "market_size", "front", "vs4_only"]
-# Fields the public copy of a dataset leaves out: "field" on every row, "view.field" on that view's rows. fees: the yearly figure "if every lender
-# took the lower fee", withdrawn Oct 31, 2026, and what reads or scales to it.
-PUBLIC_DROP = {"fees": ["option_annual_usd", "option_usd", "annual_upb", "upb", "market.option_bp", "market.est_usd", "market.one_loans", "lender.option_bp", "lender.est_usd", "lender.one_loans"]}
+                      "week_note", "assumptions", "lender_mix", "closing", "whole_market", "private_label", "ginnie_va", "market_size", "front", "vs4_only", "pl_hmda", "vs_watch"]
+# Fields the public copy of a dataset leaves out: "field" on every row, "view.field" on that view's rows, and "view.*" that view's rows. fees: the yearly
+# figure "if every lender took the lower fee", withdrawn Oct 31, 2026, and what reads or scales to it. private_label: the VS4 loans naming no FICO model and
+# those by year of credit report (Nov 19, 2026), which the private dashboard reads first; to publish them, take them off here and add them to the contract.
+PUBLIC_DROP = {"fees": ["option_annual_usd", "option_usd", "annual_upb", "upb", "market.option_bp", "market.est_usd", "market.one_loans", "lender.option_bp", "lender.est_usd", "lender.one_loans"],
+               "private_label": ["vs4_no_fico_n", "vs4_year.*"]}
 RATE_READ_DAYS = 14  # the weekly report warns once the rate read's data is older than this
 UPLOADS = paths.DATA / "dashboard_uploads.json"
 CONTRACT = paths.REPO / "reference" / "public_contract.json"
@@ -47,11 +49,12 @@ DASHBOARD_PAGE = paths.ROOT / "site" / "dashboard" / "index.html"
 
 
 def public_rows(name: str, rows: list[dict]) -> list[dict]:
-    """A dataset's rows as the public site carries them, without its fields in PUBLIC_DROP."""
+    """A dataset's rows as the public site carries them, without its fields and views in PUBLIC_DROP."""
     drop = PUBLIC_DROP.get(name, [])
     everywhere = {d for d in drop if "." not in d}
-    in_view = {tuple(d.split(".")) for d in drop if "." in d}
-    return [{k: v for k, v in r.items() if k not in everywhere and (r.get("view"), k) not in in_view} for r in rows]
+    views = {d[:-2] for d in drop if d.endswith(".*")}
+    in_view = {tuple(d.split(".")) for d in drop if "." in d and not d.endswith(".*")}
+    return [{k: v for k, v in r.items() if k not in everywhere and (r.get("view"), k) not in in_view} for r in rows if r.get("view") not in views]
 
 
 def _build(out: Path, page: Path, datasets: list[str], public: bool = False) -> list[str]:

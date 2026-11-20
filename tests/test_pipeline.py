@@ -2631,6 +2631,95 @@ SITUSAMC LOAN ID CUSTOMER LOAN ID SELLER LOAN ID FICO MODEL USED NEXT
 </pre>""")[0] == []  # only codes: nothing to add
 broken, broken_note = edgar.parse_exhibit("<TABLE><TR><TD>SitusAMC Loan ID</TD><TD>Borrower&nbsp;1<BR>TransUnion<BR>FICO<BR>Model Used</TD><TD>Rate</TD></TR><TR><TD>224733811</TD><TD>Beacon 5.0</TD><TD>7.1</TD></TR></TABLE>")
 assert broken_note["model_tables"] == 1 and broken[0]["models"] == ["Beacon 5.0"], broken_note
+# One loan number for the whole exhibit, so a loan in several tables counts once. NYMT's reports put the review firm's number beside the customer's 1 to 1,366 in some
+# tables and the review firm's alone in others, and the parser used to take the customer's where it had three figures and the review firm's elsewhere: the same loan
+# under two numbers. Now the review firm's is the exhibit's wherever its tables carry it; a table without it (an ASF tape's "Loan Number", in its own order) finds it
+# through the customer's number a table gives beside it; a model table with no loan number takes the last table's numbers, place by place, when it has as many rows.
+one_number = ("<table><tr><th>SitusAMC Loan ID</th><th>Customer Loan ID</th><th>Borrower Experian FICO Model Used</th></tr>"
+              "<tr><td>225000001</td><td>7</td><td>Beacon 5.0</td></tr><tr><td>225000002</td><td>130</td><td>VantageScore 4.0</td></tr></table>"
+              "<table><tr><th>Loan Number</th><th>FICO Model Used</th><th>Vantage Score: Primary Borrower</th><th>Term</th></tr>"
+              "<tr><td>130</td><td>9</td><td>731</td><td>360</td></tr><tr><td>7</td><td>9</td><td>XX</td><td>360</td></tr></table>"
+              "<table><tr><th>SitusAMC Loan ID</th><th>Borrower 2 Equifax FICO Model Used</th><th>Rate</th></tr>"
+              "<tr><td>225000001</td><td>FICO Risk Score Classic 04</td><td>7.1</td></tr><tr><td>225000002</td><td>Beacon 5.0</td><td>7.2</td></tr></table>"
+              "<table><tr><th>Borrower 3 TransUnion FICO Model Used</th><th>Note</th><th>Rate</th></tr><tr><td>Fair Isaac (VER. 2)</td><td>a</td><td>7.1</td></tr>"
+              "<tr><td>VantageScore 3.0</td><td>b</td><td>7.2</td></tr></table>")
+one_rows, one_note = edgar.parse_exhibit(one_number)
+assert one_note["model_tables"] == 4 and [r["id"] for r in one_rows] == ["225000001", "225000002", "225000002", "225000001", "225000001", "225000002", "225000001", "225000002"], [r["id"] for r in one_rows]
+one_models = {}
+for r in one_rows:
+    one_models.setdefault(r["id"], set()).update(r["models"])
+assert one_models == {"225000001": {"Beacon 5.0", "9", "FICO Risk Score Classic 04", "Fair Isaac (VER. 2)"}, "225000002": {"VantageScore 4.0", "9", "Beacon 5.0", "VantageScore 3.0"}}, one_models
+assert [r["vs_value"] for r in one_rows if r["id"] == "225000002"] == [False, True, False, False], "the VantageScore value stays with its own loan"
+# Where the review firm's number is masked the customer's is the exhibit's, and a deal's number, the same on every loan, never is.
+masked_firm = edgar.parse_exhibit("<table><tr><th>SitusAMC Loan ID</th><th>Customer Loan ID</th><th>FICO Model Used</th></tr><tr><td>XXXX</td><td>3260047584</td><td>Beacon 5.0</td></tr>"
+                                  "<tr><td>XXXX</td><td>3260146853</td><td>Beacon 5.0</td></tr></table>")[0]
+assert [r["id"] for r in masked_firm] == ["3260047584", "3260146853"], masked_firm
+deal_first = edgar.parse_exhibit("<table><tr><th>Deal Number</th><th>Loan ID</th><th>FICO Model Used</th></tr><tr><td>2026-1</td><td>55501</td><td>Beacon 5.0</td></tr>"
+                                 "<tr><td>2026-1</td><td>55502</td><td>Beacon 5.0</td></tr></table>")[0]
+assert [r["id"] for r in deal_first] == ["55501", "55502"], deal_first
+# A model table with no loan number and a different count of rows from the last table that had them keeps rows apart, by its place.
+apart = edgar.parse_exhibit("<table><tr><th>Loan ID</th><th>Rate</th><th>Term</th></tr><tr><td>55501</td><td>7.1</td><td>360</td></tr></table>"
+                            "<table><tr><th>FICO Model Used</th><th>Rate</th><th>Term</th></tr><tr><td>Beacon 5.0</td><td>7.1</td><td>360</td></tr><tr><td>Beacon 5.0</td><td>7.2</td><td>360</td></tr></table>")[0]
+assert [r["id"] for r in apart] == ["row1-0", "row1-1"], apart
+# A sparse row (fewer than three cells, so no loan's row of its own) still holds its place: NYMT's co-borrower table leaves some loans nearly empty, and the rows after
+# them must take the numbers in their own places.
+sparse = edgar.parse_exhibit("<table><tr><th>Loan ID</th><th>Rate</th><th>Term</th></tr><tr><td>55501</td><td>7.1</td><td>360</td></tr><tr><td>55502</td><td>7.2</td><td>360</td></tr>"
+                             "<tr><td>55503</td><td>7.3</td><td>360</td></tr></table><table><tr><th>Borrower 2 Experian FICO Model Used</th><th>Note</th><th>Rate</th></tr>"
+                             "<tr><td>Beacon 5.0</td><td>a</td><td>7.1</td></tr><tr><td></td><td></td><td>7.2</td></tr><tr><td>VantageScore 4.0</td><td>c</td><td>7.3</td></tr></table>")[0]
+assert [(r["id"], r["models"]) for r in sparse] == [("55501", ["Beacon 5.0"]), ("55503", ["VantageScore 4.0"])], sparse
+# A loan tape split by columns into tables of one width, each headed by the same first cell (Sequoia's 2025 reports): a slice naming no model is a table of its own, so
+# its heading, "Vantagescore Date" where the first slice has its model column, is never read as a loan naming VantageScore. Nor does a template's heading in a model
+# cell name a model.
+sliced = edgar.parse_exhibit("<table><tr><th>Primary Servicer</th><th>Loan Number</th><th>FICO Model Used</th></tr><tr><td>9999999</td><td>55501</td><td>Beacon 5.0</td></tr></table>"
+                             "<table><tr><td>Primary Servicer</td><td>Most Recent FICO Method</td><td>Vantagescore Date</td></tr><tr><td>9999999</td><td>3</td><td>XX/XX/2024</td></tr></table>")
+assert [(r["id"], r["models"]) for r in sliced[0]] == [("55501", ["Beacon 5.0"])] and sliced[1]["model_tables"] == 1, sliced
+assert edgar.model_family("Vantagescore Date") == edgar.model_family("Vantage Score: Primary Borrower") == "junk" and edgar.model_family("VantageScore 4.0") == "vs4"
+# An ASF tape whose Loan Number repeats the customer's number, however short, names those loans (Sequoia's 2026 reports number their loans from 1 and mask the review
+# firm's): its rows join them instead of counting again by their places, as only the rows numbered 100 and up used to.
+short_asf, short_note = edgar.parse_exhibit(
+    "<table><tr><th>SitusAMC Loan ID</th><th>Customer Loan ID</th><th>Borrower Experian FICO Model Used</th><th>Rate</th></tr><tr><td>XXXX</td><td>4</td><td>Beacon 5.0</td><td>6.1</td></tr>"
+    "<tr><td>XXXX</td><td>17</td><td>VantageScore 4.0</td><td>6.2</td></tr><tr><td>XXXX</td><td>263</td><td>FICO II</td><td>6.3</td></tr></table>"
+    "<table><tr><th>Primary Servicer</th><th>Loan Number</th><th>FICO Model Used</th></tr><tr><td>9999999</td><td>17</td><td>3</td></tr><tr><td>9999999</td><td>263</td><td>3</td></tr>"
+    "<tr><td>9999999</td><td>4</td><td>3</td></tr></table>")
+assert [r["id"] for r in short_asf] == ["4", "17", "263", "17", "263", "4"] and (short_note["listed"], short_note["copies"]) == (3, 0), short_asf
+# A number column masked or blank on every row is not there: a model table whose only number column reads (redacted) (Santander's borrower-3 table, OBX's guarantor
+# table) takes the numbers of the table before it with as many rows, by place, instead of counting its loans again.
+redacted = edgar.parse_exhibit(
+    "<table><tr><th>SitusAMC Loan ID</th><th>Customer Loan ID</th><th>Borrower 1 Experian FICO Model Used</th><th>Rate</th></tr><tr><td>(redacted)</td><td>31</td><td>Beacon 5.0</td><td>6.1</td></tr>"
+    "<tr><td>(redacted)</td><td>48</td><td></td><td>6.2</td></tr></table><table><tr><th>SitusAMC Loan ID</th><th>Borrower 3 Experian FICO Model Used</th><th>Borrower 3 Credit Order Date</th></tr>"
+    "<tr><td>(redacted)</td><td>FICO II</td><td>1/2/2026</td></tr><tr><td>(redacted)</td><td>VantageScore 3.0</td><td>1/3/2026</td></tr></table>")[0]
+assert [(r["id"], r["models"]) for r in redacted] == [("31", ["Beacon 5.0"]), ("48", []), ("31", ["FICO II"]), ("48", ["VantageScore 3.0"])], redacted
+# The place rule reaches back to the last table that numbers one loan to a row and has as many rows, as Sequoia 2025-S1's ASF tape (777 rows, numbers masked) lines up
+# with its table of 777 loans, not the 753 with models: a table of another length is passed over, and so is an exceptions table that lists one loan twice.
+placed, placed_note = edgar.parse_exhibit(
+    "<table><tr><th>Customer Loan ID</th><th>Note Date</th><th>Rate</th></tr><tr><td>8100001</td><td>1/5/2026</td><td>6.1</td></tr><tr><td>8100002</td><td>1/6/2026</td><td>6.2</td></tr>"
+    "<tr><td>8100003</td><td>1/7/2026</td><td>6.3</td></tr></table><table><tr><th>Customer Loan ID</th><th>Exception</th><th>Grade</th></tr><tr><td>8100002</td><td>DTI</td><td>B</td></tr>"
+    "<tr><td>8100002</td><td>LTV</td><td>B</td></tr><tr><td>8100003</td><td>Title</td><td>C</td></tr></table><table><tr><th>Customer Loan ID</th><th>Borrower Experian FICO Model Used</th><th>Rate</th></tr>"
+    "<tr><td>8100001</td><td>Beacon 5.0</td><td>6.1</td></tr><tr><td>8100003</td><td>FICO II</td><td>6.3</td></tr></table><table><tr><th>Primary Servicer</th><th>Loan Number</th><th>FICO Model Used</th></tr>"
+    "<tr><td>9999999</td><td>XXXX</td><td>1</td></tr><tr><td>9999999</td><td>XXXX</td><td>1</td></tr><tr><td>9999999</td><td>XXXX</td><td>99</td></tr></table>")
+assert [r["id"] for r in placed] == ["8100001", "8100003", "8100001", "8100002", "8100003"] and placed_note["copies"] == 0, placed
+# A table that adds only codes or blanks and no loan numbers, for loans the exhibit lists by number already (an ASF tape of fewer rows than the loans), is a copy and
+# left out. One with more rows than the exhibit lists, or one that names a model, stays, each row by its place.
+copy_of = lambda tape: edgar.parse_exhibit(  # noqa: E731
+    "<table><tr><th>Customer Loan ID</th><th>Borrower Experian FICO Model Used</th><th>Rate</th></tr>" + "".join(f"<tr><td>{n}</td><td>Beacon 5.0</td><td>6.4</td></tr>" for n in (5101, 5102, 5103))
+    + "</table><table><tr><th>Primary Servicer</th><th>Loan Number</th><th>Channel</th><th>FICO Model Used</th></tr>" + "".join(f"<tr><td>9999999</td><td>XXXX</td><td>2</td><td>{m}</td></tr>" for m in tape) + "</table>")
+copied, copied_note = copy_of(["1", ""])
+assert [r["id"] for r in copied] == ["5101", "5102", "5103"] and (copied_note["copies"], copied_note["rows"], copied_note["listed"]) == (2, 3, 3), copied_note
+assert len(copy_of(["1", "1", "1", "1"])[0]) == 7 and len(copy_of(["1", "FICO II"])[0]) == 5, "more coded rows than loans, or a named model: not a copy"
+# The review firm's number goes by other names: ALT's reports call it ALT ID (Sequoia's exhibit 99.17), GS's reports Unique ID. Two model tables of the same loans count
+# them once.
+alt_ids = edgar.parse_exhibit("<table><tr><th>ALT ID #</th><th>Loan ID</th><th>FICO Model Used</th><th>Rate</th></tr><tr><td>61234</td><td>XXXXXXX</td><td>1</td><td>6.1</td></tr>"
+                              "<tr><td>60412</td><td>XXXXXXX</td><td>1</td><td>6.2</td></tr></table><table><tr><th>Alt ID</th><th>Primary Servicer</th><th>FICO Model Used</th></tr>"
+                              "<tr><td>61234</td><td>9999999</td><td>99</td></tr><tr><td>60412</td><td>9999999</td><td>1</td></tr></table>")[0]
+unique_ids = edgar.parse_exhibit("<table><tr><th>Unique ID</th><th>Customer Loan ID</th><th>Borrower Experian FICO Model Used</th></tr><tr><td>1596620011</td><td>XXX</td><td>Beacon 5.0</td></tr></table>"
+                                 "<table><tr><th>Unique ID</th><th>Customer Loan ID</th><th>Borrower 1 TransUnion FICO Model Used</th></tr><tr><td>1596620011</td><td>XXX</td><td>FICO Risk Score Classic 04</td></tr></table>")[0]
+assert [r["id"] for r in alt_ids] == ["61234", "60412", "61234", "60412"] and {r["id"] for r in unique_ids} == {"1596620011"}, (alt_ids, unique_ids)
+# Each loan row carries its other numbers (alt), so a report that names the loan by another can find it: the customer's beside the review firm's. A number two loans
+# share, or a deal's number, names no loan.
+alias_rows = edgar.parse_exhibit("<table><tr><th>SitusAMC Loan ID</th><th>Customer Loan ID</th><th>Seller Loan ID</th><th>Deal Number</th><th>Borrower Experian FICO Model Used</th></tr>"
+                                 "<tr><td>226100001</td><td>509100001</td><td>4612000001</td><td>2026-7</td><td>Beacon 5.0</td></tr>"
+                                 "<tr><td>226100002</td><td>509100002</td><td>4612000001</td><td>2026-7</td><td>FICO II</td></tr></table>")[0]
+assert [(r["id"], r.get("alt")) for r in alias_rows] == [("226100001", ["509100001"]), ("226100002", ["509100002"])], alias_rows
 os.environ.pop("EDGAR_CONTACT", None)
 try:
     edgar.contact()
@@ -2662,7 +2751,8 @@ edgar._append_jsonl(e_home / "loans.jsonl", [loan("A", "1", ["Beacon 5.0"], "202
 pl = edgar.build_datasets()["private_label"]
 p_meta = next(r for r in pl if r["view"] == "meta")
 assert p_meta["n"] == 5 and p_meta["named"] == 4 and p_meta["classic_n"] == 1 and p_meta["vs4_n"] == 1 and p_meta["fico_new_n"] == 1 and p_meta["unclear_n"] == 1 and p_meta["blank_n"] == 1, p_meta  # the auto deal is out; loan 2's two reports count once, as VS4
-assert p_meta["filings"] == 3 and p_meta["with_model"] == 2 and p_meta["dated"] == 0.6 and p_meta["deals"] == 1 and p_meta["lag_months"] == 3 and p_meta["vs_no_fico_n"] == 0, p_meta
+assert p_meta["filings"] == 3 and p_meta["with_model"] == 2 and p_meta["dated"] == 0.6 and p_meta["deals"] == 1 and p_meta["lag_months"] == 3 and p_meta["vs_no_fico_n"] == p_meta["vs4_no_fico_n"] == 0, p_meta
+assert [(r["key"], r["vs4_n"], r["vs4_no_fico_n"]) for r in pl if r["view"] == "vs4_year"] == [("2026", 1, 0)], "loan 2's credit report is from 2026, and its other report names Classic FICO"
 q3 = next(r for r in pl if r["view"] == "period" and r["basis"] == "filed")
 assert q3["period"] == "2026-Q3" and q3["label"] == "Q3 2026" and q3["filings"] == 3 and q3["with_model"] == 2 and q3["vs"] == 0.2 and q3["fico"] == 0.4 and q3["none"] == 0.2
 assert not [r for r in pl if r["view"] == "period" and r["basis"] == "pulled"]  # too few loans in any month
@@ -2677,6 +2767,52 @@ assert len(p_mention) == 1 and p_mention[0]["key"] == "HOME 2026-HE1" and p_ment
 with zipfile.ZipFile(build_workbook()) as z:
     book_xml = z.read("xl/workbook.xml").decode()
 assert 'name="Private-label deals"' in book_xml and 'name="Private-label VantageScore"' in book_xml
+# A loan in two deals under two numbers counts once, under the deal that filed it first: a later deal's report numbers it by the review firm and gives beside it the
+# number the first deal's report used (Sequoia 2026-INV2 and 2026-INV1). A short other number (a customer's 1 to 59) names no loan outside its own deal.
+al_home = home / "alias_data"
+(al_home / "edgar").mkdir(parents=True)
+al_hit = lambda adsh, day: {"adsh": adsh, "file": "ex99-9.htm", "cik": "0000777001", "date": day, "form": "ABS-15G", "type": "EX-99.9", "desc": "", "filer": "Tide Residential Funding", "kind": "model"}  # noqa: E731
+al_loan = lambda adsh, i, models, alt=None, name="ex99-9.htm": {"adsh": adsh, "file": name, "id": i, "models": models, "vs_value": False, "pull": None, "score": None, **({"alt": alt} if alt else {})}  # noqa: E731
+edgar._append_jsonl(al_home / "edgar" / "hits.jsonl", [al_hit("P1", "2026-03-02"), al_hit("P2", "2026-04-06")])
+edgar._append_jsonl(al_home / "edgar" / "filings.jsonl", [{"adsh": "P1", "deal": "TIDE 2026-INV7"}, {"adsh": "P2", "deal": "TIDE 2026-INV8"}])
+edgar._append_jsonl(al_home / "edgar" / "loans.jsonl", [al_loan("P1", "509200001", ["Fair Isaac"]), al_loan("P1", "12", ["Beacon 5.0"]), al_loan("P2", "226200001", ["VantageScore 4.0"], ["509200001"]),
+                                                        al_loan("P2", "226200002", ["FICO II"], ["12"])])
+real_data, edgar.paths.DATA = edgar.paths.DATA, al_home
+al_pl = edgar.build_datasets()["private_label"]
+edgar.paths.DATA = real_data
+al_meta, al_deals = next(r for r in al_pl if r["view"] == "meta"), {r["key"]: r for r in al_pl if r["view"] == "deal"}
+assert (al_meta["n"], al_meta["vs4_n"], al_meta["deals"]) == (3, 1, 2) and list(al_deals) == ["TIDE 2026-INV7"] and al_deals["TIDE 2026-INV7"]["n"] == 2, (al_meta, al_deals)
+# The same within one filing, for the watch's counts: two files give one loan under two numbers.
+edgar._append_jsonl(al_home / "edgar" / "loans.jsonl", [al_loan("P3", "226300001", ["VantageScore 4.0"], ["509300001"], "a.htm"), al_loan("P3", "509300001", ["Beacon 5.0"], name="b.htm")])
+assert edgar.tape_counts({"P3"}, al_home / "edgar" / "loans.jsonl") == {"P3": {"tape_n": 1, "tape_named": 1, "tape_vs": 1, "tape_vs4": 1, "tape_vs_old": 0, "tape_vs_alone": 0, "tape_vs_classic": 1,
+                                                                             "tape_vs4_alone": 0, "tape_old_alone": 0}}
+# The VS4 loans naming no FICO model (meta and each deal), and the VS4 loans by year of credit report with how many of them name no FICO model, for the private-label
+# view's sentence that sets the SEC reports against HMDA. A loan naming an older VantageScore and no FICO counts in vs_no_fico_n only. Both stay off the public copy
+# for now: PUBLIC_DROP leaves out the field on every row and the view's rows, so the public file keeps the contract's shape.
+from gsescore import site  # noqa: E402
+
+vf_home = home / "vs4_alone_data"
+(vf_home / "edgar").mkdir(parents=True)
+vf_hit = lambda adsh, day: {"adsh": adsh, "file": "ex99-1.htm", "cik": "0000777002", "date": day, "form": "ABS-15G", "type": "EX-99.1", "desc": "", "filer": "Reef Depositor LLC", "kind": "model"}  # noqa: E731
+vf_loan = lambda adsh, i, models, pull: {"adsh": adsh, "file": "ex99-1.htm", "id": i, "models": models, "vs_value": False, "pull": pull, "score": None}  # noqa: E731
+edgar._append_jsonl(vf_home / "edgar" / "hits.jsonl", [vf_hit("R1", "2025-08-20"), vf_hit("R2", "2026-05-04"), vf_hit("R3", "2026-09-08")])
+edgar._append_jsonl(vf_home / "edgar" / "filings.jsonl", [{"adsh": "R1", "deal": "REEF HOME LOAN TRUST 2025-INV2"}, {"adsh": "R2", "deal": "REEF HOME LOAN TRUST 2026-NQM3"},
+                                                         {"adsh": "R3", "deal": "REEF HOME LOAN TRUST 2026-NQM7"}])
+edgar._append_jsonl(vf_home / "edgar" / "loans.jsonl", [vf_loan("R1", "7100001", ["VantageScore 4.0", "FICO 9"], "2025-06"), vf_loan("R2", "7200001", ["VantageScore 4.0"], "2026-03"),
+                                                       vf_loan("R2", "7200002", ["VantageScore 4.0", "Beacon 5.0"], "2025-11"), vf_loan("R2", "7200003", ["Beacon 5.0"], None),
+                                                       vf_loan("R3", "7300001", ["VantageScore 4.0"], None), vf_loan("R3", "7300002", ["VantageScore 4.0"], "2026-06"),
+                                                       vf_loan("R3", "7300003", ["VantageScore 3.0"], "2025-12")])
+edgar.paths.DATA = vf_home
+vf_pl = edgar.build_datasets()["private_label"]
+edgar.paths.DATA = real_data
+vf_meta = next(r for r in vf_pl if r["view"] == "meta")
+assert (vf_meta["n"], vf_meta["vs4_n"], vf_meta["vs_old_n"], vf_meta["vs_no_fico_n"], vf_meta["vs4_no_fico_n"]) == (7, 5, 1, 4, 3), vf_meta
+assert [(r["key"], r["label"], r["order"], r["vs4_n"], r["vs4_no_fico_n"]) for r in vf_pl if r["view"] == "vs4_year"] == [("2025", "2025", 0, 2, 0), ("2026", "2026", 1, 2, 2), ("undated", "No credit report date", 2, 1, 1)]
+assert {r["key"]: (r["vs4_n"], r["vs4_no_fico_n"]) for r in vf_pl if r["view"] == "deal"} == {"REEF HOME LOAN TRUST 2026-NQM7": (2, 2), "REEF HOME LOAN TRUST 2026-NQM3": (2, 1), "REEF HOME LOAN TRUST 2025-INV2": (1, 0)}
+vf_public = site.public_rows("private_label", vf_pl)
+assert len(vf_public) == len(vf_pl) - 3 and not any(r.get("view") == "vs4_year" or "vs4_no_fico_n" in r for r in vf_public), vf_public
+assert vf_public == [{k: v for k, v in r.items() if k != "vs4_no_fico_n"} for r in vf_pl if r["view"] != "vs4_year"] and site.public_rows("fees", vf_pl) == vf_pl, "the rest stays as it is"
+assert {d for d in site.PUBLIC_DROP["private_label"] if not d.endswith(".*")} == {"vs4_no_fico_n"} and not {"vs4_no_fico_n", "vs4_year"} & {*json.loads(site.CONTRACT.read_text())["private_label"]["fields"], *json.loads(site.CONTRACT.read_text())["private_label"]["views"]}
 
 # Ginnie Mae's loan files: both layouts read alike, only new purchases and full refinances count, a lender's step shows by closing month, and FHA is the check
 import duckdb  # noqa: E402
@@ -2741,6 +2877,478 @@ assert {"lead_retail", "lead_own", "second", "all"} == set(g_range) and g_range[
 (gse_paths.SITE_DATA / "ginnie_va.json").write_text(json.dumps({"rows": gv}))
 with zipfile.ZipFile(build_workbook()) as z:
     assert 'name="VA loans at 830+"' in z.read("xl/workbook.xml").decode()
+
+# Loans sold to private securitizers, from HMDA, on planted files: a named VS4 counts in either field, multifamily, reverse and denied loans leave as SEGMENT_SQL and the loans-made
+# rule leave them (an open-end reverse mortgage counts as home equity), the biggest sellers carry the year before by legal entity, every lender with VS4 on a loan sold outside
+# the four is listed with its main buyer, and each sentence flips with its guard. Unlike today's real files, these plants put VS4 on loans sold to private securitizers.
+from gsescore import pl_hmda  # noqa: E402
+
+PH_TYPES = ("lei VARCHAR, conforming_loan_limit VARCHAR, derived_dwelling_category VARCHAR, action_taken INTEGER, purchaser_type INTEGER, loan_type INTEGER, lien_status INTEGER, reverse_mortgage INTEGER, "
+            "open_end_line_of_credit INTEGER, business_or_commercial_purpose INTEGER, loan_amount INTEGER, applicant_credit_score_type INTEGER, co_applicant_credit_score_type INTEGER")
+
+
+def ph(lei, p=5, a=1, c=10, lien=1, open_end=2, reverse=2, biz=2, loan_type=1, limit="C", dwelling="Single Family (1-4 Units):Site-Built", amount=1_000_000, action=1):
+    return (lei, limit, dwelling, action, p, loan_type, lien, reverse, open_end, biz, amount, a, c)
+
+
+PH_YEARS = {
+    2022: [ph("A", p=1), ph("A", p=0, a=6)],  # nothing sold to a private securitizer or any buyer outside the four
+    2023: [ph("A", a=8), ph("A"), ph("B", a=3), ph("B", p=6, a=8)],  # before the form named VS4, a lender on it marked another model
+    2024: [ph("A", lien=2), ph("A", lien=2), ph("A", lien=2), ph("A", a=12), ph("B", a=15)],
+    2025: [ph("A", lien=2), ph("A", lien=2), ph("A", a=9, biz=1), ph("A", a=1, c=15),  # VS4 named in the co-applicant's field counts as VS4, over Classic FICO
+           ph("B", a=15, open_end=1), ph("B", a=2, limit="NC", amount=5_000_000), ph("B", a=11, loan_type=2), ph("B", a=1111, c=1111),
+           ph("C", a=3), ph("C", a=3, lien=2), ph("C", a=15, dwelling="Multifamily:Site-Built"), ph("C", a=15, reverse=1), ph("C", a=15, action=3),  # multifamily, reverse and a denial leave
+           ph("D", a=15, reverse=1, open_end=1),  # an open-end reverse mortgage is home equity, as SEGMENT_SQL has it
+           ph("E", p=6, a=15), ph("E", p=6, a=15), ph("E", p=71), ph("F", p=72, a=15), ph("F", p=9, a=15), ph("F", p=9, a=15), ph("H", p=8),
+           ph("G", p=1, a=15), ph("G", p=0, a=15), ph("G", p=2, a=15, loan_type=3)],  # VS4 sold to Fannie, not sold that year, or to Ginnie: not outside the four
+}
+PH_NAMES = {"A": "BIG PRIVATE LENDING, LLC", "B": "Second Bank, N.A.", "D": "DEPOSITORY CREDIT UNION (12345)", "E": "Equity Bank", "F": "FIRST FUND INC.", "G": "Agency Lender", "H": "Home Affiliate",
+            "S": "SPRING EQ, LLC", "U": "UNSOLD HOME LOANS LLC"}  # C files no name
+# Another plant: no VantageScore on loans sold to private securitizers in any year, FICO's share dipping where loans report no score, one VS4 loan sold to another buyer,
+# a seller whose loans the year before were mostly not sold that year, and a filed name that prints oddly through short_name.
+PH_DIPS = {2023: [ph("A")] * 6 + [ph("A", a=9, c=10)] * 4,
+           2024: [ph("A")] * 8 + [ph("A", a=8), ph("A", a=9, c=10), ph("U"), ph("U", p=0), ph("U", p=0), ph("U", p=0)],
+           2025: [ph("A")] * 8 + [ph("A", a=12), ph("A", a=9, c=10), ph("U"), ph("S"), ph("E", p=9, a=15)]}
+
+
+def ph_folder(name, years, plant=None):
+    folder = home / name
+    folder.mkdir()
+    ph_con = duckdb.connect()
+    for y in years:
+        ph_con.execute(f"CREATE OR REPLACE TABLE t ({PH_TYPES})")
+        ph_con.executemany(f"INSERT INTO t VALUES ({', '.join('?' * 13)})", (plant or PH_YEARS)[y])
+        ph_con.execute(f"COPY t TO '{folder / f'{y}.parquet'}' (FORMAT parquet)")
+        ph_con.execute("CREATE OR REPLACE TABLE l (lei VARCHAR, name VARCHAR, records BIGINT)")
+        ph_con.executemany("INSERT INTO l VALUES (?, ?, ?)", [(k, v, 1) for k, v in PH_NAMES.items()])
+        ph_con.execute(f"COPY l TO '{folder / f'lenders_{y}.parquet'}' (FORMAT parquet)")
+    ph_con.close()
+    return folder
+
+
+def ph_said_of(rows):
+    return {r["key"]: r["text"] for r in rows if r["view"] == "sentence"}
+
+
+ph_main = ph_folder("ph_main", [2022, 2023, 2024, 2025])
+built_ph = pl_hmda.build_datasets({"summary": [{"agency": "All", "data_through": "2026-11-14"}]}, folder=ph_main)["pl_hmda"]
+ph_meta, ph_said = next(r for r in built_ph if r["view"] == "meta"), ph_said_of(built_ph)
+assert len({tuple(sorted(r)) for r in built_ph}) == 1, "every row has the same fields"
+assert (ph_meta["year"], ph_meta["prior"], ph_meta["first_year"], ph_meta["n"], ph_meta["vs4_n"], ph_meta["private_vs4_n"], ph_meta["usd_bn"]) == (2025, 2024, 2022, 11, 3, 3, 0.015), ph_meta
+assert (ph_meta["classic"], ph_meta["fico_new"], ph_meta["vs4"], ph_meta["none"], ph_meta["unknown"], ph_meta["fico"]) == tuple(round(k / 11, 6) for k in (5, 1, 3, 2, 2, 6)), ph_meta
+assert (ph_meta["prior_n"], ph_meta["prior_vs4_n"], ph_meta["outside_n"], ph_meta["outside_vs4_n"], ph_meta["outside_lenders"]) == (5, 1, 18, 8, 5), ph_meta
+assert ph_meta["vs4_form_year"] == pl_hmda.VS4_ON_FORM == 2024 and (ph_meta["lender_file_by"], ph_meta["national_about"], ph_meta["as_of"]) == ("2027-03-31", "2027-06", "2026-11-14"), ph_meta
+assert (ph_meta["file_date"], ph_meta["national_released"]) == ("2026-06-02", "2026-06-23"), "the day the 2025 national data froze, and the day the file came out"
+ph_years = {r["year"]: r for r in built_ph if r["view"] == "year"}
+assert sorted(ph_years) == [2022, 2023, 2024, 2025] and ph_years[2022]["n"] == 0 and ph_years[2022]["classic"] is None and ph_years[2022]["usd_bn"] == 0, ph_years[2022]  # a year with none keeps its place, with no shares
+assert ph_years[2023]["n"] == 3 and ph_years[2023]["other"] == round(1 / 3, 6) and ph_years[2023]["vs4"] == 0 and not ph_years[2023]["vs4_on_form"] and ph_years[2024]["vs4_on_form"] and ph_years[2024]["vs4_n"] == 1, ph_years
+assert {k: ph_years[2025][k] for k in ("n", "classic", "vs4_n")} == {k: ph_meta[k] for k in ("n", "classic", "vs4_n")}, "the tiles and the newest column are one count"
+ph_kinds = {(r["year"], r["key"]): r for r in built_ph if r["view"] == "kind"}
+assert {y for y, _ in ph_kinds} == {2024, 2025} and (ph_kinds[(2025, "equity")]["n"], ph_kinds[(2025, "equity")]["vs4_n"], ph_kinds[(2025, "conforming")]["n"], ph_kinds[(2025, "jumbo")]["usd_bn"]) == (5, 2, 3, 0.005), ph_kinds
+assert ph_kinds[(2025, "business")]["none"] == 1 and ph_kinds[(2025, "fha")]["fico_new"] == 1 and ph_kinds[(2025, "equity")]["share"] == round(5 / 11, 6) and ph_kinds[(2024, "equity")]["share"] == 0.6, ph_kinds
+ph_lenders = [r for r in built_ph if r["view"] == "lender"]
+assert [(r["rank"], r["name"], r["n"]) for r in ph_lenders] == [(1, "Big Private Lending", 4), (2, "Second Bank", 4), (3, "C", 2), (4, "Depository Credit Union", 1)], ph_lenders  # a tie goes by legal entity; no filed name keeps the entity's id
+ph_a, ph_b, ph_c, ph_d = ph_lenders
+assert (ph_a["classic"], ph_a["vs4_n"], ph_a["none"], ph_a["equity_share"], ph_a["prior_n"], ph_a["prior_classic"], ph_a["prior_vs4_n"], ph_a["prior_usd_bn"]) == (0.5, 1, 0.25, 0.5, 4, 0.75, 0, 0.004), ph_a
+assert (ph_b["fico_new"], ph_b["vs4_n"], ph_b["usd_bn"], ph_b["prior_n"], ph_b["prior_vs4_n"]) == (0.25, 1, 0.008, 1, 1) and ph_c["prior_n"] is None and ph_c["prior_year"] == 2024 and ph_d["equity_share"] == 1, (ph_b, ph_c, ph_d)
+ph_users = [r for r in built_ph if r["view"] == "vs4_lender"]
+assert [(r["rank"], r["name"], r["n"], r["vs4_n"], r["buyer"]) for r in ph_users] == [(1, "First Fund", 3, 3, "Other buyer"), (2, "Equity Bank", 3, 2, "Bank or savings institution"), (3, "Big Private Lending", 4, 1, "Private securitizer"),
+                                                                                     (4, "Second Bank", 4, 1, "Private securitizer"), (5, "Depository Credit Union", 1, 1, "Private securitizer")], ph_users
+assert ph_users[1]["vs4"] == round(2 / 3, 6) and ph_users[1]["private_vs4_n"] == 0 and ph_users[2]["private_vs4_n"] == 1 and "Agency Lender" not in json.dumps(ph_users), ph_users
+assert ph_said == {"form": "HMDA's form names VS4 only from 2024, so in earlier years a loan on VS4 shows under another model.",
+                   "kinds": "Of these 2025 loans, 45.5% are home equity and second liens and 27.3% conforming size.",
+                   "dips": "VantageScore's share reaches 27.3% in 2025.",
+                   "vs4_tile": "1 in 2024, the first year HMDA's form names VS4",
+                   "outside": "In 2025, 8 of the 18 loans sold to a buyer other than Fannie, Freddie, Ginnie or Farmer Mac name VS4 (44.44%), at 5 lenders. 3 were sold to a private securitizer.",
+                   "next": "Next: the 2026 HMDA file comes out by March 31, 2027, lender by lender and as one combined file, and names the buyer and the score model on each loan. The national file follows about June 2027."}, ph_said
+assert all(r["prior_mark"] is False for r in ph_lenders) and (ph_a["prior_unsold"], ph_b["prior_unsold"], ph_c["prior_unsold"]) == (0, 0, None), ph_lenders  # every 2024 loan of theirs was sold that year
+# Under the chart, on the other plant: VantageScore never reaches 1%, and FICO's dips are loans with no score reported. The SEC reports' VS4 loans set against HMDA's
+# none sold to a private securitizer, from private_label's counts on the planted deals above (vf_pl): how many also name a FICO model, the deals of those naming VS4
+# alone, their credit report years, and why HMDA's none can still hold, with no cause the files cannot show. The VS4 tile's words when the year before had none too;
+# a count the year before marked as not comparable, with its words; and a filed name tidied for this view only.
+vf_sec = pl_hmda.sec_counts(vf_pl)
+assert vf_sec == {"vs4_n": 5, "alone_n": 3, "alone": [("Reef Home Loan Trust 2026-NQM3", 1), ("Reef Home Loan Trust 2026-NQM7", 2)], "pulled": {2025: 2, 2026: 2},
+                  "pulled_alone": {2025: 0, 2026: 2}}, vf_sec
+ph_dips = pl_hmda.build_rows(ph_folder("ph_dips", [2023, 2024, 2025], PH_DIPS), "2026-11-14", vf_sec)
+ph_dips_said = ph_said_of(ph_dips)
+assert ph_dips_said["dips"] == ("VantageScore stays under 1% of these loans in every year. The dips in FICO's share are loans with no score reported, 40.0% in 2023; of the loans that report a score, "
+                                "FICO's share never falls below 90.0%."), ph_dips_said["dips"]
+assert ph_dips_said["route"] == ("The SEC deal reports above find 5 VS4 loans in private-label deals; HMDA names none sold to a private securitizer in 2025. 2 of the 5 also name a FICO "
+                                 "model; 3 name VS4 alone, in Reef Home Loan Trust 2026-NQM3 and Reef Home Loan Trust 2026-NQM7 (2 loans). Of the 4 with a credit report date, 2 had credit "
+                                 "pulled in 2025 and 2 in 2026. HMDA counts a sale to a private securitizer only within the year the loan was made, and "
+                                 "names the one score the lender relied on for each borrower, so a loan with a FICO model beside VS4 can show there under FICO."), ph_dips_said["route"]
+assert "likely" not in ph_dips_said["route"] and "route" not in ph_said_of(pl_hmda.build_rows(ph_main, "2026-11-14", vf_sec)), "no cause it cannot show; no sentence where HMDA names VS4 loans sold to them"
+ph_route = lambda **sec: pl_hmda.route_words({"vs4_n": 7, "alone_n": 0, "alone": [], "pulled": {}, "pulled_alone": {}, **sec}, 2025)  # noqa: E731
+assert ph_route(pulled={2024: 3}, pulled_alone={2024: 0}) == (
+    "The SEC deal reports above find 7 VS4 loans in private-label deals; HMDA names none sold to a private securitizer in 2025. All 7 also name a FICO model. Of the 3 with a "
+    "credit report date, 3 had credit pulled in 2024 and none in 2025. HMDA counts a sale to a private securitizer only within the year the loan was made, and names the one score the lender "
+    "relied on for each borrower, so a loan with a FICO model beside VS4 can show there under FICO.")
+assert ph_route(vs4_n=2, alone_n=2, alone=[("Kelp 2026-INV1", 2)], pulled={2026: 2}, pulled_alone={2026: 2}) == (
+    "The SEC deal reports above find 2 VS4 loans in private-label deals; HMDA names none sold to a private securitizer in 2025. Both name VS4 alone, in Kelp 2026-INV1 (2 loans). "
+    "Of the 2, none had credit pulled in 2025 and 2 in 2026. HMDA counts a sale to a private securitizer only within the year the loan was made."), "with no FICO model named, no words on one"
+assert ph_route(vs4_n=1, alone_n=1, alone=[("Kelp 2026-INV1", 1)], pulled={2026: 1}, pulled_alone={2026: 1}).endswith(
+    " in 2025. It names VS4 alone, in Kelp 2026-INV1. Its credit was pulled in 2026. HMDA counts a sale to a private securitizer only within the year the loan was made.")
+assert ph_route(alone_n=5, alone=[(f"Kelp 2026-INV{i}", 1) for i in range(1, 6)]).split(". ")[1] == "2 of the 7 also name a FICO model; 5 name VS4 alone, in 5 deals", "past four deals, a count"
+assert ph_route(alone_n=1, alone=[("Kelp 2025-INV2", 1)], pulled={2025: 3}, pulled_alone={2025: 1}).split(". ")[1:3] == [
+    "6 of the 7 also name a FICO model; 1 names VS4 alone, in Kelp 2025-INV2", "Of the 3 with a credit report date, 3 had credit pulled in 2025, 1 of them with VS4 alone"]
+assert pl_hmda.route_words({"vs4_n": 12}, 2025) == ("The SEC deal reports above find 12 VS4 loans in private-label deals; HMDA names none sold to a private securitizer in 2025. HMDA counts a sale to "
+                                                    "a private securitizer only within the year the loan was made, and names the one score the lender relied on for each borrower, so a loan "
+                                                    "with a FICO model beside VS4 can show there under FICO."), "from a build before the newer counts: only what it knows"
+assert ph_route(vs4_n=0) is None and pl_hmda.route_words(None, 2025) is None and pl_hmda.sec_counts([{"view": "deal"}]) is None
+assert ph_dips_said["vs4_tile"] == "Also none in 2024, the first year HMDA's form names VS4" and next(r for r in ph_dips if r["view"] == "meta")["vs4_n"] == 0, ph_dips_said
+ph_dips_by = {r["name"]: r for r in ph_dips if r["view"] == "lender"}
+assert (ph_dips_by["Unsold Home Loans"]["prior_n"], ph_dips_by["Unsold Home Loans"]["prior_unsold"], ph_dips_by["Unsold Home Loans"]["prior_mark"], ph_dips_by["Big Private Lending"]["prior_mark"]) == (1, 0.75, True, False), ph_dips_by
+assert ph_dips_said["unsold"] == "* Unsold Home Loans reported 75.0% of its 2024 loans as not sold that year, so its 2024 count of loans sold to private securitizers is not comparable."
+assert "Spring EQ" in ph_dips_by and pl_hmda.LABELS["Spring Eq"] == "Spring EQ" and hmda.short_name("SPRING EQ, LLC") == "Spring Eq", "the Whole market view keeps short_name's"
+assert "route" not in ph_said_of(pl_hmda.build_rows(home / "ph_dips", "2026-11-14", {"vs4_n": 0})) and "route" not in ph_said_of(pl_hmda.build_rows(home / "ph_dips")), "no SEC count, no sentence on it"
+# When the next year comes out: its file lender by lender and as one combined file by March 31 the year after, the national file about June; once the data's date
+# passes either, the sentence says so.
+assert pl_hmda.next_words(2025, None) == pl_hmda.next_words(2025, "2027-03-30") == ph_said["next"]
+assert pl_hmda.next_words(2025, "2027-03-31") == pl_hmda.next_words(2025, "2027-06-30") == ("The 2026 HMDA file was due by March 31, 2027, lender by lender and as one combined file, naming the buyer and the score model on each loan; "
+                                                                                          "it is not loaded here. The national file comes out about June 2027.")
+assert pl_hmda.next_words(2025, "2027-07-01") == "HMDA's 2026 national file was due about June 2027 and is not loaded yet."
+# The form's first year VS4: no word on it when every year names it, the first year when the newest is that year, and before it, these years.
+ph_late = pl_hmda.build_rows(ph_folder("ph_late", [2024, 2025]))
+assert "form" not in ph_said_of(ph_late) and ph_said_of(ph_late)["vs4_tile"] == ph_said["vs4_tile"] and next(r for r in ph_late if r["view"] == "meta")["first_year"] == 2024, ph_said_of(ph_late)
+ph_first = ph_said_of(pl_hmda.build_rows(ph_folder("ph_first", [2023, 2024])))
+assert ph_first["vs4_tile"] == "The first year HMDA's form names VS4" and ph_first["form"] == ph_said["form"], ph_first
+ph_early = ph_said_of(pl_hmda.build_rows(ph_folder("ph_early", [2022, 2023])))
+assert ph_early["form"] == "HMDA's form names VS4 only from 2024, so in these years a loan on VS4 shows under another model." and ph_early["vs4_tile"] == "HMDA's form names VS4 only from 2024", ph_early
+assert ph_early["outside"] == "In 2023, none of the 4 loans sold to a buyer other than Fannie, Freddie, Ginnie or Farmer Mac names VS4." and ph_early["kinds"] == "Of these 2023 loans, 100.0% are conforming size.", ph_early
+# A year with nothing sold outside the four: its column with no shares, and no word on kinds or on lenders.
+ph_none = pl_hmda.build_rows(ph_folder("ph_none", [2022]))
+assert {r["view"] for r in ph_none} == {"meta", "year", "sentence"} and set(ph_said_of(ph_none)) == {"form", "vs4_tile", "next"} and next(r for r in ph_none if r["view"] == "meta")["n"] == 0, ph_none
+assert pl_hmda.build_rows(home / "no_such_folder") == [] and pl_hmda.build_datasets(folder=ph_folder("ph_empty", []))["pl_hmda"] == [], "no HMDA on disk: no rows, and the card stays off"
+# The data's date from summary.json where the run has none yet, and a build that stops: a meta row with no year, so the card stays off, and a warning for the weekly report.
+(home / "ph_out").mkdir()
+(home / "ph_out" / "summary.json").write_text(json.dumps({"rows": [{"agency": "All", "data_through": "2027-04-02"}]}))
+assert ph_said_of(pl_hmda.build_datasets(out_dir=home / "ph_out", folder=ph_main)["pl_hmda"])["next"].startswith("The 2026 HMDA file was due by March 31, 2027, lender by lender and as one combined file")
+# The SEC reports' VS4 count comes from private_label, as this run built it or as the folder holds it.
+assert ph_said_of(pl_hmda.build_datasets({"summary": [], "private_label": [{"view": "meta", "vs4_n": 12}]}, folder=home / "ph_dips")["pl_hmda"])["route"].startswith("The SEC deal reports above find 12 VS4 loans")
+assert ph_said_of(pl_hmda.build_datasets({"summary": [], "private_label": vf_pl}, folder=home / "ph_dips")["pl_hmda"])["route"] == ph_dips_said["route"], "the counts as the run built them"
+ph_broken = ph_folder("ph_broken", [2025])
+(ph_broken / "lenders_2025.parquet").unlink()
+broken_ph = pl_hmda.build_datasets(out_dir=home / "ph_out", folder=ph_broken)["pl_hmda"]
+assert [r["view"] for r in broken_ph] == ["meta", "warning"] and broken_ph[0].get("year") is None and broken_ph[1]["text"].startswith("private securitizers: could not build the dataset:"), broken_ph
+(home / "ph_out" / "pl_hmda.json").write_text(json.dumps({"rows": broken_ph}))
+assert pl_hmda.pl_hmda_warnings(home / "ph_out") == [broken_ph[1]["text"]] and pl_hmda.pl_hmda_warnings(home / "no_such_folder") == []
+(home / "ph_out" / "pl_hmda.json").write_text("{not json")
+assert pl_hmda.pl_hmda_warnings(home / "ph_out")[0].startswith("private securitizers: could not read pl_hmda.json"), pl_hmda.pl_hmda_warnings(home / "ph_out")
+
+# The VantageScore watch on planted filings and a planted hand-kept file: who counts for mortgages, the sentence a filing shows, a deal report's loan file, a search
+# noted once per filing and file and run again from a little before its last filing, a document that would not open tried again, each guard on a hand-kept row, a row
+# that stands for a filing, the first day on the list carried from the last build, and each sentence under its guard. No name, day or count here is today's.
+from gsescore import watch as vw  # noqa: E402
+
+assert [edgar.watch_class({"filer": f, "form": "8-K"}) for f in ("Orbit Card Funding, LLC", "Lumen Motor Credit Co", "Quill Personal Loans Inc", "Harbor Mortgage Insurance Corp", "Acme Bancorp")] == ["card", "auto", "consumer", "mortgage", "unknown"]
+assert edgar.watch_class({"filer": "Acme Bancorp", "form": "10-Q"}, True) == "mortgage" and edgar.watch_class({"filer": "Acme Bancorp", "form": "10-Q"}, False) == "other" and edgar.watch_class({"filer": "Acme Holdings", "form": "10-K", "sics": ["6351"]}) == "mortgage"
+assert edgar.watch_class({"filer": "Tide Depositor LLC", "form": "ABS-15G"}) == "mortgage" and edgar.watch_class({"filer": "Lumen Auto Receivables Trust", "form": "FWP"}) == "auto" and edgar.watch_class({"filer": "Benefit Street Funding", "form": "ABS-15G"}) == "other", "a deal report is a sponsor's, unless its filer is on other loans"
+VW_DOC = ("<html><head><style>.x{color:red}</style><script>var VantageScore = 1;</script></head><body><table><tr><td>VantageScore 4.0</td><td>3,210</td><td>18.2%</td></tr></table>"
+          "<p>Item 7. In Aug. 2026 the U.S. lender we insure began to underwrite some mortgages on VantageScore 4.0 instead of Classic FICO, and we price those loans the same way. More follows.</p>"
+          "<p>Our VantageScore exposure stays small.</p></body></html>")
+assert edgar.vantage_passage(VW_DOC) == (3, "In Aug. 2026 the U.S. lender we insure began to underwrite some mortgages on VantageScore 4.0 instead of Classic FICO, and we price those loans the same way.", True), edgar.vantage_passage(VW_DOC)  # a table cell and a script pass over; an abbreviation is no stop
+assert edgar.vantage_passage("<td>Most Recent VantageScore Method</td><td>VantageScore Primary Borrower</td>") == (0, None, False), "a template's column heading is not a mention"
+VW_AUTO = "<p>Our dealers began to approve car buyers on VantageScore 4.0 this quarter, and approvals rose as we expected.</p>"
+assert edgar.vantage_passage(VW_AUTO)[0] == 1 and edgar.vantage_passage(VW_AUTO)[2] is False, "no mortgage words near the mention"
+vw_long = edgar.vantage_passage("<p>" + " ".join(["lenders"] * 70 + ["use", "VantageScore", "4.0"] + ["widely"] * 60) + ".</p>")[1]
+assert vw_long.startswith("… lenders") and vw_long.endswith("widely …") and len(vw_long.split()) == edgar.WATCH_WORDS + 2 and "VantageScore 4.0" in vw_long, vw_long  # cut to its words around the name
+# A sentence that ends within WATCH_TAIL words past the cut runs to its end, where its point tends to be: FICO's 10-K used to stop at "which has experienced increased …".
+vw_tail = edgar.vantage_passage("<p>" + " ".join(["partners"] * 34 + ["and", "VantageScore", "which", "is", "selling"] + ["scores"] * 21 + ["which", "has", "experienced", "increased", "regulatory",
+                                                                                                                                         "acceptance", "in", "the", "U.S.", "mortgage", "market"]) + ".</p>")[1]
+assert vw_tail.startswith("… partners") and vw_tail.endswith("increased regulatory acceptance in the U.S. mortgage market.") and len(vw_tail.split()) == 1 + 71 - 20, vw_tail
+# A slide's copyright footer and its page number with "Confidential" are not the sentence; nor is a heading led by a figure, as in "VantageScore 4.0 Expansion".
+assert edgar.vantage_passage("<p>VantageScore adoption: Included in ~30% of mortgage credit pulls vs. &lt;5% at start of the year © 2026 Acme Bureau, its subsidiaries and/or affiliates. Next.</p>")[1] == (
+    "VantageScore adoption: Included in ~30% of mortgage credit pulls vs. <5% at start of the year")
+assert edgar.vantage_passage("<p>Recent Developments VantageScore 4.0 Expansion Effective September 2026, all approved lenders may elect to use a VantageScore 4.0 credit score on eligible loans.</p>")[1] == (
+    "Effective September 2026, all approved lenders may elect to use a VantageScore 4.0 credit score on eligible loans.")
+# The passage shown is the first with a share and mortgage words within WATCH_NEAR words of its mention, where there is one, as a deck's mortgage slide after its
+# history slide; a share far from the mention does not count, and a document with none shows its first prose passage.
+vw_deck = ("<p>Score Innovation Co-founded VantageScore to enable score competition across lending and data products that ~60% of trended tradelines have grown since the start.</p>"
+           "<p>22Confidential VantageScore adoption drives savings for lenders Mortgage Tri-merge ~35% of mortgage credit pulls in Q3 used VantageScore 4.0 pricing to 2028.</p>")
+assert edgar.vantage_passage(vw_deck)[1] == "VantageScore adoption drives savings for lenders Mortgage Tri-merge ~35% of mortgage credit pulls in Q3 used VantageScore 4.0 pricing to 2028.", edgar.vantage_passage(vw_deck)
+vw_far = "<p>Lenders may now use VantageScore 4.0 on loans they sell to us, and we expect " + " ".join(["more"] * 14) + " mortgage volume to grow 5% next year.</p>"
+assert edgar.vantage_passage(vw_far)[1].startswith("Lenders may now use VantageScore 4.0") and edgar.vantage_passage("<p>Our VantageScore note has plain words and no share in it at all, as most do.</p>")[1].startswith("Our VantageScore")
+# Where a sentence stops: a slide's bullet, a footnote's number, a quotation's closing mark, never the K of a 10-K; a heading run into the sentence goes, and so does a
+# space a tag left before a mark or a stop.
+assert edgar.vantage_passage("<p>Highlights • Lenders may now deliver loans scored on VantageScore 4.0 to both of the agencies, as of this quarter. • Margins rose.</p>")[1] == "Lenders may now deliver loans scored on VantageScore 4.0 to both of the agencies, as of this quarter."
+assert edgar.vantage_passage("<td>(2)Credit scores this year include a small number of loans that used VantageScore 4.0 at the lender</td><td>(3)Other</td>")[1] == "Credit scores this year include a small number of loans that used VantageScore 4.0 at the lender"
+assert edgar.vantage_passage('<p>See our 2025 Form 10-K. "Lenders that choose VantageScore 4.0 still send us a full credit report on every loan they deliver." Quinn Ames, chief executive.</p>')[1] == "Lenders that choose VantageScore 4.0 still send us a full credit report on every loan they deliver."
+assert edgar.vantage_passage("<p>Market Developments On May 3, 2026, the agencies began to accept loans scored on VantageScore 4.0 from every approved lender.</p>")[1] == "On May 3, 2026, the agencies began to accept loans scored on VantageScore 4.0 from every approved lender."
+assert edgar.vantage_passage("<p>We now accept VantageScore <sup>®</sup> 4.0 scores on the loans that our lenders deliver to us .</p>")[1] == "We now accept VantageScore® 4.0 scores on the loans that our lenders deliver to us."
+# A slide's words run together, with no stop between its title, labels and bullets, show the clause from the share to the VantageScore it counts, with its version,
+# where mortgage words sit between them: TransUnion's slide 23 ran its title, labels and three bullets into one passage. A share after the mention, one with no
+# mortgage words, a passage with a stop and one already cut stay as they are.
+vw_deck2 = ("<div>© 2026 Acme Bureau, its subsidiaries and/or affiliates. All Rights Reserved. 14Confidential Bureau scores grow Mortgage Tri-merge ~41% of mortgage credit pulls in Q2 "
+            "used VantageScore 4.0 2 cents pricing for VantageScore 4.0 through 2029 Next Look lets lenders review files before buying higher- cost scores</div>"
+            "<div>© 2026 Acme Bureau, its subsidiaries and/or affiliates. All Rights Reserved. 15Confidential Outlook</div>")
+assert edgar.vantage_passage(vw_deck2)[1] == "~41% of mortgage credit pulls in Q2 used VantageScore 4.0", edgar.vantage_passage(vw_deck2)
+assert edgar.share_clause("Pulls ~18% of mortgage files used Vantage Score 4.0 in May") == "~18% of mortgage files used Vantage Score 4.0", "the name in two words, and its version"
+for vw_kept in ("VantageScore adoption: in ~22% of mortgage credit pulls", "Score Innovation ~150% increase in VantageScore usage over five years",
+                "… lenders say 41% of mortgage pulls used VantageScore 4.0 …", "About 41% of mortgage pulls used VantageScore 4.0 this year. More follows"):
+    assert edgar.share_clause(vw_kept) == vw_kept, vw_kept
+assert edgar.tape_counts({"A", "B"}, e_home / "loans.jsonl") == {
+    "A": {"tape_n": 3, "tape_named": 2, "tape_vs": 1, "tape_vs4": 1, "tape_vs_old": 0, "tape_vs_alone": 1, "tape_vs_classic": 0, "tape_vs4_alone": 1, "tape_old_alone": 0},
+    "B": {"tape_n": 3, "tape_named": 2, "tape_vs": 0, "tape_vs4": 0, "tape_vs_old": 0, "tape_vs_alone": 0, "tape_vs_classic": 0, "tape_vs4_alone": 0, "tape_old_alone": 0}} and edgar.tape_counts(set(), e_home / "loans.jsonl") == {}
+# A filing's loans whose report names their score model leave out a blank (A's loan 3) and a code alone (B's loan 5), which could hide any model.
+# The planted NYMT-like report above, as the loan file holds it: 2 loans, once each; the one naming VS4 has Classic FICO named beside it for another bureau, so it is not a
+# loan scored on VantageScore alone.
+(home / "one_number").mkdir()
+edgar._append_jsonl(home / "one_number" / "loans.jsonl", [{"adsh": "N", "file": "ex99-2.htm", **r} for r in one_rows])
+assert edgar.tape_counts({"N"}, home / "one_number" / "loans.jsonl") == {"N": {"tape_n": 2, "tape_named": 2, "tape_vs": 1, "tape_vs4": 1, "tape_vs_old": 0, "tape_vs_alone": 0, "tape_vs_classic": 1,
+                                                                                  "tape_vs4_alone": 0, "tape_old_alone": 0}}
+
+
+class VwEdgar:
+    """Stands in for EDGAR: the search's hits, by filing day and in pages of two, and each document's text. A document named in fail does not open."""
+
+    def __init__(self, hits, docs, fail=()):
+        self.hits, self.docs, self.fail, self.requests, self.asked = hits, docs, set(fail), 0, []
+
+    def search(self, q, start, end, frm=0, forms="ABS-15G"):
+        self.requests += 1
+        self.asked.append((q, start, end, forms))
+        got = [h for h in self.hits if start <= h["_source"]["file_date"] <= end]
+        return {"hits": {"hits": got[frm:frm + 2], "total": {"value": len(got)}}}
+
+    def get(self, url):
+        self.requests += 1
+        name = url.rsplit("/", 1)[1]
+        return None if name in self.fail or name not in self.docs else self.docs[name].encode()
+
+
+def vw_hit(n, name, form, day, filer, typ=None, sics=()):
+    return {"_id": f"00000000{n:02d}-26-0000{n:02d}:{name}", "_source": {"ciks": ["0000123456"], "file_date": day, "form": form, "file_type": typ or form, "file_description": "",
+                                                                         "display_names": [f"{filer}  (CIK 0000123456)"], "sics": list(sics)}}
+
+
+VW_HITS = [vw_hit(1, "mi.htm", "10-Q", "2026-07-20", "Harbor Mortgage Insurance Corp", sics=["6351"]), vw_hit(1, "mi-ex.htm", "10-Q", "2026-07-20", "Harbor Mortgage Insurance Corp", "EX-99.1", ["6351"]),
+           vw_hit(2, "card.htm", "8-K", "2026-07-22", "Orbit Card Funding, LLC", "EX-99.1"), vw_hit(3, "bank.htm", "10-Q", "2026-08-03", "Acme Bancorp", sics=["6022"]),
+           vw_hit(4, "d4.htm", "ABS-15G", "2026-08-04", "Tide Depositor LLC", "EX-99.9"), vw_hit(5, "d5.htm", "ABS-15G", "2026-08-10", "Tide Depositor LLC", "EX-99.2"),
+           vw_hit(6, "d6.htm", "ABS-15G", "2026-08-12", "Tide Depositor LLC", "EX-99.1"), vw_hit(7, "fwp.htm", "FWP", "2026-08-14", "Lumen Auto Receivables Trust 2026-1"),
+           vw_hit(8, "lend.htm", "8-K", "2026-08-18", "Brightway Home Loans Inc", "EX-99.1")]
+VW_DOCS = {"mi.htm": VW_DOC, "mi-ex.htm": "<p>Our VantageScore note is short but has enough plain words in it to pass as prose here.</p>", "bank.htm": VW_AUTO,
+           "d6.htm": "<p>The review firm found that twelve loans used the alternate VantageScore model, and the median FICO score was used for each loan review.</p>",
+           "lend.htm": "<p>We now offer mortgages to borrowers scored on VantageScore 4.0 when that score is higher than their Classic FICO score.</p>",
+           "gamma.htm": "<p>Our wholesale partners may now choose VantageScore 4.0 on agency mortgages, and many brokers already do so for their borrowers.</p>"}
+vw_home = home / "vw_edgar"
+vw_home.mkdir()
+edgar._append_jsonl(vw_home / "exhibits.jsonl", [{"adsh": "0000000004-26-000004", "file": "d4.htm", "vantage": 0}, {"adsh": "0000000005-26-000005", "file": "d5.htm", "vantage": 5}])
+edgar._append_jsonl(vw_home / "loans.jsonl", [{"adsh": "0000000005-26-000005", "file": f, "id": i, "models": m} for f, i, m in (("d5.htm", "L1", ["VantageScore 4.0"]), ("d5b.htm", "L1", ["Beacon 5.0"]),
+                                                                                                                         ("d5.htm", "L2", ["Beacon 5.0", "VantageScore 3.0"]), ("d5.htm", "L3", ["Beacon 5.0"]), ("d5.htm", "L4", []), ("d5.htm", "L5", ["FICO 9"]))])
+edgar._append_jsonl(vw_home / "filings.jsonl", [{"adsh": "0000000005-26-000005", "deal": "TIDE LOAN TRUST 2026-NQM9"}])
+vw_quiet = lambda s: None  # noqa: E731
+vw_first = VwEdgar(VW_HITS, VW_DOCS, fail={"lend.htm"})
+vw_run1 = edgar.collect_watch(until="2026-08-20", client=vw_first, home=vw_home, log=vw_quiet)
+assert (vw_run1["since"], vw_run1["found"], vw_run1["new"], vw_run1["noted"], vw_run1["opened"]) == ("2026-07-01", 9, 9, 9, 5), vw_run1  # the card and auto filers and two deal reports stay shut
+assert {a[0] for a in vw_first.asked} == {'"VantageScore"'} and {a[3] for a in vw_first.asked} == {"10-K,10-Q,8-K,ABS-15G,FWP"} and [a[1:3] for a in vw_first.asked if a[1] == "2026-08-01"][0] == ("2026-08-01", "2026-08-20"), vw_first.asked
+vw_noted = edgar.watch_rows(vw_home)
+assert "count" not in vw_noted[("0000000002-26-000002", "card.htm")] and "count" not in vw_noted[("0000000007-26-000007", "fwp.htm")] and vw_noted[("0000000004-26-000004", "d4.htm")]["count"] == 0, vw_noted
+assert {k: vw_noted[("0000000005-26-000005", "d5.htm")][k] for k in ("count", "tape_n", "tape_vs", "tape_vs4")} == {"count": 5, "tape_n": 5, "tape_vs": 2, "tape_vs4": 1}, "the deal search's reading, each loan once"
+assert vw_noted[("0000000008-26-000008", "lend.htm")]["error"] and vw_noted[("0000000003-26-000003", "bank.htm")]["near_mortgage"] is False and vw_noted[("0000000001-26-000001", "mi.htm")]["count"] == 3, vw_noted
+# A week on: from three weeks before the last filing found, the known files noted once, the one that would not open tried again, and a new one.
+vw_second = VwEdgar(VW_HITS + [vw_hit(9, "gamma.htm", "8-K", "2026-08-28", "Gamma Mortgage Holdings", "EX-99.1")], VW_DOCS)
+vw_run2 = edgar.collect_watch(until="2026-09-02", client=vw_second, home=vw_home, log=vw_quiet)
+assert (vw_run2["since"], vw_run2["new"], vw_run2["noted"], vw_run2["opened"]) == ("2026-07-28", 1, 2, 2) and vw_second.asked[0][1] == "2026-07-28", (vw_run2, vw_second.asked)
+assert len((vw_home / "watch.jsonl").read_text().splitlines()) == 11 and len(edgar.watch_rows(vw_home)) == 10 and "error" not in edgar.watch_rows(vw_home)[("0000000008-26-000008", "lend.htm")], "once per filing and file"
+assert [r["until"] for r in edgar._read_jsonl(vw_home / "watch_runs.jsonl")] == ["2026-08-20", "2026-09-02"]
+# The deal search reads the files of one report together. Sequoia 2025-S2's report comes as exhibit 99.9 in two files: 99-9a lists its loans by number with their models,
+# 99-9b repeats them in an ASF tape with the numbers masked and only codes, so the tape counts no loans. A coded tape in another report of the same filing (exhibit 99.4,
+# another firm's loans) stays. Where a file of the report was read before (CROSS's schedule 5A, then 5C), the loan file gives its numbers.
+rc_home = home / "rc_edgar"
+rc_tape = lambda n, number="XXXX", model="1": "<table><tr><th>Primary Servicer</th><th>Loan Number</th><th>Channel</th><th>FICO Model Used</th></tr>" + f"<tr><td>9999999</td><td>{number}</td><td>2</td><td>{model}</td></tr>" * n + "</table>"  # noqa: E731
+rc_docs = {"r9a.htm": "<table><tr><th>Customer Loan ID</th><th>Borrower Experian FICO Model Used</th><th>Rate</th></tr>" + "".join(f"<tr><td>{n}</td><td>Beacon 5.0</td><td>6.1</td></tr>" for n in (7300001, 7300002, 7300003)) + "</table>",
+           "r9b.htm": rc_tape(3), "r4.htm": rc_tape(2), "s5c.htm": rc_tape(2, "[Redacted]", "")}
+rc_hits = [vw_hit(41, f, "ABS-15G", "2026-10-06", "Tide Residential Funding", t) for f, t in (("r9a.htm", "EX-99.9"), ("r9b.htm", "EX-99.9"), ("r4.htm", "EX-99.4"))]
+rc_hits += [vw_hit(42, f, "ABS-15G", "2026-10-08", "Cove Depositor LLC", t) for f, t in (("s5a.htm", "EX-99.1(SC5A)"), ("s5c.htm", "EX-99.1(SC5C)"))]
+rc_home.mkdir()
+edgar._append_jsonl(rc_home / "exhibits.jsonl", [{"adsh": "0000000042-26-000042", "file": "s5a.htm", "date": "2026-10-08", "rows": 2}])  # read before, by a parser that noted no listed
+edgar._append_jsonl(rc_home / "loans.jsonl", [{"adsh": "0000000042-26-000042", "file": "s5a.htm", "id": i, "models": [], "vs_value": False, "pull": None, "score": None} for i in ("224500001", "224500002")])
+edgar.collect(since="2026-10-01", until="2026-10-31", client=VwEdgar(rc_hits, rc_docs), home=rc_home, log=vw_quiet)
+rc_notes, rc_lines = {e["file"]: e for e in edgar._read_jsonl(rc_home / "exhibits.jsonl")}, [r["file"] for r in edgar._read_jsonl(rc_home / "loans.jsonl")]
+assert (rc_notes["r9b.htm"]["copies"], rc_notes["r9b.htm"]["rows"], rc_notes["s5c.htm"]["copies"], rc_notes["r4.htm"]["copies"]) == (3, 0, 2, 0), rc_notes
+assert {f: rc_lines.count(f) for f in set(rc_lines)} == {"r9a.htm": 3, "r4.htm": 2, "s5a.htm": 2}, rc_lines
+vw_inputs = home / "vw_private" / "vs_watch.csv"
+vw_inputs.parent.mkdir()
+VW_CSV = """date,who,kind,what,source,url,standing
+2026-08-16,Kappa Ratings,rating agency,"Kappa asked how to rate deals whose loans were scored on newer models.",Kappa Ratings,https://example.com/kappa/notice,comments closed
+2026-08-05,Orchid Lending,lender guide,"Orchid buys loans scored on VS4 alone, from its own guide.",Orchid bulletin 7,https://example.com/orchid/7,in force
+2026-08-12,Tide Depositor,deal,"Tide's deal report says the review used the FICO, not the VantageScore, on twelve loans.","ABS-15G, exhibit 99.1",https://www.sec.gov/Archives/edgar/data/123456/000000000626000006/d6.htm,filed
+,,,,,,
+2026-08-09,Plum Press,blog,A blog row.,Plum,https://example.com/plum,published
+2026-08-09,Plum Press,trade press,A row with a {share} placeholder.,Plum,https://example.com/plum2,published
+Aug 9,Plum Press,trade press,A row with a word for a date.,Plum,https://example.com/plum3,published
+2026-08-09,Plum Press,trade press,A row with a plain link.,Plum,http://example.com/plum4,published
+2026-08-09,Plum Press,trade press,A row with a standing word not on the list.,Plum,https://example.com/plum5,maybe
+2026-09-30,Plum Press,trade press,A row from after the build's day.,Plum,https://example.com/plum6,published
+2026-08-05,Orchid Lending,lender guide,The same item again.,Orchid bulletin 7,https://example.com/orchid/7,in force
+"""
+vw_inputs.write_text(VW_CSV)
+vw_rows = vw.build_rows(vw_home, vw_inputs, date(2026, 9, 2), None)
+assert len({tuple(sorted(r)) for r in vw_rows}) == 1, "every row has the same fields"
+vw_meta = next(r for r in vw_rows if r["view"] == "meta")
+assert {k: vw_meta[k] for k in ("items_n", "sec_n", "mention_n", "hand_n", "covered_n", "repeat_n", "new_n", "left_n", "left_auto", "left_card", "left_consumer", "left_other", "left_heading", "hand_out_n",
+                               "searched", "new_from")} == {
+    "items_n": 7, "sec_n": 4, "mention_n": 0, "hand_n": 3, "covered_n": 1, "repeat_n": 0, "new_n": 1, "left_n": 4, "left_auto": 1, "left_card": 1, "left_consumer": 0, "left_other": 1, "left_heading": 1,
+    "hand_out_n": 7, "searched": "2026-09-02", "new_from": "2026-08-27"}, vw_meta
+vw_items = sorted((r for r in vw_rows if r["view"] == "item"), key=lambda r: r["order"])
+assert [(r["date"], r["kind_label"], r["who"], r["basis"], r["new"]) for r in vw_items] == [
+    ("2026-08-28", "SEC filing", "Gamma Mortgage Holdings", "Filed", True), ("2026-08-18", "SEC filing", "Brightway Home Loans", "Filed", False),
+    ("2026-08-16", "Rating agency", "Kappa Ratings", "Comments closed", False), ("2026-08-12", "Deal", "Tide Depositor", "Filed", False),
+    ("2026-08-10", "Deal", "Tide Loan Trust 2026-NQM9", "Filed", False), ("2026-08-05", "Lender guide", "Orchid Lending", "In force since", False),
+    ("2026-07-20", "SEC filing", "Harbor Mortgage Insurance", "Filed", False)], [(r["date"], r["who"]) for r in vw_items]  # newest first; on a first build an item is first listed on its own date
+vw_by = {r["who"]: r for r in vw_items}
+assert vw_by["Harbor Mortgage Insurance"]["quote"] and vw_by["Harbor Mortgage Insurance"]["what"] == edgar.vantage_passage(VW_DOC)[1] and vw_by["Harbor Mortgage Insurance"]["count"] == 4 and vw_by["Harbor Mortgage Insurance"]["source"] == "10-Q", vw_by["Harbor Mortgage Insurance"]
+assert vw_by["Harbor Mortgage Insurance"]["url"] == "https://www.sec.gov/Archives/edgar/data/123456/000000000126000001/mi.htm", "the main document's words, and its link"
+# A deal report's loans, counted from the loan file at each build: both of Tide's loans naming VantageScore name Classic FICO for another bureau, so neither is called a
+# loan scored on VantageScore, and the base is the loans whose score model its report names (L4 names none).
+assert vw_by["Tide Loan Trust 2026-NQM9"]["what"] == "Of the 4 loans whose score model its report names, 2 list VantageScore (1 VS4) beside Classic FICO; none names VantageScore alone." and not vw_by["Tide Loan Trust 2026-NQM9"]["quote"]
+assert vw_by["Tide Loan Trust 2026-NQM9"]["source"] == "ABS-15G, exhibit 99.2" and "as the score model" not in json.dumps(vw_rows)
+
+
+def vw_one(**row):
+    """One filing as the list shows it, from a planted line of the watch's file."""
+    base = {"adsh": "0000000010-26-000010", "file": "t.htm", "cik": "0000123456", "date": "2026-08-25", "form": "8-K", "type": "EX-99.2", "filer": "Harbor Mortgage Insurance Corp"}
+    return vw.sec_items({("0000000010-26-000010", "t.htm"): {**base, **row}}, {}, set())[0][0]
+
+
+assert (vw_one(count=2, sentence=None)["what"], vw_one(count=2, sentence=None)["quote"], vw_one(count=2)["source"]) == ("Names VantageScore 2 times, in tables or headings rather than a sentence.", False, "8-K, exhibit 99.2")
+assert vw_one(error=True)["what"] == "EDGAR's search finds VantageScore in this filing, but the document did not open, so its words are not shown yet."
+# The words for a deal report's loans, of those whose score model its report names (a code or a blank alone could hide any model): VS4 as the only score model only
+# where no FICO model is named beside it; beside Classic FICO, or a FICO model where one is newer; and where some have a FICO model named and some not, which are which,
+# so the loan with no FICO is the one named. A line noted before these counts keeps the words it can say: of all its loans, and how many name VantageScore.
+vw_tape = lambda n, named, vs, vs4, old, alone, classic, vs4_alone=None, old_alone=None: vw_one(  # noqa: E731
+    form="ABS-15G", filer="Tide Depositor LLC", count=1, tape_n=n, tape_named=named, tape_vs=vs, tape_vs4=vs4, tape_vs_old=old, tape_vs_alone=alone, tape_vs_classic=classic,
+    tape_vs4_alone=vs4_alone, tape_old_alone=old_alone)["what"]
+assert vw_tape(1210, 1188, 2, 2, 0, 2, 0, 2, 0) == "Of the 1,188 loans whose score model its report names, 2 name VS4 as the only score model."
+assert vw_tape(1490, 1452, 1, 1, 0, 0, 1, 0, 0) == "Of the 1,452 loans whose score model its report names, 1 lists VS4 beside Classic FICO."
+assert vw_tape(1030, 1030, 2, 1, 1, 0, 2, 0, 0) == "Of the 1,030 loans whose score model its report names, 2 list VantageScore (1 VS4) beside Classic FICO; none names VantageScore alone."
+assert vw_tape(40, 38, 2, 2, 0, 0, 1, 0, 0) == "Of the 38 loans whose score model its report names, 2 list VS4 beside a FICO model; none names VantageScore alone."
+assert vw_tape(1580, 1140, 2, 2, 0, 1, 1, 1, 0) == "Of the 1,140 loans whose score model its report names, 2 name VS4: 1 with no FICO named and 1 beside Classic FICO."
+assert vw_tape(1370, 1333, 2, 1, 1, 1, 1, 1, 0) == ("Of the 1,333 loans whose score model its report names, 2 name VantageScore (1 VS4): 1 names VS4 with no FICO named, and 1 lists a VantageScore "
+                                                   "other than VS4 beside Classic FICO."), "the loan with no FICO named is the VS4 one"
+assert vw_tape(905, 900, 3, 2, 1, 1, 0, 0, 1) == ("Of the 900 loans whose score model its report names, 3 name VantageScore (2 VS4): 1 names a VantageScore other than VS4 with no FICO named, and "
+                                                 "2 list VS4 beside a FICO model."), "and here the older one"
+assert vw_tape(145, 140, 1, 0, 1, 1, 0, 0, 1) == "Of the 140 loans whose score model its report names, 1 names a VantageScore other than VS4 as the only score model."
+assert vw_tape(1580, None, 2, 2, 0, 1, 1) == "Of the 1,580 loans in its report, 2 name VS4, 1 of them with no FICO named.", "a line noted before these counts"
+assert vw_one(form="ABS-15G", filer="Tide Depositor LLC", count=3, tape_n=40, tape_vs=3, tape_vs4=3)["what"] == "Of the 40 loans in its report, 3 name VS4."
+# A slide's words noted before the slide rule show the clause holding the share at each build, in quotes; prose stays whole.
+vw_slide = "Bureau scores grow Mortgage Tri-merge ~41% of mortgage credit pulls in Q2 used VantageScore 4.0 2 cents pricing for VantageScore 4.0 through 2029 Next Look lets lenders review files"
+assert (vw_one(count=3, sentence=vw_slide)["what"], vw_one(count=3, sentence=vw_slide)["quote"]) == ("~41% of mortgage credit pulls in Q2 used VantageScore 4.0", True)
+assert vw_one(count=1, sentence="Our insured loans on VantageScore 4.0 stay near 2% of new mortgage insurance written.")["what"] == "Our insured loans on VantageScore 4.0 stay near 2% of new mortgage insurance written."
+assert not vw_by["Tide Depositor"]["quote"] and not any(r["key"] == "0000000006-26-000006" for r in vw_items), "the hand-kept row stands for its filing, which the search does not list again"
+assert vw_by["Kappa Ratings"]["first_seen"] == "2026-08-16" and vw_by["Gamma Mortgage Holdings"]["first_seen"] == "2026-08-28" and vw_by["Orchid Lending"]["kind"] == "lender guide" and vw_by["Orchid Lending"]["form"] is None
+vw_said = {r["key"]: r["text"] for r in vw_rows if r["view"] == "sentence"}
+assert vw_said == {"lead": "7 items: 4 SEC filings from the weekly search and 3 kept by hand. 1 is new, first listed in the week to September 2, 2026.",
+                   "search": "The SEC search covers 10-K, 10-Q and 8-K reports, deal reports (ABS-15G) and free-writing prospectuses filed from July 1, 2026 to September 2, 2026. "
+                             "It left out 2 filings on auto, card or consumer loans, 1 deal report naming VantageScore only as a column heading and 1 filing on other business."}, vw_said
+assert [r["text"] for r in vw_rows if r["view"] == "warning"] == [f"VantageScore watch: line {n} of vs_watch.csv is left off the list: {why}." for n, why in (
+    (6, "its kind 'blog' is not one of filing, deal, rating agency, lender guide, trade press"), (7, "its sentence holds a placeholder"), (8, "its date 'Aug 9' is not YYYY-MM-DD"),
+    (9, "its link is not a web address starting https://"), (10, "its standing 'maybe' is not one of filed, published, closed, in force, comments closed, replaced"),
+    (11, "its date 2026-09-30 comes after the build's day, 2026-09-02"), (12, "it repeats the date, who and link of an earlier row"))], [r["text"] for r in vw_rows if r["view"] == "warning"]
+# The next build: each item keeps its first day on the list from the last build's file, and a row added since is new whatever its own date. Ten days on, the search is behind.
+vw_out = home / "vw_out"
+vw_out.mkdir()
+(vw_out / "vs_watch.json").write_text(json.dumps({"rows": vw_rows}))
+vw_inputs.write_text(VW_CSV + '2026-08-20,Zinnia Bank,lender guide,"Zinnia now takes VS4 on its jumbo loans.",Zinnia guide,https://example.com/zinnia,in force\n')
+vw_next = vw.build_datasets(out_dir=vw_out, edgar_home=vw_home, inputs=vw_inputs, today=date(2026, 9, 12))["vs_watch"]
+vw_next_by = {r["who"]: r for r in vw_next if r["view"] == "item"}
+assert vw_next_by["Zinnia Bank"]["first_seen"] == "2026-09-12" and vw_next_by["Zinnia Bank"]["new"] and vw_next_by["Gamma Mortgage Holdings"]["first_seen"] == "2026-08-28" and not vw_next_by["Gamma Mortgage Holdings"]["new"], vw_next_by
+assert next(r for r in vw_next if r["view"] == "meta")["new_n"] == 1 and " to September 2, 2026. That is 10 days before this list was built. It left out " in next(r["text"] for r in vw_next if r["view"] == "sentence" and r["key"] == "search"), vw_next
+assert "VantageScore watch: the SEC search last covered filings to 2026-09-02, 10 days before 2026-09-12." in [r["text"] for r in vw_next if r["view"] == "warning"]
+# No hand-kept file, one without a column, no search yet, and nothing at all: each says so, and the list shows what it has.
+vw_bare = vw.build_rows(vw_home, home / "no_such.csv", date(2026, 9, 2), None)
+assert next(r["text"] for r in vw_bare if r["view"] == "sentence" and r["key"] == "lead") == "5 items, all SEC filings from the weekly search. 1 is new, first listed in the week to September 2, 2026."  # with no row to stand for it, the search lists the deal report itself
+assert [r["text"] for r in vw_bare if r["view"] == "warning"] == ["VantageScore watch: no_such.csv is missing, so only SEC filings show."], vw_bare
+(home / "vw_private" / "short.csv").write_text("date,who,kind,what,source,url\n2026-08-16,Kappa Ratings,rating agency,Words.,Kappa,https://example.com/k\n")
+assert [r["text"] for r in vw.build_rows(vw_home, home / "vw_private" / "short.csv", date(2026, 9, 2), None) if r["view"] == "warning"] == ["VantageScore watch: short.csv lacks the column standing, so only SEC filings show."]
+vw_hand = vw.build_rows(home / "no_edgar", vw_inputs, date(2026, 9, 2), None)
+assert {r["key"]: r["text"] for r in vw_hand if r["view"] == "sentence"} == {"lead": "4 items, all kept by hand. None was first listed in the week to September 2, 2026."} and "VantageScore watch: the SEC search has not run yet; `edgar` runs it." in [r["text"] for r in vw_hand if r["view"] == "warning"], vw_hand
+vw_none = vw.build_rows(home / "no_edgar", home / "no_such.csv", date(2026, 9, 2), None)
+assert next(r for r in vw_none if r["view"] == "meta")["items_n"] == 0 and not [r for r in vw_none if r["view"] == "sentence"], "nothing to list: no words, and the card stays off"
+# A build that stops: a meta row with no count, so the card stays off, and a warning for the weekly report, which reads it from the file.
+vw_broken = home / "vw_broken"
+vw_broken.mkdir()
+(vw_broken / "watch.jsonl").write_text('{"file": "x.htm"}\n')
+vw_stop = vw.build_datasets(out_dir=vw_out, edgar_home=vw_broken, inputs=vw_inputs, today=date(2026, 9, 2))["vs_watch"]
+assert [r["view"] for r in vw_stop] == ["meta", "warning"] and vw_stop[0]["items_n"] is None and vw_stop[1]["text"].startswith("VantageScore watch: could not build the dataset: KeyError"), vw_stop
+(vw_out / "vs_watch.json").write_text(json.dumps({"rows": vw_stop}))
+assert vw.watch_warnings(vw_out) == [vw_stop[1]["text"]] and vw.watch_warnings(home / "no_such_folder") == [] and vw._seen_before(vw_out) is None, "a stopped build lists nothing, so the next counts as a first"
+(vw_out / "vs_watch.json").write_text("{not json")
+assert vw.watch_warnings(vw_out)[0].startswith("VantageScore watch: could not read vs_watch.json") and vw._seen_before(vw_out) is None
+# A sentence a company repeats word for word shows once, in its newest filing's row, which names the others; another company's same words, a different sentence and
+# words in our own voice stay apart.
+vw_fold = lambda key, who, what, day, form="10-Q", quote=True: {"key": key, "who": who, "what": what, "date": day, "form": form, "quote": quote}  # noqa: E731
+vw_folded, vw_folded_n = vw.fold_repeats([vw_fold("a", "Harbor", "In July 2025, the FHFA spoke.", "2026-11-05"), vw_fold("b", "Harbor", "In July 2025,  the FHFA spoke.", "2026-08-06"),
+                                          vw_fold("c", "Harbor", "In July 2025, the FHFA spoke.", "2026-07-30", "8-K"), vw_fold("d", "Quay", "In July 2025, the FHFA spoke.", "2026-11-04"),
+                                          vw_fold("e", "Harbor", "A de minimis share used VS4.", "2026-11-05"), vw_fold("f", "Tide", "Of the 9 loans in its report, 1 names VS4.", "2026-11-05", "ABS-15G", False),
+                                          vw_fold("g", "Tide", "Of the 9 loans in its report, 1 names VS4.", "2026-08-05", "ABS-15G", False)])
+assert vw_folded_n == 2 and [r["key"] for r in vw_folded] == ["a", "d", "e", "f", "g"] and vw_folded[0]["also"] == "Also in its 10-Q of Aug 6, 2026 and 8-K of Jul 30, 2026." and "also" not in vw_folded[1], vw_folded
+# A deal report the deal search found writing just "Vantage", from the watch's start, listed with its words unless it is listed already or a hand-kept row stands for
+# it; and a hand-kept row whose date and link were corrected keeps its first day on the list, when it is the only row of its who and kind that changed.
+vw_more = home / "vw_more"
+vw_more.mkdir()
+vw_said_q = "In July 2025, the FHFA said the GSEs would accept loans scored on VantageScore 4.0 from approved lenders."
+vw_noted = lambda n, day, filer, sentence, cik="0000555555": {"adsh": f"00000000{n}-26-0000{n}", "file": f"f{n}.htm", "cik": cik, "date": day, "form": "10-Q", "type": "10-Q", "filer": filer,  # noqa: E731
+                                                                 "sics": ["6351"], "count": 2, "sentence": sentence, "near_mortgage": True, "kb": 9}
+edgar._append_jsonl(vw_more / "watch.jsonl", [vw_noted(21, "2026-11-05", "Harbor Mortgage Insurance Corp", vw_said_q), vw_noted(22, "2026-08-06", "Harbor Mortgage Insurance Corp", vw_said_q),
+                                              vw_noted(23, "2026-07-30", "Harbor Mortgage Insurance Corp", "Our VantageScore 4.0 loans stay de minimis in the books of insured mortgages so far."),
+                                              vw_noted(24, "2026-11-04", "Quay Mortgage Guaranty Corp", vw_said_q, "0000666666")])
+edgar._append_jsonl(vw_more / "watch_runs.jsonl", [{"at": "2026-11-19", "since": "2026-07-01", "until": "2026-11-19"}])
+vw_m = lambda n, day: {"adsh": f"00000000{n}-26-0000{n}", "file": f"m{n}.htm", "cik": "0000777777", "date": day, "form": "ABS-15G", "type": "EX-99.01", "desc": "", "filer": "Aven Financial, Inc.", "kind": "mention"}  # noqa: E731
+edgar._append_jsonl(vw_more / "hits.jsonl", [vw_m(31, "2026-10-01"), vw_m(32, "2026-06-17"), vw_m(33, "2026-10-02"), vw_m(34, "2026-10-05"), {**vw_m(21, "2026-11-05"), "file": "m21.htm"}])
+edgar._append_jsonl(vw_more / "mentions.jsonl", [
+    {"adsh": "0000000031-26-000031", "file": "m31.htm", "date": "2026-10-01", "count": 2,
+     "snippet": "ith Aven to resolve any discrepancies. 3.7 Credit History Mission reviewed the credit report data provided through Experian and/or Vantage used at origination to verify "},
+    {"adsh": "0000000032-26-000032", "file": "m32.htm", "date": "2026-06-17", "count": 1, "snippet": "before the watch began, it says Vantage."},
+    {"adsh": "0000000033-26-000033", "file": "m33.htm", "date": "2026-10-02", "count": 0, "snippet": None},
+    {"adsh": "0000000034-26-000034", "file": "m34.htm", "date": "2026-10-05", "count": 1, "snippet": "a row stands for it, Vantage."},
+    {"adsh": "0000000021-26-000021", "file": "m21.htm", "date": "2026-11-05", "count": 1, "snippet": "listed already, Vantage."}])
+edgar._append_jsonl(vw_more / "filings.jsonl", [{"adsh": "0000000031-26-000031", "deal": "AVNHT 2026-HE1"}])
+vw_more_csv = home / "vw_private" / "vw_more.csv"
+VW_MORE_CSV = """date,who,kind,what,source,url,standing
+2026-10-30,Aven,deal,"S&P rated a home-equity deal underwritten on VS4.",Press Wire,https://example.com/wire/aven,closed
+2026-09-21,Newrez,lender guide,"Newrez takes VS4 on VA loans.",Newrez bulletin 78,https://example.com/newrez/78,in force
+2026-11-16,Newrez,lender guide,"Newrez takes VS4 on second homes.",Newrez bulletin 99,https://example.com/newrez/99,in force
+2026-10-05,Quill Trust,deal,"Quill's deal report says Vantage once.","ABS-15G, exhibit 99.1",https://www.sec.gov/Archives/edgar/data/888/000000003426000034/m34.htm,filed
+"""
+vw_more_csv.write_text(VW_MORE_CSV)
+vw_more_out = home / "vw_more_out"
+vw_more_out.mkdir()
+vw_first_build = vw.build_datasets(out_dir=vw_more_out, edgar_home=vw_more, inputs=vw_more_csv, today=date(2026, 11, 18))["vs_watch"]
+(vw_more_out / "vs_watch.json").write_text(json.dumps({"rows": vw_first_build}))
+vw_more_csv.write_text(VW_MORE_CSV.replace('2026-10-30,Aven,deal,"S&P rated a home-equity deal underwritten on VS4.",Press Wire,https://example.com/wire/aven,closed',
+                                           '2026-10-16,Aven,deal,"S&P rated a home-equity deal underwritten on VS4.",National Mortgage News,https://example.com/nmn/aven,published'))
+vw_more_rows = vw.build_datasets(out_dir=vw_more_out, edgar_home=vw_more, inputs=vw_more_csv, today=date(2026, 11, 19))["vs_watch"]
+vw_more_by = {r["key"]: r for r in vw_more_rows if r["view"] == "item"}
+vw_more_meta = next(r for r in vw_more_rows if r["view"] == "meta")
+assert (vw_more_meta["sec_n"], vw_more_meta["mention_n"], vw_more_meta["repeat_n"], vw_more_meta["hand_n"], vw_more_meta["items_n"], vw_more_meta["covered_n"]) == (4, 1, 1, 4, 8, 1), vw_more_meta  # Quill's row stands for m34
+assert vw_more_by["0000000021-26-000021"]["also"] == "Also in its 10-Q of Aug 6, 2026." and "0000000022-26-000022" not in vw_more_by and vw_more_by["0000000024-26-000024"]["also"] is None, vw_more_by
+vw_aven = vw_more_by["0000000031-26-000031"]
+assert (vw_aven["who"], vw_aven["kind"], vw_aven["standing"], vw_aven["date"], vw_aven["source"], vw_aven["count"], vw_aven["quote"]) == ("AVNHT 2026-HE1", "deal", "filed", "2026-10-01", "ABS-15G, exhibit 99.01", 2, False), vw_aven
+assert vw_aven["what"] == "Its report mentions Vantage: “Mission reviewed the credit report data provided through Experian and/or Vantage used at origination to …”" and vw_aven["url"] == "https://www.sec.gov/Archives/edgar/data/777777/000000003126000031/m31.htm", vw_aven
+assert not {"0000000032-26-000032", "0000000033-26-000033", "0000000034-26-000034"} & set(vw_more_by), "before the watch's start, no mention, or a hand-kept row stands for it"
+vw_hand_by = {(r["who"], r["date"]): r for r in vw_more_rows if r["view"] == "item" and r["form"] is None}
+assert vw_hand_by[("Aven", "2026-10-16")]["first_seen"] == "2026-10-30" and not vw_hand_by[("Aven", "2026-10-16")]["new"] and vw_hand_by[("Newrez", "2026-09-21")]["first_seen"] == "2026-09-21", vw_hand_by
+assert vw_more_by["0000000031-26-000031"]["first_seen"] == "2026-10-01" and vw_more_by["0000000021-26-000021"]["first_seen"] == "2026-11-05", "listed on the first build on their own dates, and carried"
+vw_more_said = next(r["text"] for r in vw_more_rows if r["view"] == "sentence" and r["key"] == "search")
+assert vw_more_said.endswith(" It also lists 1 deal report that writes just “Vantage”, from the weekly search of deal reports. 1 filing that repeats a company's sentence word for word is named in the row of its newest filing."), vw_more_said
+# Two rows of one who and kind that both changed: which replaces which is not sure, so both count as first listed on the build's day.
+vw_more_csv.write_text(VW_MORE_CSV.replace("newrez/78", "newrez/078").replace("newrez/99", "newrez/099"))
+vw_twins = {(r["who"], r["date"]): r for r in vw.build_datasets(out_dir=vw_more_out, edgar_home=vw_more, inputs=vw_more_csv, today=date(2026, 11, 19))["vs_watch"] if r["view"] == "item" and r["form"] is None}
+assert vw_twins[("Newrez", "2026-09-21")]["first_seen"] == vw_twins[("Newrez", "2026-11-16")]["first_seen"] == "2026-11-19" and vw_twins[("Aven", "2026-10-30")]["first_seen"] == "2026-10-30", vw_twins
+# A hand-kept row whose link is the press names the SEC filing it stands for in its covers column, so the deal search's mention of the same deal is not listed again:
+# the Aven row and AVNHT 2026-HE1's report. A covers value that is not an accession number keeps the row off the list, with a warning, and the mention shows.
+vw_cover_csv = home / "vw_private" / "vw_cover.csv"
+vw_cover_of = lambda covers: VW_MORE_CSV.replace("standing\n", "standing,covers\n", 1).replace("wire/aven,closed", f"wire/aven,closed,{covers}")  # noqa: E731
+vw_cover_csv.write_text(vw_cover_of("0000000031-26-000031"))
+vw_cover = vw.build_rows(vw_more, vw_cover_csv, date(2026, 11, 19), None)
+vw_cover_meta = next(r for r in vw_cover if r["view"] == "meta")
+assert "0000000031-26-000031" not in {r["key"] for r in vw_cover if r["view"] == "item"} and (vw_cover_meta["mention_n"], vw_cover_meta["covered_n"], vw_cover_meta["hand_n"]) == (0, 2, 4), vw_cover_meta
+assert not any("Vantage”" in r["text"] for r in vw_cover if r["view"] == "sentence") and not [r for r in vw_cover if r["view"] == "warning"], "no deal report left writing just Vantage"
+vw_cover_csv.write_text(vw_cover_of("AVNHT 2026-HE1"))
+vw_bad = vw.build_rows(vw_more, vw_cover_csv, date(2026, 11, 19), None)
+assert [r["text"] for r in vw_bad if r["view"] == "warning"] == ["VantageScore watch: line 2 of vw_cover.csv is left off the list: its covers 'AVNHT' is not an SEC accession number, as 0001234567-26-012345."]
+assert "0000000031-26-000031" in {r["key"] for r in vw_bad if r["view"] == "item"} and next(r for r in vw_bad if r["view"] == "meta")["hand_out_n"] == 1, vw_bad
 
 from gsescore import market  # noqa: E402
 from gsescore.exposure import fico_dollars, fico_per_loan, usd_price  # noqa: E402
@@ -2954,6 +3562,152 @@ assert next(r for r in ms(summary=[{"agency": "All", "data_through": "2027-07-01
 ms_words = " ".join(str(r.get(k)) for got in (ms_built, ms(score_mix=ms_early), ms(ginnie_va=[])) for r in got for k in ("text", "uses", "move", "fresh", "label", "line", "note", "big_what") if r.get(k))
 assert not re.search(r"\b(a|the|this|that|first|VA) read\b|\bfold\b|\brung\b|\bthe pick\b|has no FICO|no sign of|like FICO|Estimated|Potential|Missed|Left\b", ms_words), re.search(r"\b(a|the|this|that|first|VA) read\b|\bfold\b|\brung\b|\bthe pick\b|has no FICO|no sign of|like FICO|Estimated|Potential|Missed|Left\b", ms_words)
 assert not re.search(r"\b[a-z]{2,}\d+(\.\d+)?%", ms_words), re.search(r"\b[a-z]{2,}\d+(\.\d+)?%", ms_words)
+# The yearly chart: every year built as the pieces are, every piece on the year the loan was made. Before the pieces' year Fannie and Freddie are FHFA's count of the
+# loans they bought, by the year each loan was made; the pieces' year keeps their own count, so its rows equal the piece rows. Other conforming size is what is left in
+# each year, and its dollars what is left of the year's first-lien dollars. A year that cannot be built keeps its place on the axis, says why in a sentence and in a
+# short word, and the report warns. Planted counts and dollars, none of them real.
+MS_TIE = ("n", "usd_bn", "share_n", "share_usd", "share_all_n", "label", "order", "first_lien")
+
+
+def ms_mix(rows):
+    return {(r["year"], r["key"]): r for r in rows if r["view"] == "mix_year"}
+
+
+def ms_gaps(rows):
+    return {(r["year"], r["measure"]): r["text"] for r in rows if r["view"] == "mix_gap"}
+
+
+def ms_shorts(rows):
+    return {(r["year"], r["measure"]): r["short"] for r in rows if r["view"] == "mix_gap"}
+
+
+def ms_axis(rows):
+    return sorted({r["year"] for r in rows if r["view"] in ("mix_year", "mix_gap")})
+
+
+ms_mix_base = ms_mix(ms_built)
+assert set(ms_mix_base) == {(2025, k) for k in ms_piece} and all(ms_mix_base[(2025, k)][f] == ms_piece[k][f] for k in ms_piece for f in MS_TIE) and not ms_gaps(ms_built), ms_mix_base
+assert ms_said(ms_built)["mix_caption"] == "Fannie and Freddie: their own count for 2025, 2.4% above FHFA's. The rest from HMDA, by the year the loan was made. Home equity and second liens (0.5m loans in 2025) are not in the bars. HMDA's 2026 file comes out about June 2027.", ms_said(ms_built)["mix_caption"]
+# The Dollars view has its own caption, worked out the same way in its own unit: their own dollars against FHFA's, and home equity in dollars.
+assert ms_said(ms_built)["mix_caption_usd"] == "Fannie and Freddie: their own dollars for 2025, 0.8% below FHFA's. The rest from HMDA, by the year the loan was made. Home equity and second liens ($50.0bn in 2025) are not in the bars. HMDA's 2026 file comes out about June 2027.", ms_said(ms_built)["mix_caption_usd"]
+MS_YEARS = ms_year(2023, scale=3) + ms_year(2024, scale=2) + ms_year(2025)
+MS_YEAR_INPUTS = [*MS_INPUTS, ms_input("gse_count", "fnma", 2023, 410000), ms_input("gse_count", "fhlmc", 2023, 390000), ms_input("gse_usd", "fnma", 2023, 120.0), ms_input("gse_usd", "fhlmc", 2023, 111.0),
+                  ms_input("gse_count", "fnma", 2024, 300000), ms_input("gse_count", "fhlmc", 2024, 250000), ms_input("gse_usd", "fnma", 2024, 80.0), ms_input("gse_usd", "fhlmc", 2024, 75.0),
+                  ms_input("fhfa", "enterprise_n", 2023, 780000), ms_input("fhfa", "enterprise_usd", 2023, 228.0), ms_input("fhfa", "enterprise_n", 2024, 540000), ms_input("fhfa", "enterprise_usd", 2024, 150.0)]
+
+
+def ms_years(in_rows=MS_YEAR_INPUTS, whole_market=MS_YEARS, **changed):
+    return ms(whole_market=whole_market, inputs={"status": "ok", "rows": in_rows}, **changed)
+
+
+def ms_without(*keys):
+    return [r for r in MS_YEAR_INPUTS if (r["kind"], r["key"], r["year"]) not in keys]
+
+
+def ms_with(*rows):
+    return [*ms_without(*((r["kind"], r["key"], r["year"]) for r in rows)), *rows]
+
+
+ms_y = ms_years()
+ms_y_mix, ms_y_piece = ms_mix(ms_y), {r["key"]: r for r in ms_y if r["view"] == "piece"}
+assert ms_axis(ms_y) == [2023, 2024, 2025] and not ms_gaps(ms_y) and not [w for w in ms_warned(ms_y) if "yearly chart" in w] and next(r for r in ms_y if r["view"] == "meta")["year"] == 2025, ms_warned(ms_y)
+assert all(ms_y_mix[(2025, k)][f] == ms_y_piece[k][f] for k in ms_y_piece for f in MS_TIE) and {k for y, k in ms_y_mix if y == 2025} == set(ms_y_piece), "the latest year ties to the pieces with older years in the file too"
+# The basis switch: 2023 and 2024 draw FHFA's counts and dollars, by the year the loan was made, with the GSEs' own beside them for reference; 2025 draws their own.
+for ms_at, ms_scale, ms_gse_n, ms_gse_usd, ms_basis, ms_own in ((2023, 3, 780000, 228.0, "fhfa", (800000, 231.0)), (2024, 2, 540000, 150.0, "fhfa", (550000, 155.0)), (2025, 1, 420000, 129.0, "own", (420000, 129.0))):
+    ms_first = sum(v for k, v in MS_N.items() if k != "equity") * ms_scale
+    ms_of = {k: r for (y, k), r in ms_y_mix.items() if y == ms_at}
+    assert list(ms_of) == [k for k, _ in market.PIECES] + ["equity"] and sum(r["n"] for r in ms_of.values() if r["first_lien"]) == ms_first == ms_of["gse"]["first_n"], ms_of["gse"]
+    assert (ms_of["gse"]["n"], ms_of["gse"]["usd_bn"], ms_of["gse"]["basis"], ms_of["gse"]["own_n"], ms_of["gse"]["own_usd_bn"]) == (ms_gse_n, ms_gse_usd, ms_basis, *ms_own) and all(r["basis"] is None and r["own_n"] is None for k, r in ms_of.items() if k != "gse"), ms_of["gse"]
+    assert ms_of["other_conforming"]["n"] == sum(MS_N[k] for k in market.CONFORMING_ROWS) * ms_scale - ms_gse_n and ms_of["other_conforming"]["usd_bn"] == round(ms_of["gse"]["first_usd_bn"] - ms_gse_usd - sum(MS_USD[k] for k in ("fha", "va", "usda", "business", "jumbo")) * ms_scale, 1), (ms_at, ms_of["other_conforming"])
+    assert round(sum(r["usd_bn"] for r in ms_of.values() if r["first_lien"]), 6) == ms_of["gse"]["first_usd_bn"] == sum(v for k, v in MS_USD.items() if k != "equity") * ms_scale, "the seven dollar pieces add to the year's first-lien dollars"
+    assert ms_of["gse"]["share_n"] == round(ms_gse_n / ms_first, 6) and ms_of["fha"]["share_usd"] == round(MS_USD["fha"] * ms_scale / ms_of["fha"]["first_usd_bn"], 6) and ms_of["equity"]["n"] == MS_N["equity"] * ms_scale and not ms_of["equity"]["first_lien"] and ms_of["equity"]["share_n"] is None and not any(r["note"] for r in ms_of.values()), ms_of
+assert ms_y_mix[(2023, "other_conforming")]["n"] == 930000 and ms_y_mix[(2024, "other_conforming")]["usd_bn"] == 204.0, "the remainder, in round numbers"
+assert ms_said(ms_y)["mix_caption"] == "Fannie and Freddie: FHFA's count of the loans they bought, by the year each loan was made; 2025 is their own count, 2.4% above FHFA's. The rest from HMDA, by the year the loan was made. Home equity and second liens (0.5m loans in 2025) are not in the bars. HMDA's 2026 file comes out about June 2027.", ms_said(ms_y)["mix_caption"]
+assert ms_said(ms_y)["mix_caption_usd"] == "Fannie and Freddie: FHFA's dollars for the loans they bought, by the year each loan was made; 2025 is their own dollars, 0.8% below FHFA's. The rest from HMDA, by the year the loan was made. Home equity and second liens ($50.0bn in 2025) are not in the bars. HMDA's 2026 file comes out about June 2027.", ms_said(ms_y)["mix_caption_usd"]
+# The dollar remainder comes off the year's first-lien dollars, so a total HMDA rounded on its own still matches the stack, on the tab's pieces too.
+ms_flip = ms_years(whole_market=[{**r, "usd_bn": 321.1} if (r["year"], r["key"]) == (2025, "first") else r for r in MS_YEARS])
+assert ms_mix(ms_flip)[(2025, "other_conforming")]["usd_bn"] == 48.1 == next(r for r in ms_flip if r["view"] == "piece" and r["key"] == "other_conforming")["usd_bn"] and round(sum(r["usd_bn"] for (y, _), r in ms_mix(ms_flip).items() if y == 2025 and r["first_lien"]), 6) == 321.1, ms_mix(ms_flip)[(2025, "other_conforming")]
+# The captions work out how near the GSEs' own count, and their own dollars, sit to FHFA's, by one helper: "within" BASIS_NEAR, rounded up so it holds; from BASIS_NEAR on,
+# by how much and which way; with no FHFA figure, neither.
+ms_near = lambda fhfa_n: ms_said(ms_years(ms_with(ms_input("fhfa", "enterprise_n", 2025, fhfa_n)) if fhfa_n else ms_without(("fhfa", "enterprise_n", 2025))))["mix_caption"].split(". The rest")[0]  # noqa: E731
+assert market.BASIS_NEAR == 0.001 and ms_near(419800).endswith("; 2025 is their own count, within 0.1% of FHFA's") and ms_near(419581).endswith("within 0.1% of FHFA's") and ms_near(419580).endswith("; 2025 is their own count, 0.1% above FHFA's") and ms_near(419118).endswith("0.2% above FHFA's"), ms_near(419118)
+assert ms_near(415841).endswith("; 2025 is their own count, 1.0% above FHFA's") and ms_near(430000).endswith("2.3% below FHFA's") and ms_near(420000).endswith("the same as FHFA's") and ms_near(None).endswith("; 2025 is their own count"), ms_near(None)
+ms_near_usd = lambda fhfa_usd: ms_said(ms_years(ms_with(ms_input("fhfa", "enterprise_usd", 2025, fhfa_usd)) if fhfa_usd else ms_without(("fhfa", "enterprise_usd", 2025))))["mix_caption_usd"].split(". The rest")[0]  # noqa: E731
+assert ms_near_usd(129.1).endswith("; 2025 is their own dollars, within 0.1% of FHFA's") and ms_near_usd(125.0).endswith("; 2025 is their own dollars, 3.2% above FHFA's") and ms_near_usd(129.0).endswith("the same as FHFA's") and ms_near_usd(None).endswith("; 2025 is their own dollars"), ms_near_usd(125.0)
+assert market._near(1004.6, 1000) == ", 0.5% above FHFA's" and market._near(999.4, 1000) == ", within 0.1% of FHFA's" and market._near(1000, 1000) == ", the same as FHFA's" and market._near(None, 1000) == market._near(1000, None) == "", "one rule"
+assert Path(market.__file__).read_text().count("_near(") == 2, "one helper, called once, for both views"
+# Home equity's figure is the newest year that has it, in each view's unit, and with none the caption still says it is not in the bars.
+ms_flip = ms_years(whole_market=[r for r in MS_YEARS if (r["year"], r["key"]) != (2025, "equity")])
+assert "Home equity and second liens (1.0m loans in 2024) are not in the bars." in ms_said(ms_flip)["mix_caption"] and "Home equity and second liens ($100.0bn in 2024) are not in the bars." in ms_said(ms_flip)["mix_caption_usd"], ms_said(ms_flip)["mix_caption_usd"]
+assert all("Home equity and second liens are not in the bars." in ms_said(ms_years(whole_market=[r for r in MS_YEARS if r["key"] != "equity"]))[k] for k in ("mix_caption", "mix_caption_usd"))
+ms_flip = ms_years(whole_market=[{**r, "usd_bn": None} if (r["year"], r["key"]) == (2025, "equity") else r for r in MS_YEARS])
+assert "(0.5m loans in 2025)" in ms_said(ms_flip)["mix_caption"] and "($100.0bn in 2024)" in ms_said(ms_flip)["mix_caption_usd"], "home equity with loans and no dollars in the newest year: its dollars from the year before"
+# A past year needs only FHFA's count: one of theirs missing leaves it drawn, with no own count for reference; theirs far from FHFA's warns nowhere, as that gap is the timing the basis fixes.
+ms_flip = ms_years(ms_without(("gse_count", "fhlmc", 2024)))
+assert not ms_gaps(ms_flip) and ms_mix(ms_flip)[(2024, "gse")]["n"] == 540000 and ms_mix(ms_flip)[(2024, "gse")]["own_n"] is None and ms_warned(ms_flip) == ms_warned(ms_y), ms_warned(ms_flip)
+assert ms_warned(ms_years(ms_with(ms_input("gse_count", "fnma", 2024, 100000)))) == ms_warned(ms_y) == [], "their own count 35% off FHFA's in a past year: no warning"
+# A past year with no FHFA count, or one typed as zero, is left out on both measures, keeps its place, says so in a word and in the caption, and the report names FHFA.
+for ms_rows in (ms_without(("fhfa", "enterprise_n", 2024)), ms_with(ms_input("fhfa", "enterprise_n", 2024, 0))):
+    ms_flip = ms_years(ms_rows)
+    assert ms_gaps(ms_flip) == {(2024, "n"): "No 2024 count from FHFA yet.", (2024, "usd"): "No 2024 count from FHFA yet."} and set(ms_shorts(ms_flip).values()) == {"no count yet"} and {y for y, _ in ms_mix(ms_flip)} == {2023, 2025} and ms_axis(ms_flip) == [2023, 2024, 2025], ms_gaps(ms_flip)
+    assert "market size: the yearly chart leaves out 2024: the input file has no FHFA count for 2024" in ms_warned(ms_flip) and all("2024 is left out: no 2024 count from FHFA yet." in ms_said(ms_flip)[k] for k in ("mix_caption", "mix_caption_usd")), ms_warned(ms_flip)
+# The pieces' year without both of their own counts: the pieces stay on the year before, which then draws on their own count and still equals the size bar; the newer year waits on their count.
+ms_flip = ms_years(ms_without(("gse_count", "fhlmc", 2025)))
+ms_flip_piece = {r["key"]: r for r in ms_flip if r["view"] == "piece"}
+assert next(r for r in ms_flip if r["view"] == "meta")["year"] == 2024 and ms_gaps(ms_flip) == {(2025, "n"): "No 2025 count from Freddie Mac yet.", (2025, "usd"): "No 2025 count from Freddie Mac yet."} and ms_mix(ms_flip)[(2024, "gse")]["basis"] == "own" and ms_mix(ms_flip)[(2023, "gse")]["basis"] == "fhfa", ms_gaps(ms_flip)
+assert all(ms_mix(ms_flip)[(2024, k)][f] == ms_flip_piece[k][f] for k in ms_flip_piece for f in MS_TIE) and "market size: the yearly chart leaves out 2025: the input file has no 2025 count for Freddie Mac" in ms_warned(ms_flip), ms_warned(ms_flip)
+assert ms_said(ms_flip)["mix_caption"] == "Fannie and Freddie: FHFA's count of the loans they bought, by the year each loan was made; 2024 is their own count, 1.9% above FHFA's. The rest from HMDA, by the year the loan was made. Home equity and second liens (1.0m loans in 2024) are not in the bars. 2025 is left out: no 2025 count from Freddie Mac yet. HMDA's 2026 file comes out about June 2027.", ms_said(ms_flip)["mix_caption"]
+assert ms_said(ms_flip)["mix_caption_usd"] == "Fannie and Freddie: FHFA's dollars for the loans they bought, by the year each loan was made; 2024 is their own dollars, 3.3% above FHFA's. The rest from HMDA, by the year the loan was made. Home equity and second liens ($100.0bn in 2024) are not in the bars. 2025 is left out: no 2025 count from Freddie Mac yet. HMDA's 2026 file comes out about June 2027.", ms_said(ms_flip)["mix_caption_usd"]
+ms_flip = ms_years(ms_with(ms_input("gse_count", "fnma", 2025, 0), ms_input("gse_count", "fhlmc", 2025, 0)))
+assert ms_gaps(ms_flip)[(2025, "n")] == "No 2025 count from Fannie Mae or Freddie Mac yet." and "market size: the yearly chart leaves out 2025: the input file has no 2025 count for Fannie Mae or Freddie Mac" in ms_warned(ms_flip), ms_gaps(ms_flip)
+# No HMDA first-lien rows: a year past HMDA's latest says when its file comes out until that month has gone by; a year inside the range says its file is not loaded; a year with rows but no first-lien loans says so.
+ms_ahead = [*MS_YEAR_INPUTS, ms_input("gse_count", "fnma", 2026, 330000), ms_input("gse_count", "fhlmc", 2026, 340000)]
+ms_flip = ms_years(ms_ahead)
+assert ms_gaps(ms_flip) == {(2026, "n"): "HMDA's 2026 file comes out about June 2027.", (2026, "usd"): "HMDA's 2026 file comes out about June 2027."} and set(ms_shorts(ms_flip).values()) == {"no file yet"} and ms_axis(ms_flip) == [2023, 2024, 2025, 2026] and not [k for k in ms_mix(ms_flip) if k[0] == 2026], ms_gaps(ms_flip)
+assert "market size: the yearly chart leaves out 2026: no HMDA first-lien rows for it" in ms_warned(ms_flip) and next(r for r in ms_flip if r["view"] == "meta")["year"] == 2025 and not next(r for r in ms_flip if r["view"] == "meta")["stale"], ms_warned(ms_flip)
+assert ms_said(ms_flip)["mix_caption"].endswith("are not in the bars. 2026 is left out: HMDA's 2026 file comes out about June 2027.") and ms_said(ms_flip)["mix_caption"].count("2026 file") == 1, "the next year's place says when its file comes out, once"
+ms_flip = ms_years(ms_ahead, summary=[{"agency": "All", "data_through": "2027-07-01"}])
+assert ms_gaps(ms_flip)[(2026, "n")] == "HMDA's 2026 file is not loaded yet." and ms_shorts(ms_flip)[(2026, "n")] == "not loaded" and ms_said(ms_flip)["mix_caption"].endswith("are not in the bars. 2026 is left out: HMDA's 2026 file is not loaded yet."), ms_said(ms_flip)["mix_caption"]
+assert ms_said(ms_years(summary=[{"agency": "All", "data_through": "2027-07-01"}]))["mix_caption"].endswith("are not in the bars."), "past the month it was due, and no place for it: no word on the next file"
+ms_flip = ms_years(whole_market=ms_year(2023, scale=3) + ms_year(2025))
+assert ms_gaps(ms_flip) == {(2024, "n"): "HMDA's 2024 file is not loaded.", (2024, "usd"): "HMDA's 2024 file is not loaded."} and set(ms_shorts(ms_flip).values()) == {"not loaded"} and ms_axis(ms_flip) == [2023, 2024, 2025] and "market size: the yearly chart leaves out 2024: no HMDA first-lien rows for it" in ms_warned(ms_flip), ms_gaps(ms_flip)
+assert "(0.5m loans in 2025) are not in the bars. 2024 is left out: HMDA's 2024 file is not loaded. HMDA's 2026 file comes out about June 2027." in ms_said(ms_flip)["mix_caption"], ms_said(ms_flip)["mix_caption"]
+ms_flip = ms_years(ms_without(("fhfa", "enterprise_n", 2024), ("fhfa", "enterprise_usd", 2024)), whole_market=ms_year(2023, scale=3) + ms_year(2025))
+assert ms_gaps(ms_flip)[(2024, "n")] == "HMDA's 2024 file is not loaded. No 2024 count from FHFA yet." and ms_shorts(ms_flip)[(2024, "n")] == "not loaded" and "market size: the yearly chart leaves out 2024: no HMDA first-lien rows for it; the input file has no FHFA count for 2024" in ms_warned(ms_flip) and ms_axis(ms_flip) == [2023, 2024, 2025], "a year with neither keeps its place"
+ms_flip = ms_years(whole_market=[r for r in MS_YEARS if (r["year"], r["key"]) != (2024, "first")])
+assert ms_gaps(ms_flip)[(2024, "n")] == "HMDA's 2024 rows hold no first-lien loans." and ms_shorts(ms_flip)[(2024, "n")] == "file incomplete" and not [k for k in ms_mix(ms_flip) if k[0] == 2024], ms_gaps(ms_flip)
+# Other conforming size below zero holds the year back, on either count; at zero the year draws, with no row for the piece.
+ms_flip = ms_years(ms_with(ms_input("fhfa", "enterprise_n", 2024, 1200000)))
+assert ms_gaps(ms_flip) == {(2024, m): "FHFA's 2024 count for Fannie and Freddie is more than all of HMDA's conforming-size loans that year, so the year is held back." for m in ("n", "usd")} and set(ms_shorts(ms_flip).values()) == {"held back"} and not [k for k in ms_mix(ms_flip) if k[0] == 2024], ms_gaps(ms_flip)
+assert "market size: the yearly chart leaves out 2024: FHFA's 2024 count for the GSEs tops HMDA's conforming-size rows by 60,000. Check the input file." in ms_warned(ms_flip) and next(r for r in ms_flip if r["view"] == "meta")["ok"], ms_warned(ms_flip)
+ms_flip = ms_years(ms_with(ms_input("fhfa", "enterprise_n", 2024, 1140000)))
+assert not ms_gaps(ms_flip) and (2024, "other_conforming") not in ms_mix(ms_flip) and sum(r["n"] for (y, _), r in ms_mix(ms_flip).items() if y == 2024 and r["first_lien"]) == 2000000, "a remainder of zero draws"
+# Dollars on their own: FHFA's dollars, or theirs in the pieces' year, missing or more than the year's conforming-size dollars, leave out that year's dollars only, and its loans still draw.
+ms_flip = ms_years(ms_without(("fhfa", "enterprise_usd", 2024)))
+assert ms_gaps(ms_flip) == {(2024, "usd"): "No 2024 dollar figure from FHFA yet."} and ms_shorts(ms_flip) == {(2024, "usd"): "no dollars yet"} and ms_mix(ms_flip)[(2024, "gse")]["usd_bn"] is None and ms_mix(ms_flip)[(2024, "other_conforming")]["share_usd"] is None and ms_mix(ms_flip)[(2024, "gse")]["n"] == 540000, ms_gaps(ms_flip)
+assert "market size: the yearly chart leaves out 2024's dollars: the input file has no 2024 dollars from FHFA" in ms_warned(ms_flip) and "2024 is left out: no 2024 dollar figure from FHFA yet." in ms_said(ms_flip)["mix_caption_usd"], ms_warned(ms_flip)
+assert ms_said(ms_flip)["mix_caption"] == ms_said(ms_y)["mix_caption"] and ms_said(ms_flip)["mix_caption_usd"].startswith("Fannie and Freddie: FHFA's dollars for the loans they bought, by the year each loan was made; 2025 is their own dollars, 0.8% below FHFA's."), "a year left out of the dollars only: the Loans view draws it and its caption says nothing of it"
+ms_flip = ms_years(ms_with(ms_input("fhfa", "enterprise_usd", 2024, 375.0)))
+assert ms_gaps(ms_flip) == {(2024, "usd"): "FHFA's 2024 dollars for Fannie and Freddie are more than all of HMDA's conforming-size dollars that year, so the year's dollars are held back."} and ms_shorts(ms_flip) == {(2024, "usd"): "held back"} and ms_mix(ms_flip)[(2024, "other_conforming")]["usd_bn"] is None and ms_mix(ms_flip)[(2024, "other_conforming")]["n"] == 600000, ms_gaps(ms_flip)
+assert "market size: the yearly chart leaves out 2024's dollars: FHFA's 2024 dollars for the GSEs top HMDA's conforming-size rows. Check the input file." in ms_warned(ms_flip), ms_warned(ms_flip)
+ms_flip = ms_years(ms_without(("gse_usd", "fnma", 2025)))
+assert ms_gaps(ms_flip) == {(2025, "usd"): "No 2025 dollar figure from Fannie Mae yet."} and "market size: the yearly chart leaves out 2025's dollars: the input file has no 2025 dollars for Fannie Mae" in ms_warned(ms_flip) and ms_mix(ms_flip)[(2025, "gse")]["n"] == 420000, ms_gaps(ms_flip)
+assert ms_said(ms_flip)["mix_caption_usd"].startswith("Fannie and Freddie: FHFA's dollars for the loans they bought, by the year each loan was made. The rest from HMDA") and "2025 is left out: no 2025 dollar figure from Fannie Mae yet." in ms_said(ms_flip)["mix_caption_usd"] and "; 2025 is their own count, 2.4% above FHFA's." in ms_said(ms_flip)["mix_caption"], ms_said(ms_flip)["mix_caption_usd"]
+ms_flip = ms_years([r for r in MS_YEAR_INPUTS if r["kind"] != "gse_usd" and (r["kind"], r["key"]) != ("fhfa", "enterprise_usd")])
+assert ms_said(ms_flip)["mix_caption_usd"].startswith("Home equity and second liens ($50.0bn in 2025) are not in the bars. 2023 is left out: no 2023 dollar figure from FHFA yet. 2024 is left out") and "2025 is left out: no 2025 dollar figure from Fannie Mae or Freddie Mac yet." in ms_said(ms_flip)["mix_caption_usd"], "no dollars to draw in any year: the Dollars caption names no basis"
+# A count of their own worked out rather than stated changes nothing drawn before the pieces' year, and no row carries words for the hover.
+ms_flip = ms_years(ms_with({**ms_input("gse_count", "fnma", 2023, 410000, "Planted: worked out from its dollars."), "standing": "derived"}))
+assert ms_mix(ms_flip)[(2023, "gse")]["n"] == 780000 and not [k for k, r in ms_mix(ms_flip).items() if r["note"]], ms_mix(ms_flip)[(2023, "gse")]
+# No year to draw: no rows for the card, and the report says why. No counts of their own at all, or no file: the input file's own warning says so once.
+ms_flip = ms(inputs={"status": "ok", "rows": [ms_input("gse_count", "fnma", 2025, 700000), ms_input("gse_count", "fhlmc", 2025, 700000)]})
+assert not ms_axis(ms_flip) and not {"mix_caption", "mix_caption_usd"} & set(ms_said(ms_flip)) and any(w.startswith("market size: the yearly chart leaves out 2025: the GSEs' 2025 count tops") for w in ms_warned(ms_flip)), ms_warned(ms_flip)
+for ms_none in ({"status": "ok", "rows": [r for r in MS_YEAR_INPUTS if r["kind"] != "gse_count"]}, {"status": "missing", "rows": []}):
+    ms_flip = ms_years(ms_none["rows"]) if ms_none["status"] == "ok" else ms(inputs=ms_none)
+    assert not ms_axis(ms_flip) and not [w for w in ms_warned(ms_flip) if "yearly chart" in w], ms_warned(ms_flip)
+ms_mix_words = " ".join(str(r.get(k)) for got in (ms_y, ms_years(ms_ahead), ms_years(ms_without(("fhfa", "enterprise_usd", 2024))), ms_years(ms_without(("gse_count", "fhlmc", 2025))), ms_years(ms_with(ms_input("fhfa", "enterprise_n", 2024, 1200000))),
+                                                        ms_years(ms_without(("fhfa", "enterprise_n", 2024), ("fhfa", "enterprise_usd", 2024)), whole_market=ms_year(2023, scale=3) + ms_year(2025)))
+                        for r in got for k in ("text", "label", "short") if r.get(k) and r["view"] in ("mix_year", "mix_gap", "sentence"))
+assert not re.search(r"\b(a|the|this|that|first|VA) read\b|\bfold\b|\brung\b|\bthe pick\b|has no FICO|no sign of|like FICO|Estimated|Potential|Missed|Left\b", ms_mix_words) and not re.search(r"\b[a-z]{2,}\d+(\.\d+)?%", ms_mix_words), ms_mix_words
 # The same on the pipeline's own planted files, from disk through a real CSV. It stays in the site data folder, so the workbook below has its sheets and the weekly run below rebuilds it.
 ms_csv = gse_paths.PRIVATE / "market_inputs.csv"
 ms_csv.parent.mkdir(parents=True, exist_ok=True)
@@ -3363,6 +4117,9 @@ assert "market_size" in DASHBOARD_DATASETS and "market_size" not in PUBLIC_DATAS
 assert {"front", "vs4_only"} <= set(DASHBOARD_DATASETS) and not {"front", "vs4_only"} & set(PUBLIC_DATASETS) and not {"front", "vs4_only"} & set(json.loads(site.CONTRACT.read_text())) and not {"front", "vs4_only"} & public_reads and {"front", "vs4_only"} <= dashboard_reads, "the first screen and the card stay private"
 assert "front" in DASHBOARD_DATASETS and "front" not in PUBLIC_DATASETS and "front" in dashboard_reads and "front" not in public_reads, "a sentence built on private inputs stays private"
 assert "vs4_only" in DASHBOARD_DATASETS and "vs4_only" not in PUBLIC_DATASETS and "vs4_only" in dashboard_reads and "vs4_only" not in public_reads, "the card stays private"
+assert "pl_hmda" in DASHBOARD_DATASETS and "pl_hmda" not in PUBLIC_DATASETS and "pl_hmda" in dashboard_reads and "pl_hmda" not in public_reads and "pl_hmda" not in json.loads(site.CONTRACT.read_text()), "the private securitizers' card stays private"
+assert "vs_watch" in DASHBOARD_DATASETS and "vs_watch" not in PUBLIC_DATASETS and "vs_watch" in dashboard_reads and "vs_watch" not in public_reads and "vs_watch" not in json.loads(site.CONTRACT.read_text()), "the VantageScore watch stays private"
+assert vw.INPUTS == home / "data" / "private" / "vs_watch.csv", "the hand-kept file sits with the other private inputs, which GSESCORE_HOME moves"
 from gsescore import front as front_mod  # noqa: E402
 
 assert front_mod.INPUTS == home / "data" / "private" / "front_inputs.csv"
@@ -4333,6 +5090,215 @@ assert not re.search(r"\b(?:a|the|this|that) read\b|\bfold\b|\brung\b|\bthe pick
 assert "fico_per_loan(a[\"bureaus\"]" in Path(sys.modules[build_workbook.__module__].__file__).read_text(), "the workbook's values go through the one function"
 assert "white-space: nowrap" not in page_css[page_css.index(".ms-brace {"):page_css.index("#ms-tie-more {")] and "@media (max-width: 72rem) {\n    #ms-piece-table thead" in page_css and "#ms-piece-table :is(th:nth-child(3), th:nth-child(5)) { min-width: 5rem; }" in page_css, "the dollar bar's label wraps on a phone, and the piece table turns to rows before it would need a swipe"
 assert "root.querySelector('.ms-lead').hidden = st !== 'loading' && !sizeSaid(rows, 'lead');" in page_market and "document.getElementById('ms-breaks-h').hidden = st !== 'loading' && !said.length;" in page_market and "document.getElementById('ms-parts-card').hidden = st !== 'loading' && !rows.some((r) => r.view === 'part' || r.view === 'break');" in page_market and "!rows.some((r) => r.view === 'follow')) document.getElementById('ms-follow-card').hidden = true;" in page_market, "no input file: no dash for a lead, and no table of heads alone"
+# The yearly card: right after the size bar, loans and totals by default, drawn from its own rows in the size bar's colors, a year left out kept on the axis with its reason, and nothing typed.
+mix_card, mix_js = tpl_market[tpl_market.index('id="ms-mix-card"'):tpl_market.index('id="ms-piece-card"')], page_market[page_market.index("function drawMix"):page_market.index("function drawPieceTable")]
+assert tpl_market.index('id="ms-bars-card"') < tpl_market.index('id="ms-mix-card"') < tpl_market.index('id="ms-piece-card"') and "loans made each year, by kind</h2>" in mix_card and 'data-param="munit"' in mix_card and 'data-param="mscale"' in mix_card and 'id="ms-mix-chart" data-source="market_size"' in mix_card, "the card and its toggles"
+assert "if (p.munit !== 'usd') p.munit = 'loans';" in page_js and "if (p.mscale !== 'share') p.mscale = 'total';" in page_js and "r.view === 'mix_year'" in mix_js and "r.view === 'mix_gap'" in mix_js and "PIECE_FILL[r.key]" in mix_js, "the defaults, the rows and the colors"
+# The caption follows the toggle: the Dollars view prints its own sentence, and the line points at the row it prints.
+assert "sizeLine('ms-mix-cap', rows, st, usd ? 'mix_caption_usd' : 'mix_caption');" in mix_js and "'ms-mix-cap'" not in page_market[page_market.index("function drawSize(p)"):] and "el.dataset.where = `view=sentence&key=${key}`;" in page_market, "a caption for each view"
+assert "[...new Set([...list, ...gaps].map((r) => r.year))]" in mix_js and "(gapOf(d.year) || {}).text" in mix_js and "not in the bar" in mix_js and "mixCard.hidden = st === 'ok' && !rows.some((r) => r.view === 'mix_year');" in page_market, "a left-out year keeps its place and says why, home equity sits in the hover, and the card goes only with no year to draw"
+assert not re.search(r"\d", re.sub(r"<[^>]+>", " ", mix_card)) and not re.search(r"\b(19|20)\d\d\b", mix_js), "no year or figure typed into the card"
+# Its words: a 1px gap and no piece under 1px, so every kind shows; in each piece 16px tall or more its share, or in Totals its size, in the ink that reads on it; the kinds
+# named beside the newest column from 768px; years in two figures where four do not fit, thinned from the newest year with a column; a word in a left-out year's place.
+assert "const GAP = 1;" in page_market and "return hs.map((h, i) => Math.max(1, h) - (i === big ? lift : 0));" in page_market and "h >= 16 && shareOf(r) != null" in mix_js and "const form = forms.find((f) => tall.every(({ r }) => fits(f(r)))) || forms[forms.length - 1];" in mix_js and "ink[r.key] ??= vx.inkOn(PIECE_FILL[r.key]);" in mix_js, "every kind shows, and its figure where it fits"
+assert "window.matchMedia('(min-width: 768px)')" in mix_js and "endLabels(svg, ends, H - m.bottom - 4);" in mix_js and "four ? yearOf : shortYear" in mix_js and "keys.indexOf((newest || data[data.length - 1]).slot)" in mix_js, "names beside the newest column, and its year always labelled"
+assert "function bandAxis(svg, x, keys, lab, widest, y0, anchor = 0)" in page_js and "Math.abs(i - anchor) % every === 0" in page_js, "the shared axis thins from the first key unless a chart names another"
+assert "(gapOf(d.year) || {}).short" in mix_js and "r.note" not in mix_js and "usd ? vx.usdM(r.usd_bn * 1e9) : `${int(r.n)} loans`]));" in mix_js and "#ms-mix-chart .vx-tip { max-width: min(100%, 30rem); }" in page_css, "a word in the empty place, no worked-out note, home equity in the hover's unit, and a tooltip that wraps"
+# The names stand beside the newest column only when it is the last place on the axis, never past a left-out year's place; a left-out place the axis leaves without its
+# year carries the year in its word; the axis says which keys it labels.
+assert "const named = nameW > 0 && W - nameW >= 420 && newest === data[data.length - 1];" in mix_js and "const right = x(newest.slot) + off + bw;" in mix_js and ": W - m.right" not in mix_js, "no names past an empty last place"
+assert "return shown;" in page_js[page_js.index("function bandAxis"):page_js.index("function bandFrame")] and "const labelled = new Set(vx.bandAxis(" in mix_js and "labelled.has(d.slot) ? short : `${d.year}: ${short}`" in mix_js, "a left-out place the axis leaves bare says its year"
+# Whole pixels: every edge rounded from the baseline up, the capped top piece too, so a 1px piece paints its own color on a 1x screen; totals thinned from the newest as the
+# axis is and printed only where they clear what stands beside them.
+assert "const edges = [y(0), ...vals.map((v) => y(below += v))].map(Math.round);" in page_market and "let at = Math.round(y(0));" in mix_js and "capped(x(d.slot) + off, top, bw, h)" in mix_js and "d.reach = { top: at, half: bw / 2 };" in mix_js, "whole-pixel pieces"
+assert "totalsAt(data, newest, saidWidth, x.step())" in mix_js and "saidWidth = (d) => vx.textWidth(svg, [said(d)])" in mix_js and "room || i === 0 || i === drawn.length - 1" not in page_market, "the totals' places come from one rule"
+# A left-out year's word beside the newest column drops its year only where, with it, the word would block that column's total and nothing else does; the columns stand first, so
+# the word can ask. The totals and the word ask the same question (clearOf).
+assert "const room = (n) => clearOf(n, newest.reach.top, saidWidth(newest), Math.abs(data.indexOf(n) - data.indexOf(newest)), x.step());" in mix_js and "if (!share && beside && !labelled.has(d.slot) && !room(d) && drawn.every((n) => n === newest || room(n))) put(short);" in mix_js, "the word's year"
+assert mix_js.index("d.reach = { top: at, half: bw / 2 };") < mix_js.index("put(labelled.has(d.slot) ? short : `${d.year}: ${short}`);") and "clearOf(n, d.reach.top, widthOf(d), Math.abs(j - i), step)" in page_market, "columns first, and one rule for what clears"
+if shutil.which("node"):  # the stack and the totals' rule, cut from the page, on planted values: edges that fall between pixels, tiny pieces, and a phone's narrow places
+    mix_plant = """const d3 = { sum: (a, f) => a.reduce((s, v) => s + f(v), 0), maxIndex: (a) => a.indexOf(Math.max(...a)), max: (a, f) => Math.max(...a.map(f)) };
+""" + page_market[page_market.index("  const GAP = 1;"):page_market.index("  function drawMix")] + """
+const y = (v) => 251.6 - v * 0.0173;
+const vals = [6320, 21, 2105, 7, 3911, 33, 1188];
+const hs = stackHeights(vals, y);
+let at = Math.round(y(0));
+const tops = hs.map((h, i) => (at -= h + (i ? GAP : 0)));
+const col = (top, w) => ({ ok: true, w, reach: { top, half: 8 } });
+const word = (top, half) => ({ ok: false, reach: { top, half } });
+const width = (d) => d.w;
+const pick = (data, newest, step) => totalsAt(data, data[newest], width, step).map((d) => data.indexOf(d));
+const phone = (last, w7 = 36) => pick([col(200, 36), col(180, 36), col(120, 36), col(100, 36), col(150, 36), col(170, 36), col(160, 36), col(140, w7), last], 7, 23);
+// Dollars at 320px with the last place left out: nine places 21px apart, totals 38px wide, the thinning on every third place back from the newest, which stand beside taller
+// columns; the left-out year's upright word with its year reaches above the newest column, and without it stays below.
+const gapEnd = (wordTop) => pick([col(175, 38), col(160, 38), col(120, 38), col(100, 38), col(150, 38), col(190, 38), col(185, 38), col(180, 38), word(wordTop, 7)], 7, 21);
+console.log(JSON.stringify({ hs, tops, end: Math.round(y(vals.reduce((s, v) => s + v, 0))), all: pick([col(200, 30), col(150, 30), col(90, 30)], 2, 40),
+  low: phone(word(150, 7)), high: phone(word(130, 7)), slim: phone(word(130, 7), 20), first: pick([col(200, 36), col(180, 36), col(160, 36)], 2, 23),
+  gap_year: gapEnd(155), gap_short: gapEnd(190), beside: [clearOf(word(155, 7), 180, 38, 1, 21), clearOf(word(190, 7), 180, 38, 1, 21)] }));
+"""
+    mix_run = subprocess.run(["node", "-e", mix_plant], capture_output=True, text=True, timeout=60)
+    assert mix_run.returncode == 0, mix_run.stderr[:500]
+    mix_got = json.loads(mix_run.stdout)
+    # The same rule worked here: edges rounded as Math.round does, less the gap, the 1px floor, and what the floors take off the biggest piece.
+    mix_vals = [6320, 21, 2105, 7, 3911, 33, 1188]
+    mix_edges = [int(251.6 - sum(mix_vals[:i]) * 0.0173 + 0.5) for i in range(len(mix_vals) + 1)]
+    mix_raw = [mix_edges[i] - mix_edges[i + 1] - (1 if i else 0) for i in range(len(mix_vals))]
+    mix_want = [max(1, h) - (sum(max(0, 1 - g) for g in mix_raw) if i == mix_raw.index(max(mix_raw)) else 0) for i, h in enumerate(mix_raw)]
+    assert mix_got["hs"] == mix_want == [105, 1, 36, 1, 66, 1, 19] and mix_got["tops"] == [147, 145, 108, 106, 39, 37, 17] and mix_got["end"] == mix_edges[-1] == 17, (mix_got, mix_want)  # whole pixels, every kind 1px or more, the column ending on its rounded total
+    # All fit: every column. A phone's nine places with the last left out: every other one back from the newest, each only where it clears its neighbours, a word as
+    # much as a column: the newest goes when the word beside it reaches above it, unless its total is slim enough to clear it. The first goes beside a taller column.
+    assert mix_got["all"] == [0, 1, 2] and mix_got["low"] == [3, 7] and mix_got["high"] == [3] and mix_got["slim"] == [3, 7] and mix_got["first"] == [2], mix_got
+    # The gap at the end on a phone: no thinned place clears, so the tallest column's total prints, from the newest back; once the word drops its year, the newest's too.
+    assert mix_got["gap_year"] == [3] and mix_got["gap_short"] == [3, 7] and mix_got["beside"] == [False, True], mix_got
+# Each year's numbers in a table under the chart, for phones where the hover does not open: years down, kinds across with each one's share beside its size, the first-lien total
+# and home equity marked as not in the bars, loans or dollars as the toggle says, marked as the page marks tables.
+assert "<summary>Each year's numbers</summary>" in mix_card and '<table class="vx-table" id="ms-mix-table" data-source="market_size" data-row-key="view,year">' in mix_card and "tr.dataset.key = key('mix_year', year);" in mix_js and "`${equity.label}, not in the bars`" in mix_js, "the table and its marks"
+assert "const usd = p.munit === 'usd', sizeF = usd ? 'usd_bn' : 'n', shareF = usd ? 'share_usd' : 'share_n';" in mix_js and "td.append(' ', node('span', 'ms-of', pct1(r[shareF])));" in mix_js, "the table follows the toggle and sets each share beside its size"
+# The piece colors, worked out from the page's own theme tokens as the browser mixes them: stack neighbours 1.5:1 apart or more and every piece 2:1 or more on the panel, Fannie
+# and Freddie the strongest, FHA, VA and USDA on one ink and the next three on another, in light and dark; the first screen's four pieces hold the same gap. The middle and top
+# steps are theme variables in page.css: light as it was, and in dark the figures printed in every piece, VA's and Business purpose's too, read at 4.5:1 in the better ink.
+ms_tpl = (gse_paths.REPO / "site" / "standalone" / "template.html").read_text()
+ms_dark_at = ms_tpl.index("@media (prefers-color-scheme: dark)")
+ms_themes = {"light": dict(re.findall(r"--([\w-]+): (#[0-9a-f]{6})", ms_tpl[:ms_dark_at]))}
+ms_themes["dark"] = {**ms_themes["light"], **dict(re.findall(r"--([\w-]+): (#[0-9a-f]{6})", ms_tpl[ms_dark_at:ms_tpl.index("</style>")]))}
+ms_fill_src = page_market[page_market.index("const SIZE_INK"):page_market.index("const ASSUME")]
+ms_inks = {name: f"series-{int(i) + 1}" for name, i in re.findall(r"(\w+_INK) = col\((\d)\)", ms_fill_src)}
+ms_fill_of = dict(re.findall(r"(\w+): (toward\(\w+, (?:\d+|'(?:mid|top)'), '--[\w-]+'\)|\w+_INK)", ms_fill_src))
+ms_step_rules = {sel.strip(): (int(mid), int(top)) for sel, mid, top in re.findall(r"([^{}\n]+)\{ --ms-step-mid: (\d+)%; --ms-step-top: (\d+)%; \}", page_css)}
+assert ms_step_rules == {".vx": (76, 100), ':root:not([data-theme="light"]) .vx': (82, 88), ':root[data-theme="dark"] .vx': (82, 88)} and '@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .vx { --ms-step-mid:' in page_css, ms_step_rules
+ms_steps = {theme: dict(zip(("mid", "top"), ms_step_rules[sel])) for theme, sel in (("light", ".vx"), ("dark", ':root[data-theme="dark"] .vx'))}
+assert re.search(r"const STEP = \{ mid: (\d+), top: (\d+) \};", ms_fill_src).groups() == tuple(str(v) for v in ms_step_rules[".vx"]) and "var(--ms-step-${share}, ${STEP[share]}%)" in ms_fill_src, "where the variables do not reach, a fill falls back to light's steps, the same as page.css's"
+
+
+def ms_rgb(spec, theme):
+    """A fill as the browser mixes it, in 0..1 sRGB: color-mix(in srgb) is a straight blend of the encoded channels."""
+    t, hexes = ms_themes[theme], lambda h: [int(h[i:i + 2], 16) / 255 for i in (1, 3, 5)]  # noqa: E731
+    if spec in ms_inks:
+        return hexes(t[ms_inks[spec]])
+    ink, share, end = re.fullmatch(r"toward\((\w+), (\d+|'(?:mid|top)'), '--([\w-]+)'\)", spec).groups()
+    share = int(share) if share.isdigit() else ms_steps[theme][share.strip("'")]
+    return [a * share / 100 + b * (1 - share / 100) for a, b in zip(hexes(t[ms_inks[ink]]), hexes(t[end]))]
+
+
+def ms_ratio(a, b):
+    lum = lambda c: sum(w * (v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4) for w, v in zip((0.2126, 0.7152, 0.0722), c))  # noqa: E731
+    hi, lo = sorted((lum(a), lum(b)), reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+ms_order = [k for k, _ in market.PIECES]
+assert set(ms_inks) == {"SIZE_INK", "REST_INK"} and set(ms_fill_of) >= {*ms_order, "rest"}, ms_fill_of
+assert {re.sub(r"toward\((\w+),.*", r"\1", ms_fill_of[k]) for k in ("gse", "fha", "va", "usda")} == {"SIZE_INK"} and {re.sub(r"toward\((\w+),.*", r"\1", ms_fill_of[k]) for k in ("other_conforming", "business", "jumbo", "rest")} == {"REST_INK"}, "two families"
+for ms_theme in ("light", "dark"):
+    ms_c = {k: ms_rgb(ms_fill_of[k], ms_theme) for k in [*ms_order, "rest"]}
+    ms_panel = [int(ms_themes[ms_theme]["color-panel"][i:i + 2], 16) / 255 for i in (1, 3, 5)]
+    ms_on = {k: ms_ratio(c, ms_panel) for k, c in ms_c.items()}
+    ms_next = [ms_ratio(ms_c[a], ms_c[b]) for a, b in [*zip(ms_order, ms_order[1:]), ("va", "rest")]]
+    assert min(ms_on.values()) >= 2 and min(ms_next) >= 1.5 and ms_on["gse"] == max(ms_on.values()), (ms_theme, ms_on, ms_next)
+    ms_fg = [int(ms_themes[ms_theme]["color-fg"][i:i + 2], 16) / 255 for i in (1, 3, 5)]
+    ms_label = {k: max(ms_ratio(c, ms_fg), ms_on[k]) for k, c in ms_c.items()}  # inkOn's two inks: the text color or the panel's
+    assert min(ms_label.values()) >= 4.5, (ms_theme, ms_label)
+# The first screen's picture: the piece that holds four kinds reads "All else" where its full name does not fit, not "Other", which one kind's name starts with on the tab;
+# and a size asks for 8px of room, so two sizes side by side never read as one run.
+# and its sizes go from the last back: each keeps 8px clear of the next size actually drawn, in one decimal where that fits, whole where only that does, else none, which leaves
+# its room to the one before. The last may sit as far right as the bar's end to make that room, and moves off its piece's start only as far as the one before needs.
+assert "gse: 'GSEs', rest: 'All else' };" in page_visuals and "function sizesAt(pieces, W, room = 8)" in page_visuals and "fit(size, 8)" not in page_visuals, "the first screen's short name and where its sizes go"
+assert "const sizes = sizesAt(rows.map((r, i) => ({ x0: starts[i], forms: [r.text, pct0(r.v)].map((text) => [text, textWidth(svg, [text])]) })), W);" in page_visuals, "each size's two forms, measured"
+if shutil.which("node"):  # the rule, cut from the page, on the first screen's four pieces at a phone's box (250px), a wide one, a tight one and one too small for most
+    size_plant = page_visuals[page_visuals.index("  function sizesAt("):page_visuals.index("  // One bar of 100: each piece named above it")] + """
+const w = (t) => t.length * 6.6;
+const starts = (W) => { let a = 0; return [0.425, 0.179, 0.114, 0.282].map((v) => { const x0 = a * W; a += v; return x0; }); };
+const run = (W) => sizesAt(starts(W).map((x0, i) => ({ x0, forms: [['42.5%', '17.9%', '11.4%', '28.2%'][i], ['43%', '18%', '11%', '28%'][i]].map((t) => [t, w(t)]) })), W);
+console.log(JSON.stringify({ phone: run(250), wide: run(1200), tight: run(170), tiny: run(60) }));
+"""
+    size_run = subprocess.run(["node", "-e", size_plant], capture_output=True, text=True, timeout=60)
+    assert size_run.returncode == 0, size_run.stderr[:500]
+    size_got = {k: [s and s["text"] for s in v] for k, v in json.loads(size_run.stdout).items()}
+    assert size_got["phone"] == size_got["wide"] == ["42.5%", "17.9%", "11.4%", "28.2%"] and size_got["tight"] == ["42.5%", "18%", "11%", "28.2%"] and size_got["tiny"] == ["43%", None, "11%", None], size_got
+    size_at = {k: [s and s["x"] for s in v] for k, v in json.loads(size_run.stdout).items()}
+    assert abs(size_at["phone"][2] - 151) < 1e-6 and abs(size_at["phone"][3] - (151 + 33 + 8)) < 1e-6 and abs(size_at["wide"][3] - 0.718 * 1200) < 1e-6 and abs(size_at["tight"][3] - (0.604 * 170 + 19.8 + 8)) < 1e-6, size_at
+# Loans sold to private securitizers, from HMDA: after the deal reports' tiles and a line on how the two sources differ, beside the deal reports' chart. Tiles, the score named
+# each year, by kind, the biggest sellers and every lender putting VS4 on loans sold outside the agencies; every year, figure and sentence from the file.
+ph_card = tpl_market[tpl_market.index('id="ph-card"'):tpl_market.index('id="pl-deal-card"')]
+assert tpl_market.index('<div class="vx-tiles mk-only-pl" hidden>') < tpl_market.index('id="pl-two"') < tpl_market.index('id="pl-pair"') < tpl_market.index('id="pl-chart-card"') < tpl_market.index('id="ph-card"') < tpl_market.index('id="ph-more-card"') < tpl_market.index('id="vw-card"') < tpl_market.index('id="pl-deal-card"'), "the order"
+assert '<div class="vx-grid mk-only-pl" id="pl-pair" hidden>' in tpl_market and '<section class="vx-card" id="pl-chart-card"' in tpl_market and "#pl-pair { align-items: start; }" in page_css, "side by side where both fit, each as tall as its content"
+# Only the parts that compare sit side by side: the SEC chart beside HMDA's tiles, chart and kinds. The sellers, the VS4 lenders and the next file's date are a full-width
+# card below the pair, and the SEC note shows whole again, as does the next file's line with its link.
+ph_pair = tpl_market[tpl_market.index('id="pl-pair"'):tpl_market.index('id="ph-more-card"')]
+ph_more = tpl_market[tpl_market.index('id="ph-more-card"'):tpl_market.index('id="vw-card"')]
+assert all(f'id="{k}"' in ph_pair for k in ("pl-bars", "ph-chart", "ph-kind-more", "ph-route", "ph-dips")) and not any(f'id="{k}"' in ph_pair for k in ("ph-lender-table", "ph-vs4-table", "ph-next")), ph_pair[-400:]
+assert all(f'id="{k}"' in ph_more for k in ("ph-lender-table", "ph-unsold", "ph-vs4-table", "ph-outside", "ph-next")) and '<section class="vx-card mk-only-pl" id="ph-more-card" aria-labelledby="ph-lender-h" hidden>' in tpl_market
+assert ph_pair.count("</div>") == ph_pair.count("<div") + 1 and ph_pair.rstrip().endswith('</div>\n      <section class="vx-card mk-only-pl"'), "the pair closes before the card below it"
+assert '<p class="vx-note" data-clamp="0">Only a named model counts. Grey is unknown: a code this cannot read' in tpl_market and '<p class="vx-note" id="ph-next" data-clamp="0" data-source="pl_hmda"' in tpl_market, "both show whole"
+assert 'Loans sold to <span data-term="privsec">private securitizers</span>, from HMDA</h2>' in ph_card and '<h3 class="ph-h3">Lenders putting VS4 on loans sold outside Fannie, Freddie, Ginnie and Farmer Mac</h3>' in ph_more and "How the SEC reports and HMDA differ: the reports cover" in tpl_market, "the card's title, its second table's, and the line under the tiles"
+assert '<button type="button" data-v="pl">Private-label, weekly and yearly</button>' in tpl_market and "Private-label deals, weekly" not in tpl_market, "the view's name covers the yearly card too"
+pl_head = tpl_market[tpl_market.index('<p class="mk-only-pl" hidden>'):tpl_market.index('</p>', tpl_market.index('<p class="mk-only-pl" hidden>'))]
+assert pl_head.startswith('<p class="mk-only-pl" hidden>Three sources: SEC deal reports (weekly), <span data-term="hmda">HMDA</span> (yearly) and the VantageScore watch (weekly). '), pl_head[:200]
+assert all(w in pl_head for w in ("Form ABS-15G", "HMDA adds the loans lenders made and sold to a private securitizer", "The watch lists")), "the three sources named first, so the two lines a note shows before More name them"
+# HMDA's tiles: FICO's share first, any FICO model, with Classic FICO under it and what makes it a floor; the loans; VS4 in the latest year, a word when there are none.
+ph_tiles = ph_card[ph_card.index('<div class="vx-tiles">'):ph_card.index('id="ph-route"')]
+assert ph_tiles.index('<div class="vx-lbl">Share naming a FICO model</div>') < ph_tiles.index("Loans made and sold in") < ph_tiles.index('Loans naming <span data-term="vs4">VS4</span> in <span class="ph-year"'), ph_tiles
+assert '<div class="vx-val ph-fico dash-skeleton" data-source="pl_hmda" data-field="fico" data-where="view=meta">' in ph_tiles and '<span data-term="classic">Classic FICO</span>. A floor: <span class="ph-unknown"' in ph_tiles
+wm_tile = '<span class="mk-first-unknown" data-source="whole_market" data-field="unknown" data-where="view=segment&amp;key=first">—</span> name no model</div>'
+assert ph_tiles.count("name no FICO or VantageScore model") == 1 and wm_tile in tpl_market and wm_tile in public_index, "the HMDA card's tile says what the unknown share is; the Whole market tile reads as on the public page"
+pl_tile = ('<span class="pl-vs-n" data-source="private_label" data-field="vs4_n" data-where="view=meta">—</span> on VS4. On <span class="pl-vs-only" data-source="private_label" '
+           'data-field="vs4_no_fico_n" data-where="view=meta">—</span> of them, no FICO model is named</div>')
+assert pl_tile in tpl_market and "mark('.pl-vs-only', 'vs4_no_fico_n', 'view=meta', st, num(meta.vs4_no_fico_n));" in page_market and "vs_no_fico_n" not in tpl_market + page_market, "the count with no FICO named is of the VS4 loans just before it"
+assert '<p class="vx-note">Newest first. Each links to the filing. Each loan counts once, under the first deal whose report lists it, so a deal can show fewer loans here than its report holds.</p>' in tpl_market, "why a deal's loans here can be fewer than its report holds"
+# The sellers: any FICO model and no score reported first, so a phone shows them; Classic and newer FICO and dollars where there is room, dollars in $bn.
+ph_heads = re.findall(r'<th scope="col"([^>]*)>([^<]+)</th>', ph_more[:ph_more.index("</table>")])
+assert [(h, "vx-opt" in a) for a, h in ph_heads] == [("Lender", False), ("Any FICO model", False), ("No score reported", False), ("Loans", False), ("Dollars", True), ("Classic FICO", True),
+                                                     ("Newer FICO", True), ("VS4 loans", False), ("Loans the year before", False)], ph_heads
+assert ("#va-lender-table :is(th, td), #pl-mention-table :is(th, td), #pl-deal-table :is(th, td), #ph-lender-table :is(th, td) { padding-left: var(--cds-pad-xs); padding-right: var(--cds-pad-xs); }" in page_css
+        and "    #ph-lender-table td:first-child { min-width: 6rem; }" in page_css), "on a phone, compact cells and a narrower name, so both shares fit from 320px"
+assert not re.search(r"\d", re.sub(r"<[^>]+>", " ", ph_card).replace("VS4", "").replace("Out of every 100", "")), "no year or figure typed into the card"
+ph_js = page_market[page_market.index("  function drawPlHmda"):page_market.index("  root.addEventListener('click'")]
+assert "statusOf('pl_hmda')" in ph_js and "rowsOf('pl_hmda')" in ph_js and "mixColumns(chart, years, 200, " in ph_js and "    if (p.mview === 'pl') drawPlHmda();\n" in page_market and "mixColumns(box, data, 260, 'Which score lenders named each year', tipOf);" in page_market, "its own file, drawn with the yearly chart's columns"
+assert "card.hidden = st === 'ok' && meta.year == null;" in ph_js and "box.hidden = st === 'ok' && empty;" in page_market and "const W = box.clientWidth, m = { top: 20, right: 6, bottom: 24, left: 0 };" in page_market, "no file, no card; no rows, no table; sized from its box"
+assert "if (more) more.hidden = card.hidden;" in ph_js and "meta.vs4_n == null ? null : meta.vs4_n ? int(meta.vs4_n) : 'None'" in ph_js, "the card below goes with it; no VS4 loans reads None, not a lone 0"
+assert "[['name', r.name, true], ['fico', pct1(r.fico)], ['none', pct1(r.none)], ['n', int(r.n)], ['usd_bn', `$${bn(r.usd_bn)}bn`],\n      ['ph_classic', pct1(r.classic)], ['ph_fico_new', pct1(r.fico_new)], ['vs4_n', int(r.vs4_n)], ['prior_n', priorCell(r)]]" in ph_js
+# "No score reported" hatched and outlined in the muted ink in this card's chart, legend, bars and hovers, so it never reads as one grey with "Model not named"; the
+# Whole market view's yearly chart keeps its colors.
+assert "const HATCH = 'repeating-linear-gradient(135deg, var(--color-fg-muted) 0 1px, transparent 1px 4px)';" in page_market and "const PH_GROUPS = GROUPS.map(([k, label, color]) => [k, label, k === 'none' ? HATCH : color]);" in page_market
+assert "years.length - 1, PH_GROUPS);" in ph_js and "}, pct1, PH_GROUPS);" in ph_js and "legend(document.getElementById('ph-legend'), PH_GROUPS.map(([, label, color]) => [color, label, color === HATCH ? 'hatch' : 'box']));" in ph_js
+assert "piece.style('fill', `url(#${hatch})`).style('stroke', 'var(--color-fg-muted)')" in page_market and "line[0] === NONE ? [HATCH, line[1], line[2]] : line" in page_market and ".vx-sw-hatch { box-shadow: inset 0 0 0 1px var(--color-fg-muted); }" in page_css
+assert "kind === 'hatch' ? `vx-sw vx-sw-${kind}` : 'vx-sw'" in page_js and "PH_GROUPS" not in page_market[page_market.index("  function drawYears"):page_market.index("  function drawLenderYears")], "the Whole market view's chart as it was"
+assert "'ph_buyer', 'ph_classic', 'ph_fico_new']);" in page_market and "r.prior_mark ? `${int(r.prior_n)}*` : int(r.prior_n)" in ph_js and "tr.lastChild.title = r.prior_mark ? `${r.name} reported ${pct1(r.prior_unsold)} of its ${meta.prior} loans as not sold that year" in ph_js
+# On a phone, where only the ends have room for their numbers, the first stands over the first year the axis names, not over an unnamed one beside it.
+assert "const named = new Set(vx.bandAxis(svg, x, keys, yearOf, widest, H - m.bottom + 8, anchor));" in page_market and "const firstNamed = data.find((d) => named.has(d.slot)) || data[0];" in page_market
+assert "(x.step() >= 32 || d === firstNamed || d === data[data.length - 1])" in page_market and "d === data[0] ||" not in page_market
+assert "line[1] === 'VS4' && r.vs4_on_form === false ? [line[0], 'VS4', 'not on the form that year']" in page_market and "['privsec', 'Private securitizer', '" in page_visuals, "a year before the form named VS4 says so, and the term has its words"
+ph_reads = set(re.findall(r"\b(?:r|d|was|meta)\.(\w+)", ph_js))
+assert ph_reads <= {k for r in built_ph for k in r} | {"slot"}, ph_reads - {k for r in built_ph for k in r}
+for mark_field, mark_where in re.findall(r'data-source="pl_hmda" data-field="(\w+)" data-where="([^"]+)"', page_index):
+    mark_of = lambda rows: [r for r in rows if all(str(r.get(k)) == v for k, v in (p.split("=", 1) for p in html.unescape(mark_where).split("&")))]  # noqa: E731
+    mark_hit = mark_of(built_ph) or mark_of(ph_dips)  # the sentences under a guard the first plant does not meet come from the second
+    assert len(mark_hit) == 1 and mark_field in mark_hit[0], (mark_field, mark_where, len(mark_hit))
+ph_words = re.sub(r"<[^>]+>", " ", ph_card) + ph_js + " ".join(ph_said.values()) + " ".join(ph_dips_said.values()) + tpl_market[tpl_market.index('id="pl-two"'):tpl_market.index('id="pl-pair"')]
+assert not re.search(r"\b(?:a|the|this|that) read\b|\bfold\b|\bmodified LAR\b|\bpurchaser type\b|has no FICO", ph_words), re.search(r"\b(?:a|the|this|that) read\b|\bfold\b|\bmodified LAR\b|\bpurchaser type\b|has no FICO", ph_words)
+# The VantageScore watch: a card of its own after the HMDA card, in the private-label view only, its title and its words on what is new; every date, count and sentence from
+# the file, the code reading only the fields the builder writes, a table where its columns fit and blocks below that, and colors from the theme only.
+vw_card = tpl_market[tpl_market.index('id="vw-card"'):tpl_market.index('id="pl-deal-card"')]
+assert tpl_market.index('id="ph-card"') < tpl_market.index('id="ph-next"') < tpl_market.index('</section>', tpl_market.index('id="ph-next"')) < tpl_market.index('id="vw-card"') < tpl_market.index('id="pl-deal-card"'), "after HMDA's cards, before the deal tables"
+assert '<section class="vx-card mk-only-pl" id="vw-card" aria-labelledby="vw-h" hidden>' in tpl_market and '<h2 id="vw-h">VantageScore watch: filings, rating agencies and lender guides</h2>' in vw_card
+assert '<span class="vw-new">New</span> marks what was first listed in the past week.' in vw_card and '<table class="vx-table" id="vw-table" data-source="vs_watch" data-row-key="view,key">' in vw_card, "the mark is shown as it is drawn"
+assert not re.search(r"\d", re.sub(r"<[^>]+>", " ", vw_card)), "no date or figure typed into the card"
+vw_js = page_market[page_market.index("  function drawWatch"):page_market.index("  // A column with a rounded top")]
+assert "statusOf('vs_watch')" in vw_js and "rowsOf('vs_watch')" in vw_js and "card.hidden = st === 'ok' && !meta.items_n;" in vw_js and "    if (p.mview === 'pl') drawWatch();\n" in page_market, "its own file; no items or a stopped build, no card"
+assert "if (r.also) what.append(' ', node('span', 'vw-also', r.also));" in vw_js and ".vw-also { display: block; margin-top: 2px; color: var(--color-fg-muted); }" in page_css, "where else a company's sentence appears, under it"
+assert "tr.dataset.key = key('item', r.key);" in vw_js and "r.quote ? `“${r.what}”` : r.what" in vw_js and "when.append(`${r.basis} `, node('span', 'vw-day', day(r.date)));" in vw_js and "node('span', 'vw-new', 'New')" in vw_js, "each row's key, quotes on a filing's own words, each date with its basis"
+vw_reads = set(re.findall(r"\b(?:r|meta)\.(\w+)", vw_js))
+assert vw_reads <= {k for r in vw_rows for k in r}, vw_reads - {k for r in vw_rows for k in r}
+for mark_field, mark_where in re.findall(r'data-source="vs_watch" data-field="(\w+)" data-where="([^"]+)"', page_index):
+    mark_hit = [r for r in vw_rows if all(str(r.get(k)) == v for k, v in (p.split("=", 1) for p in html.unescape(mark_where).split("&")))]
+    assert len(mark_hit) == 1 and mark_field in mark_hit[0], (mark_field, mark_where, len(mark_hit))
+vw_css = page_css[page_css.index("/* The VantageScore watch"):page_css.index("  .mk-sum .mk-l")]
+assert "@media (max-width: 56rem) {\n    #vw-table thead, #vw-table tr[hidden] { display: none; }" in vw_css and "#vw-table td.vw-when, #vw-table td.vw-what, #vw-table td.vw-src { flex: 1 1 100%; }" in vw_css, "blocks below the table's width, rows past the first ones still hidden"
+assert "#vw-table :is(td.vw-when, td.vw-kind, td.vw-who, td.vw-what, td.vw-src) { min-width: 0; }" in vw_css and ".vw-day { white-space: nowrap; }" in vw_css, "a block lets go of the table's widths, and a date never breaks"
+assert "    #vw-table td.vw-who { flex: 1 1 0; }" in vw_css, "on a phone a long name wraps beside its kind, not on a line of its own"
+assert not re.search(r"#[0-9a-fA-F]{3,8}\b|rgba?\(", vw_css) and "var(--color-fg)" in vw_css and "overflow-wrap: anywhere" in vw_css, "theme colors only, and a long word wraps"
+vw_words = re.sub(r"<[^>]+>", " ", vw_card) + vw_js + " ".join(vw_said.values()) + " ".join(r["what"] for r in vw_items)
+assert not re.search(r"\b(?:a|the|this|that) read\b|\bfold\b|has no FICO|\bno FICO on\b", vw_words), re.search(r"\b(?:a|the|this|that) read\b|\bfold\b|has no FICO|\bno FICO on\b", vw_words)
 
 # What is withdrawn stays off the page sources, on both pages.
 RATE_LABELS_GONE = ("net_bp", "premium_bp", "reaches_fee", "option_annual_usd", "Shows in the rate", "None visible", "against the FICO model", "Before that check", "VS4 loans compared", "typical miss", "Where does the fee saving go?", "About all",
@@ -4391,19 +5357,25 @@ assert site.DOCS == home / "docs" and site.PREVIEW == home / "build" / "preview"
 (site.DOCS / "data" / "pricing.json").write_text('{"rows":[]}')
 assert "data/fees.json" in site.build_site() and not (site.DOCS / "data" / "pricing.json").exists() and (site.DOCS / "data" / "rates.json").exists()
 assert not (site.DOCS / "data" / "market_size.json").exists(), "not on the public site"
-assert not (site.DOCS / "data" / "front.json").exists() and not (site.DOCS / "data" / "vs4_only.json").exists(), "private datasets stay off the public build"
+assert not (site.DOCS / "data" / "front.json").exists() and not (site.DOCS / "data" / "vs4_only.json").exists() and not (site.DOCS / "data" / "pl_hmda.json").exists(), "private datasets stay off the public build"
+assert not (site.DOCS / "data" / "vs_watch.json").exists() and "vs_watch" not in (site.DOCS / "index.html").read_text(), "the watch stays off the public build, page and file"
 pub_fees = json.loads((site.DOCS / "data" / "fees.json").read_text())["rows"]
 pub_market, pub_lender = [r for r in pub_fees if r["view"] == "market"], [r for r in pub_fees if r["view"] == "lender"]
 assert pub_market and pub_lender and pub_market == public_rows("fees", [r for r in json.loads((gse_paths.SITE_DATA / "fees.json").read_text())["rows"] if r["view"] == "market"]), pub_market
 assert not {"option_annual_usd", "option_usd", "annual_upb", "upb"} & {k for r in pub_fees for k in r}, pub_fees[0]
 assert not {"option_bp", "est_usd", "one_loans"} & {k for r in pub_market + pub_lender for k in r} and all(r.get(k) is None for r in pub_fees for k in ("option_bp", "est_usd", "one_loans")), pub_lender[0]
 assert {"taken_annual_usd", "taken_all_usd", "left_usd", "left_loans"} <= set(pub_market[0]), pub_market[0]  # the fee tiles that stay
-assert (site.DOCS / "data" / "fees.json").read_text().startswith('{"rows":[{') and set(PUBLIC_DROP) == {"fees"}
+assert (site.DOCS / "data" / "fees.json").read_text().startswith('{"rows":[{') and set(PUBLIC_DROP) == {"fees", "private_label"}
 for name in PUBLIC_DATASETS:
     assert (site.DOCS / "data" / f"{name}.json").read_text() == (gse_paths.SITE_DATA / f"{name}.json").read_text() or name in PUBLIC_DROP, name
+# The public private_label leaves out the VS4 loans naming no FICO model and the VS4 loans by year of credit report, which the private dashboard reads first.
+pub_pl, site_pl = json.loads((site.DOCS / "data" / "private_label.json").read_text())["rows"], json.loads((gse_paths.SITE_DATA / "private_label.json").read_text())["rows"]
+assert any(r["view"] == "vs4_year" for r in site_pl) and pub_pl == public_rows("private_label", site_pl) and not any(r["view"] == "vs4_year" or "vs4_no_fico_n" in r for r in pub_pl), pub_pl[0]
 # The private preview keeps the whole fees file and carries the rate read.
 preview = site.build_preview()
-assert "data/rates.json" in preview and "data/market_size.json" in preview and "data/front.json" in preview and "data/vs4_only.json" in preview and "data/rate_readout.json" not in preview and "data/pricing.json" not in preview and "option_annual_usd" in json.loads((site.PREVIEW / "data" / "fees.json").read_text())["rows"][0], preview
+assert json.loads((site.PREVIEW / "data" / "private_label.json").read_text())["rows"] == site_pl, "the private preview keeps them"
+assert "data/vs_watch.json" in preview and "vw-card" in (site.PREVIEW / "index.html").read_text(), "the private preview carries the watch"
+assert "data/rates.json" in preview and "data/market_size.json" in preview and "data/front.json" in preview and "data/vs4_only.json" in preview and "data/pl_hmda.json" in preview and "data/rate_readout.json" not in preview and "data/pricing.json" not in preview and "option_annual_usd" in json.loads((site.PREVIEW / "data" / "fees.json").read_text())["rows"][0], preview
 # Every mark on the first screen and the card names a row these builders can write, and the code reads only their fields. A sentence whose guard fails has no row, so a mark may find none; a row of the first screen is always there.
 front_built = json.loads((gse_paths.SITE_DATA / "front.json").read_text())["rows"]
 vo_built = json.loads((gse_paths.SITE_DATA / "vs4_only.json").read_text())["rows"]
@@ -4470,6 +5442,31 @@ with contextlib.redirect_stdout(said_out):
 weekly_report = json.loads(said_out.getvalue())
 assert next(r for r in json.loads((gse_paths.SITE_DATA / "market_size.json").read_text())["rows"] if r["view"] == "meta")["ok"], weekly_report
 assert weekly_report["rate_read_as_of"] is None and isinstance(weekly_report["warnings"], list) and any(w.startswith("rate read:") for w in weekly_report["warnings"]), weekly_report
+# The weekly build makes the private securitizers' file from the HMDA files planted above: one 2025 loan sold to a private securitizer, on another model, which is never FICO.
+weekly_ph = json.loads((gse_paths.SITE_DATA / "pl_hmda.json").read_text())["rows"]
+weekly_ph_meta = next(r for r in weekly_ph if r["view"] == "meta")
+assert (weekly_ph_meta["year"], weekly_ph_meta["prior"], weekly_ph_meta["n"], weekly_ph_meta["other"], weekly_ph_meta["fico"], weekly_ph_meta["outside_n"], weekly_ph_meta["outside_vs4_n"]) == (2025, 2024, 1, 1, 0, 2, 0), weekly_ph_meta
+assert not any(w.startswith("private securitizers:") for w in weekly_report["warnings"]) and "pl_hmda" in {c["id"] for c in site.dashboard_changes()}, weekly_report["warnings"]
+# The weekly build writes the watch's file as well. This planted home has no hand-kept file and no watch search yet, so the list holds only the deal report the deal
+# search found naming Vantage, and the report says both.
+weekly_vw = json.loads((gse_paths.SITE_DATA / "vs_watch.json").read_text())["rows"]
+assert next(r for r in weekly_vw if r["view"] == "meta")["items_n"] == 1 and "vs_watch" in {c["id"] for c in site.dashboard_changes()}, weekly_vw
+assert [(r["who"], r["what"], r["kind"]) for r in weekly_vw if r["view"] == "item"] == [("HOME 2026-HE1", "Its report mentions Vantage.", "deal")], weekly_vw
+assert {"VantageScore watch: vs_watch.csv is missing, so only SEC filings show.", "VantageScore watch: the SEC search has not run yet; `edgar` runs it."} <= set(weekly_report["warnings"]), weekly_report["warnings"]
+# `edgar` runs the deal reports, then the watch's search: one that stops leaves the other to run, and the command fails at the end, saying which.
+vw_real = (edgar.collect, edgar.collect_watch)
+edgar.collect, edgar.collect_watch = (lambda **kw: 1 / 0), (lambda **kw: {"since": "2026-07-01", "found": 4})
+said_out = io.StringIO()
+try:
+    with contextlib.redirect_stdout(said_out):
+        cli.cmd_edgar(SimpleNamespace(since=None, until=None, limit=None))
+    raise AssertionError("a part that stops fails the command")
+except SystemExit as stop:
+    assert str(stop) == "edgar: deal_reports did not finish", stop
+finally:
+    edgar.collect, edgar.collect_watch = vw_real
+edgar_said = json.loads(said_out.getvalue())
+assert edgar_said["watch"] == {"since": "2026-07-01", "found": 4} and edgar_said["deal_reports"]["error"].startswith("ZeroDivisionError"), edgar_said
 assert "rates" in {c["id"] for c in site.dashboard_changes()} and "rate_readout" not in {c["id"] for c in site.dashboard_changes()}, "every run writes rates.json, and the upload step reads it"
 assert {"front", "vs4_only"} <= {c["id"] for c in site.dashboard_changes()}, "the weekly upload picks both up, so each needs its store doc before Monday"
 assert "option_annual_usd" not in (site.DOCS / "data" / "fees.json").read_text(), weekly_report
