@@ -13,7 +13,7 @@ the repo. What is kept, under data/edgar/ (git-ignored):
   loans.jsonl     one line per loan row with a model column: filing, exhibit, loan id, the models named, the credit report month, the qualifying score, and the
                   loan's other numbers (alt). A loan carries one loan number in every table of its exhibit, the review firm's where its tables give it
                   (parse_exhibit), so a loan in several tables counts once; a table that only repeats loans its report lists already, with codes or blanks and no
-                  loan numbers, is left out
+                  loan numbers, is left out. A row with no number carries its place instead (row<table>-<row>, or line<n> in a fixed-width report)
   mentions.jsonl  exhibits that mention VantageScore other than as a template's column heading
   filings.jsonl   each filing read for its deal name
   watch.jsonl     the VantageScore watch (collect_watch): each file on WATCH_FORMS that EDGAR's search finds naming VantageScore, once per filing and file, with how often
@@ -30,7 +30,9 @@ The reports themselves are not kept.
                  view vs4_year: the VS4 loans by year of credit report (key: the year, or undated), vs4_n, and vs4_no_fico_n of them, for the private-label view's sentence that sets them against HMDA (pl_hmda.py).
                  vs4_year and vs4_no_fico_n are private for now: the public build leaves them out (site.PUBLIC_DROP).
                  A loan in two reports, an amended filing or a later deal counts once, under the deal that first filed it: by its number, or by any other number of seven figures or more a report gives it (alt), so a loan one report numbers by the review firm and another by the seller is one loan. A numeric code in a model column counts as unclear: one report has VS4 loans coded the same as Classic FICO ones.
+                 Two deals that give the same numbers to other loans (_reused: most of the numbers they share have a different score and month) keep them apart. A loan with no number counts once within its own file, and is the loan another schedule of its report lists where the order of their scores, or their shape, says so (_aligned): a Business Purpose schedule lists the Supplemental Data schedule's loans again with their numbers masked.
 """
+import bisect
 import gzip
 import html
 import json
@@ -184,6 +186,16 @@ def discover(client: Edgar, start: str, end: str, log=print) -> list[dict]:
     return out
 
 
+class _Row(list):
+    """A table row's cells, a cell that spans columns padded so later cells stay under their headings, and where each of its own cells starts and how many columns it
+    spans (spans), so a value set off inside its heading's span can be found (_gather)."""
+    __slots__ = ("spans",)
+
+    def __init__(self):
+        super().__init__()
+        self.spans = []
+
+
 class _Tables(HTMLParser):
     """Each table's rows, as lists of cell text, with a cell that spans columns padded so later cells stay under their headings. A table inside another, or one left open, is still its own table."""
 
@@ -200,7 +212,7 @@ class _Tables(HTMLParser):
         elif self.stack:
             if tag == "tr":
                 self._close_row()
-                self.row = []
+                self.row = _Row()
             elif tag in ("td", "th"):
                 self._close_cell()
                 self.cell = []
@@ -211,6 +223,7 @@ class _Tables(HTMLParser):
 
     def _close_cell(self):
         if self.cell is not None and self.row is not None:
+            self.row.spans.append((len(self.row), self.span))
             self.row.append(re.sub(r"\s+", " ", "".join(self.cell)).strip())
             self.row.extend([""] * (self.span - 1))
         self.cell = None
@@ -318,10 +331,23 @@ def _full(row: list[str]) -> bool:
     return sum(1 for c in row if c) >= 3
 
 
+def _gather(row: list[str], wide: list[tuple[int, int]]) -> list[str]:
+    """A row with each value set off inside its heading's span moved under the heading: some filing agents give each heading four columns and put its value in the
+    second, a mark such as $ or % or a split name's second half beside it (CROSS 2026-NQM1 and NQM2: 'Fair Isaac' and '(VER. 2)'). wide: each heading that spans
+    columns, where it starts and how many it spans."""
+    out = list(row)
+    for at, span in wide:
+        if at < len(row):
+            end = min(len(row), at + span)
+            out[at:end] = [" ".join(c for c in row[at:end] if c)] + [""] * (end - at - 1)
+    return out
+
+
 def _runs(tables: list) -> list[dict]:
     """Each table with a heading row as one run, with any table after it that has no heading row but its width, which continues it: its heading, where it starts and
     how many tables it spans, and its rows, a sparse one too, so each keeps its place. A table whose first row repeats the heading's first cell has a heading of its own,
-    even one that names no loan number or model, so its heading is never read as a loan's row."""
+    even one that names no loan number or model, so its heading is never read as a loan's row. Where a heading spans several columns, its rows' cells under it read as
+    one value (_gather)."""
     runs, header = [], None
     for t_no, table in enumerate(tables):
         start = next((i for i, row in enumerate(table[:5]) if len(row) >= 3 and any(_ID_COL.search(c) or _MODEL_COL.search(c) for c in row)), None)
@@ -339,6 +365,9 @@ def _runs(tables: list) -> list[dict]:
         runs[-1]["rows"].extend(body)
     for run in runs:
         h = run["header"]
+        wide = [(at, span) for at, span in getattr(h, "spans", ()) if span > 1 and h[at]]
+        if wide:
+            run["rows"] = [_gather(row, wide) for row in run["rows"]]
         run["ids"] = {i: _id_kind(c) for i, c in enumerate(h) if _ID_COL.search(c)}
         run["models"] = [i for i, c in enumerate(h) if _MODEL_COL.search(c) and "date" not in c.lower()]
         run["vs_scores"] = [i for i, c in enumerate(h) if _VS_SCORE_COL.search(c)]
@@ -438,11 +467,43 @@ def _copies(rows: list[dict], listed: int) -> tuple[list[dict], int]:
     return kept, len(rows) - len(kept)
 
 
+_BUREAU = re.compile(r"\b(experian|equifax|trans\s*union)\b", re.I)
+_VS_FAMILIES = ("vs4", "vs_old", "vs_other")
+_FICO_FAMILIES = ("classic", "fico_new")
+
+
+def _summaries(header: list[str], models: list[int]) -> dict[int, list[int]]:
+    """A borrower's summary model column (Guarantor 1 FICO Model Used) beside the same borrower's columns for each bureau (Guarantor 1 Experian FICO Model Used): the
+    summary column and its bureau columns."""
+    whose = {}
+    for i in models:
+        h = re.sub(r"\s+", " ", header[i].lower())
+        who = re.split(r"\b(?:experian|equifax|trans\s*union)\b|fico model used|credit score model", h)[0].strip()
+        whose.setdefault(who, ([], []))[bool(_BUREAU.search(h))].append(i)
+    return {i: bureaus for summary, bureaus in whose.values() if bureaus for i in summary}
+
+
+def _named(row: list[str], models: list[int], summaries: dict[int, list[int]]) -> list[str]:
+    """The models one row names. A borrower's summary cell counts as a FICO model only when that borrower's bureau columns name no VantageScore: NYMT's reports put
+    Classic in Guarantor 1 FICO Model Used on loans whose every bureau column, the guarantor's too, says VantageScore 4.0."""
+    cell = lambda i: row[i] if i < len(row) else ""  # noqa: E731
+    out = set()
+    for i in models:
+        v = cell(i)
+        if _BLANK.match(v):
+            continue
+        if model_family(v) in _FICO_FAMILIES and any(model_family(cell(j)) in _VS_FAMILIES for j in summaries.get(i, ())):
+            continue
+        out.add(v)
+    return sorted(out)
+
+
 def parse_exhibit(text: str) -> tuple[list[dict], dict]:
     """The loan rows of every table with a model column, and a note of what was read. A table with no heading row but the width of the last one continues it. Every
     row carries the exhibit's one loan number (_loan_numbers) and, as alt, the loan's other numbers, or its table's place and its own when there is none. A table that
     only repeats loans the exhibit lists by number, with codes or blanks, is left out (_copies). The note says how many loans the exhibit lists by number (listed), for
-    the same check across the files of one report (collect), and how many rows it left out (copies)."""
+    the same check across the files of one report (collect), and how many rows it left out (copies). A borrower's summary model cell naming FICO beside bureau columns
+    naming a VantageScore is not counted (_named)."""
     rows, note = [], {"tables": 0, "model_tables": 0, "rows": 0, "columns": [], "odd": {}}
     tables = read_tables(text)
     note["tables"] = len(tables)
@@ -458,10 +519,11 @@ def parse_exhibit(text: str) -> tuple[list[dict], dict]:
                 note["columns"].append(header[i])
         pull = next((i for i, h in enumerate(header) if re.fullmatch(r"original credit report date", h, re.I)), None)
         score = next((i for i, h in enumerate(header) if re.fullmatch(r"qualifying (credit score|fico)", h, re.I)), None)
+        summaries = _summaries(header, models)
         for r_no, (row, number, alt) in enumerate(zip(run["rows"], run["numbers"], run["alts"])):
             if not _full(row):
                 continue
-            named = sorted({row[i] for i in models if i < len(row) and not _BLANK.match(row[i])})
+            named = _named(row, models, summaries)
             for v in named:
                 if model_family(v) == "junk" and len(note["odd"]) < 25:
                     note["odd"][v[:40]] = note["odd"].get(v[:40], 0) + 1
@@ -733,14 +795,19 @@ def _tally(rows: list[dict]) -> dict:
     return out
 
 
-def _loan_key(deal: str, loan_id: str) -> tuple:
-    """A long loan number is the same loan wherever it appears, as when a loan moves to a later deal; a short one is only sure within its deal."""
+def _loan_key(deal: str, loan_id: str, file: tuple = ()) -> tuple:
+    """A long loan number is the same loan wherever it appears, as when a loan moves to a later deal; a short one is only sure within its deal. A loan with no number,
+    its row's place in a table or its line in a fixed-width report (_UNNUMBERED), is only sure within its own file (file: its filing and file name), so two files'
+    places never join by place alone: rows 0 to 37 of a Business Purpose schedule are not rows 0 to 37 of the Supplemental Data schedule (_aligned joins them)."""
+    if _UNNUMBERED.fullmatch(loan_id):
+        return (deal, *file, loan_id)
     return (None, loan_id) if len(re.sub(r"\D", "", loan_id)) >= 7 else (deal, loan_id)
 
 
 def _loan_keys(where: str, r: dict) -> list[tuple]:
-    """A loan row's keys: its number (_loan_key, where: its deal) and each other number it carries with seven figures or more (alt), any of which names the loan."""
-    return [_loan_key(where, r["id"])] + [(None, a) for a in r.get("alt") or () if len(re.sub(r"\D", "", a)) >= 7]
+    """A loan row's keys: its number (_loan_key, where: its deal, and the row's file for a place) and each other number it carries with seven figures or more (alt),
+    any of which names the loan."""
+    return [_loan_key(where, r["id"], (r.get("adsh"), r.get("file")))] + [(None, a) for a in r.get("alt") or () if len(re.sub(r"\D", "", a)) >= 7]
 
 
 def _one_loan(keys: list[list[tuple]]) -> list[tuple]:
@@ -762,6 +829,203 @@ def _one_loan(keys: list[list[tuple]]) -> list[tuple]:
     return [root(ks[0]) for ks in keys]
 
 
+ALIGN_MIN = 10  # scored loans a schedule needs before the order of its scores can say which loans of another schedule it lists
+ALIGN_SHARE = 0.95  # the share of them that must line up, in order, with the other schedule's loans
+ALIGN_OVER = 0.25  # and by how much that must beat the same schedule read backwards, which lines up by chance about as well as another pool's loans would
+
+
+def _units(rows: list[dict]) -> dict[str, list[dict]]:
+    """One file's loans, each once and in its order, by unit: its numbered loans, and each table of row places or its fixed-width lines (_UNNUMBERED), a schedule
+    whose loan numbers are masked. Each loan's id, score, credit report month, models and whether it names a VantageScore, its lines in the file together."""
+    out = {}
+    for r in rows:
+        m = _PLACE.fullmatch(r["id"])
+        unit = f"table {m.group(1)}" if m else "lines" if _UNNUMBERED.fullmatch(r["id"]) else "numbered"
+        x = out.setdefault(unit, {}).setdefault(r["id"], {"id": r["id"], "score": None, "pull": None, "models": set(), "vs": False})
+        x["score"] = x["score"] or r.get("score")
+        x["pull"] = x["pull"] or r.get("pull")
+        x["models"].update(r.get("models") or ())
+        x["vs"] = x["vs"] or bool(r.get("vs_value")) or any(model_family(v) in _VS_FAMILIES for v in r.get("models") or ())
+    return {u: list(v.values()) for u, v in out.items()}
+
+
+def _in_order(small: list[dict], big: list[dict], among: tuple, key) -> list[tuple[int, int]]:
+    """Pairs (i, j) in order: each of small's loans (indexes among[0], in order) with the first of big's (indexes among[1]) after the last pair that has the same key.
+    A loan whose key is None pairs with none."""
+    where = {}
+    for j in among[1]:
+        k = key(big[j])
+        if k is not None:
+            where.setdefault(k, []).append(j)
+    pairs, at = [], -1
+    for i in among[0]:
+        k = key(small[i])
+        js = where.get(k, ()) if k is not None else ()
+        n = bisect.bisect_right(js, at)
+        if n < len(js):
+            at = js[n]
+            pairs.append((i, at))
+    return pairs
+
+
+def _between(pairs: list[tuple[int, int]], n_small: int, n_big: int) -> list[tuple[range, range]]:
+    """The stretches of two schedules between consecutive pairs, as index ranges."""
+    edges = [(-1, -1)] + sorted(pairs) + [(n_small, n_big)]
+    return [(range(i0 + 1, i1), range(j0 + 1, j1)) for (i0, j0), (i1, j1) in zip(edges, edges[1:])]
+
+
+def _line_up(small: list[dict], big: list[dict]) -> tuple[list[tuple[int, int]], float, int]:
+    """How the loans of one schedule line up, in order, with another's that lists them too, as a Business Purpose schedule's within the Supplemental Data schedule's:
+    pairs by score and models first, then by score alone between those, then the loans with no score between those, one for one in order. Gives the pairs, the share
+    of small's scored loans paired and how many it has."""
+    pairs = _in_order(small, big, (range(len(small)), range(len(big))), lambda x: (x["score"], frozenset(x["models"])) if x["score"] else None)
+    for among in _between(pairs, len(small), len(big)):
+        pairs += _in_order(small, big, among, lambda x: x["score"])
+    for a, b in _between(pairs, len(small), len(big)):
+        pairs += zip([i for i in a if not small[i]["score"]], [j for j in b if not big[j]["score"]])
+    scored = sum(1 for x in small if x["score"])
+    return sorted(pairs), sum(1 for i, _ in pairs if small[i]["score"]) / scored if scored else 0.0, scored
+
+
+def _same_shape(a: list[dict], b: list[dict]) -> int | None:
+    """Two schedules of as many loans whose scores and credit report months, where both give one, agree place by place (ALIGN_SHARE of them): how many places they
+    compare, or None."""
+    if len(a) != len(b):
+        return None
+    seen = 0
+    for f in ("score", "pull"):
+        both = [(x[f], y[f]) for x, y in zip(a, b) if x[f] and y[f]]
+        if both and sum(p == q for p, q in both) < ALIGN_SHARE * len(both):
+            return None
+        seen += len(both)
+    return seen
+
+
+def _aligned(rows: list[dict], report: dict, deal: dict) -> list[tuple[tuple, tuple]]:
+    """Loans with no number, in a schedule whose numbers are masked (a file's fixed-width lines or a table of row places, _units), joined to the loans they are in
+    another schedule, as pairs of (filing, file, id). For each such schedule, in turn:
+    - in order: within its report (filing and exhibit number, _report), a schedule whose scored loans line up in order with another's, ALIGN_MIN of them or more,
+      ALIGN_SHARE of them lined up and ALIGN_OVER more than read backwards (_line_up): a Business Purpose schedule's loans within the Supplemental Data schedule's;
+    - same shape: else the closest schedule of its deal with as many loans whose scores and credit report months agree place by place (_same_shape), closest being
+      of the same report, then the same filing, then the most places compared and the longest common file name: one schedule split over two files (CIM 2025-I1's 9
+      and 9b), an ASF tape filed as an exhibit of its own, a report filed again;
+    - by count: else a table of two rows or more with no score takes, in order, as many loans its report lists by number that no schedule has joined yet and that
+      name no VantageScore, where there are as many: a model table whose every number is masked (Sequoia 2025-9's), of loans its report lists.
+    rows: loan lines with their filing and file; report: (filing, file) to its report; deal: filing to its deal."""
+    files = {}
+    for r in rows:
+        files.setdefault((r["adsh"], r["file"]), []).append(r)
+    units = {(f, u): loans for f, rs in files.items() for u, loans in _units(rs).items()}
+    by_report, by_deal = {}, {}
+    for f, u in units:
+        by_report.setdefault(report.get(f, (f[0], "")), []).append((f, u))
+        by_deal.setdefault(deal.get(f[0], f[0]), []).append((f, u))
+    joins, done, used = [], set(), set()
+
+    def join(a, i, b, j):
+        x, y = (*a[0], units[a][i]["id"]), (*b[0], units[b][j]["id"])
+        joins.append((x, y))
+        used.update(z for z, u in ((x, a), (y, b)) if u[1] == "numbered")
+
+    for group in by_report.values():
+        for n, a in enumerate(group):
+            for b in group[n + 1:]:
+                if a[1] == b[1] == "numbered":
+                    continue
+                small, big = (a, b) if len(units[a]) <= len(units[b]) else (b, a)
+                pairs, share, scored = _line_up(units[small], units[big])
+                if scored < ALIGN_MIN or share < ALIGN_SHARE or share - _line_up(units[small][::-1], units[big])[1] < ALIGN_OVER:
+                    continue
+                for i, j in pairs:
+                    join(small, i, big, j)
+                done.update(u for u in (a, b) if u[1] != "numbered")
+    for group in by_deal.values():
+        for a in group:
+            if a[1] == "numbered" or a in done:
+                continue
+            best = None
+            for b in group:
+                seen = None if b == a else _same_shape(units[a], units[b])
+                if seen is not None:
+                    rank = (report.get(a[0]) == report.get(b[0]), a[0][0] == b[0][0], seen, len(os.path.commonprefix([a[0][1], b[0][1]])))
+                    best = best if best and best[0] >= rank else (rank, b)
+            if best:
+                for i in range(len(units[a])):
+                    join(a, i, best[1], i)
+                done.update(u for u in (a, best[1]) if u[1] != "numbered")
+    for group in by_report.values():
+        for a in group:
+            loans = units[a]
+            places = [int(x["id"].rsplit("-", 1)[1]) for x in loans] if a[1].startswith("table") else []
+            if a in done or len(loans) < 2 or any(x["score"] for x in loans) or not places or max(places) - min(places) + 1 != len(places):
+                continue
+            listed, ids = [], set()
+            for b in sorted((b for b in group if b[1] == "numbered"), key=lambda b: (b[0] != a[0], b[0])):
+                for k, x in enumerate(units[b]):
+                    if not x["vs"] and x["id"] not in ids and (*b[0], x["id"]) not in used:
+                        ids.add(x["id"])
+                        listed.append((b, k))
+            if len(listed) >= len(loans):
+                for i, (b, k) in enumerate(listed[:len(loans)]):
+                    join(a, i, b, k)
+                done.add(a)
+    return joins
+
+
+REUSE_MIN = 10  # numbers two deals must share, with a score or a month on both sides, before their disagreeing can say the deals reuse numbers
+
+
+def _reused(lines: list[tuple]) -> set[tuple[str, str]]:
+    """Pairs of deals that give the same long numbers to other loans (GCAT 2025-NQM3 and NQM5 both number theirs 2025xxxx): of the numbers two deals share whose
+    lines both give a score or both a credit report month, REUSE_MIN or more, over half name lines that disagree, a different score and not the same month, or a
+    different month and not the same score. A loan moved to a later deal keeps its score or its month (OBX 2025-NQM19 and NQM22 share 150 loans: three changed
+    score, none month), and one loan reviewed again for a later deal may change both, so a few shared numbers say nothing. lines: (deal, keys, score, month), one
+    per loan line."""
+    seen = {}
+    for deal, keys, score, month in lines:
+        for k in keys:
+            if k[0] is None:
+                g = seen.setdefault(k, {}).setdefault(deal, (set(), set()))
+                if score:
+                    g[0].add(score)
+                if month:
+                    g[1].add(month)
+    tally = {}
+    for by_deal in seen.values():
+        names = sorted(by_deal)
+        for n, a in enumerate(names):
+            for b in names[n + 1:]:
+                (sa, ma), (sb, mb) = by_deal[a], by_deal[b]
+                if (sa and sb) or (ma and mb):
+                    t = tally.setdefault((a, b), [0, 0])
+                    t[0] += 1
+                    t[1] += bool(((sa and sb and not sa & sb) or (ma and mb and not ma & mb)) and not (sa & sb or ma & mb))
+    return {pair for pair, (compared, differ) in tally.items() if compared >= REUSE_MIN and differ * 2 > compared}
+
+
+def _apart(lines: list[tuple], reused: set[tuple[str, str]]) -> dict[tuple, tuple]:
+    """For a long number two deals reuse (_reused), each deal's key for it, so their loans stay apart; deals that share it and do not reuse numbers keep one key.
+    lines: (deal, keys) for each loan line."""
+    carriers = {}
+    for deal, keys in lines:
+        for k in keys:
+            if k[0] is None:
+                carriers.setdefault(k, set()).add(deal)
+    out = {}
+    for k, ds in carriers.items():
+        names = sorted(ds)
+        if not any((a, b) in reused for n, a in enumerate(names) for b in names[n + 1:]):
+            continue
+        groups = []  # each deal joins the first group with no deal it reuses numbers with
+        for d in names:
+            g = next((g for g in groups if not any(tuple(sorted((d, e))) in reused for e in g)), None)
+            groups.append([d]) if g is None else g.append(d)
+        for g in groups:
+            for d in g:
+                out[(k, d)] = (None, k[1], g[0])
+    return out
+
+
 def build_datasets() -> dict[str, list[dict]]:
     home = paths.DATA / "edgar"
     hits = _read_jsonl(home / "hits.jsonl")
@@ -772,16 +1036,22 @@ def build_datasets() -> dict[str, list[dict]]:
     for h in sorted(mortgage, key=lambda h: h["date"]):
         info.setdefault(h["adsh"], h)
     deals = {f["adsh"]: f["deal"] for f in _read_jsonl(home / "filings.jsonl")}
+    deal_of = {a: deals.get(a) or a for a in info}
+    rows = [r for r in _read_jsonl(home / "loans.jsonl") if r["adsh"] in info]
+    extra = {}  # a loan with no number: the key of the loan it is in another schedule (_aligned)
+    for a, b in _aligned(rows, {(h["adsh"], h["file"]): _report(h) for h in hits}, deal_of):
+        extra.setdefault(a, []).append(_loan_key(deal_of[b[0]], b[2], b[:2]))
     merged, lines = {}, []
     with_model = set()
-    for r in _read_jsonl(home / "loans.jsonl"):
-        h = info.get(r["adsh"])
-        if not h:
-            continue
+    for r in rows:
+        h = info[r["adsh"]]
         if r.get("vs_value") or any(model_family(v) != "junk" for v in r["models"]):
             with_model.add(r["adsh"])
-        deal = deals.get(r["adsh"]) or r["adsh"]
-        lines.append((r, h, deal, _loan_keys(deal, r)))
+        deal = deal_of[r["adsh"]]
+        lines.append((r, h, deal, _loan_keys(deal, r) + extra.get((r["adsh"], r["file"], r["id"]), [])))
+    apart = _apart([(deal, keys) for _, _, deal, keys in lines], _reused([(deal, keys, r.get("score"), r.get("pull")) for r, _, deal, keys in lines]))
+    if apart:
+        lines = [(r, h, deal, [apart.get((k, deal), k) for k in keys]) for r, h, deal, keys in lines]
     for (r, h, deal, _), loan in zip(lines, _one_loan([keys for *_, keys in lines])):
         m = merged.setdefault(loan, {"deal": deal, "adsh": r["adsh"], "date": h["date"], "filer": h["filer"], "models": set(), "vs_value": False, "pull": None})
         m["models"].update(r["models"])
@@ -1008,7 +1278,8 @@ def tape_counts(adshs: set, loans: Path) -> dict[str, dict]:
     code, a word this cannot read or a blank alone), those naming VantageScore in a model column or giving a VantageScore (tape_vs), of them VS4 (tape_vs4) and an
     older VantageScore (tape_vs_old), those with no FICO model named beside it (tape_vs_alone; tape_vs4_alone and tape_old_alone of them VS4 and older) and those
     with Classic FICO named beside it (tape_vs_classic). A loan whose report names VantageScore for one bureau and Classic FICO for the others had FICO pulled: it
-    is not a loan scored on VantageScore alone. A loan two files of the filing give under two numbers is one loan where they share a number (_loan_keys)."""
+    is not a loan scored on VantageScore alone. A loan two files of the filing give under two numbers is one loan where they share a number (_loan_keys), and a loan
+    with no number is the loan of another schedule of the filing that _aligned finds."""
     if not adshs or not loans.exists():
         return {}
     lines = []
@@ -1022,8 +1293,12 @@ def tape_counts(adshs: set, loans: Path) -> dict[str, dict]:
                 continue
             if r.get("adsh") in adshs:
                 lines.append(r)
+    report = {(h["adsh"], h["file"]): _report(h) for h in _read_jsonl(loans.parent / "hits.jsonl") if h.get("adsh") in adshs}
+    extra = {}
+    for a, b in _aligned(lines, report, {}):
+        extra.setdefault(a, []).append((b[0], *_loan_key(b[0], b[2], b[:2])))
     merged = {}
-    for r, loan in zip(lines, _one_loan([[(r["adsh"], *k) for k in _loan_keys(r["adsh"], r)] for r in lines])):
+    for r, loan in zip(lines, _one_loan([[(r["adsh"], *k) for k in _loan_keys(r["adsh"], r)] + extra.get((r["adsh"], r["file"], r["id"]), []) for r in lines])):
         m = merged.setdefault(loan, {"adsh": r["adsh"], "models": set(), "vs_value": False})
         m["models"].update(r.get("models") or [])
         m["vs_value"] = m["vs_value"] or bool(r.get("vs_value"))

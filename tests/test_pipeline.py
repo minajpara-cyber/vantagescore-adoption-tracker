@@ -2720,6 +2720,21 @@ alias_rows = edgar.parse_exhibit("<table><tr><th>SitusAMC Loan ID</th><th>Custom
                                  "<tr><td>226100001</td><td>509100001</td><td>4612000001</td><td>2026-7</td><td>Beacon 5.0</td></tr>"
                                  "<tr><td>226100002</td><td>509100002</td><td>4612000001</td><td>2026-7</td><td>FICO II</td></tr></table>")[0]
 assert [(r["id"], r.get("alt")) for r in alias_rows] == [("226100001", ["509100001"]), ("226100002", ["509100002"])], alias_rows
+# Some filing agents give each heading four columns and put its value in the second, with a mark such as $ beside it or a model name split over two cells (CROSS 2026-NQM1
+# and NQM2): the cells under a heading's span read as one value, so those loans name their models and scores instead of reading as blank.
+spread_row = lambda i, score, ex, eq: "<tr>" + "".join(f"<td>{c}</td>" for c in [i, "", "", "[Redacted", "]", "", "", score, "", "", "", *ex, "", "", eq, "", "", "$", "1,412.06", "", ""]) + "</tr>"  # noqa: E731
+spread = edgar.parse_exhibit('<table><tr><td colspan="2">SitusAMC Loan ID</td><td colspan="4">Customer Loan ID</td><td colspan="4">Qualifying Credit Score</td>'
+                             '<td colspan="4">Borrower Experian FICO Model Used</td><td colspan="4">Borrower Equifax FICO Model Used</td><td colspan="4">Annual Property Tax</td></tr>'
+                             + spread_row("224900517", "731", ["Fair Isaac", "(VER. 2)"], "Beacon 5.0") + spread_row("224900518", "688", ["VantageScore 4.0", ""], "") + "</table>")[0]
+assert [(r["id"], r["models"], r["score"]) for r in spread] == [("224900517", ["Beacon 5.0", "Fair Isaac (VER. 2)"], 731), ("224900518", ["VantageScore 4.0"], 688)], spread
+# A borrower's summary cell counts as a FICO model only when that borrower's bureau columns name no VantageScore: NYMT's reports put Classic in Guarantor 1 FICO Model
+# Used on loans whose every bureau column says VantageScore 4.0. Beside blank or FICO bureau columns, or for a borrower with none, it stays.
+summary = edgar.parse_exhibit("<table><tr><th>Loan ID</th><th>Guarantor 1 FICO Model Used</th><th>Guarantor 1 Experian FICO Model Used</th><th>Guarantor 1 Equifax FICO Model Used</th>"
+                              "<th>Borrower 2 FICO Model Used</th></tr><tr><td>3418820551</td><td>Classic</td><td>VantageScore 4.0</td><td>VantageScore 4.0</td><td></td></tr>"
+                              "<tr><td>3418820552</td><td>Classic</td><td></td><td></td><td>Beacon 5.0</td></tr><tr><td>3418820553</td><td>Classic</td><td>FICO II</td><td>VantageScore 4.0</td><td></td></tr>"
+                              "<tr><td>3418820554</td><td>Classic</td><td>FICO II</td><td></td><td></td></tr></table>")[0]
+assert [(r["id"], r["models"]) for r in summary] == [("3418820551", ["VantageScore 4.0"]), ("3418820552", ["Beacon 5.0", "Classic"]), ("3418820553", ["FICO II", "VantageScore 4.0"]),
+                                                      ("3418820554", ["Classic", "FICO II"])], summary
 os.environ.pop("EDGAR_CONTACT", None)
 try:
     edgar.contact()
@@ -2732,6 +2747,7 @@ del os.environ["EDGAR_CONTACT"]
 assert [w for w in edgar.month_windows("2026-01-15", "2026-03-02")] == [("2026-01-15", "2026-01-31"), ("2026-02-01", "2026-02-28"), ("2026-03-01", "2026-03-02")]
 assert edgar.build_datasets() == {"private_label": []}
 assert edgar._loan_key("A", "6000080192") == edgar._loan_key("B", "6000080192") and edgar._loan_key("A", "358") != edgar._loan_key("B", "358")
+assert edgar._loan_key("A", "row0-4", ("F", "s5.htm")) != edgar._loan_key("A", "row0-4", ("F", "s6.htm")) and edgar._loan_key("A", "line12", ("F", "s5.htm")) == edgar._loan_key("A", "line12", ("F", "s5.htm"))
 e_home = home / "data" / "edgar"
 e_home.mkdir(parents=True, exist_ok=True)
 
@@ -2813,6 +2829,65 @@ vf_public = site.public_rows("private_label", vf_pl)
 assert len(vf_public) == len(vf_pl) - 3 and not any(r.get("view") == "vs4_year" or "vs4_no_fico_n" in r for r in vf_public), vf_public
 assert vf_public == [{k: v for k, v in r.items() if k != "vs4_no_fico_n"} for r in vf_pl if r["view"] != "vs4_year"] and site.public_rows("fees", vf_pl) == vf_pl, "the rest stays as it is"
 assert {d for d in site.PUBLIC_DROP["private_label"] if not d.endswith(".*")} == {"vs4_no_fico_n"} and not {"vs4_no_fico_n", "vs4_year"} & {*json.loads(site.CONTRACT.read_text())["private_label"]["fields"], *json.loads(site.CONTRACT.read_text())["private_label"]["views"]}
+# Loans with no number (a schedule whose numbers are masked) count once within their own file and join another schedule's loans only where the two line up:
+# - WAVE: a fixed-width Supplemental Data schedule with masked numbers and a numbered Business Purpose schedule of 11 of its loans, in its order, count once, and the
+#   VS4 loan in both counts once; a seasoned schedule of other loans stays apart, though its rows sit in table 0 as well.
+# - PIER: a Business Purpose schedule's rows 0 to 9 are the Supplemental Data schedule's rows 4 to 13, both with masked numbers: by place they would pair other loans and
+#   make one VS4 loan two (PRET 2025-RPL4).
+# - CANE: one schedule split over two files with no scores (CIM 2025-I1's 9 and 9b) is one schedule, by its place in each.
+# - QUAY: a model table whose numbers are all masked holds loans its report lists by number (Sequoia 2025-9): they take those loans, in order.
+# - EDDY: two schedules of as many loans whose scores differ (seasoned and non-seasoned) stay apart.
+al2_home = home / "aligned_data"
+(al2_home / "edgar").mkdir(parents=True)
+al2_hit = lambda adsh, name, day, filer, typ="EX-99.1": {"adsh": adsh, "file": name, "cik": "0000777003", "date": day, "form": "ABS-15G", "type": typ, "desc": "", "filer": filer, "kind": "model"}  # noqa: E731
+al2_loan = lambda adsh, name, i, models, score=None, pull=None: {"adsh": adsh, "file": name, "id": i, "models": models, "vs_value": False, "pull": pull, "score": score}  # noqa: E731
+wave = [742, 688, 701, 765, 659, 720, 733, 690, 774, 702, 681, 748, 711, 696]
+wave_bp = [0, 1, 2, 4, 5, 6, 7, 8, 10, 11, 13]
+pier = [812, 744, 729, 706, 771, 768, 715, 748, 752, 663, 802, 731, 694, 727, 785, 676]
+eddy = ([705, 742, 688, 731, 760, 699, 715, 772, 654, 721], [781, 643, 707, 692, 757, 718, 669, 744, 735, 702])
+classic = ["Beacon 5.0", "FICO Risk Score Classic 04"]
+edgar._append_jsonl(al2_home / "edgar" / "hits.jsonl", [al2_hit("W1", f, "2026-08-03", "Wave Depositor LLC") for f in ("s5.htm", "s6.htm", "s7.htm")]
+                    + [al2_hit("P1", f, "2025-09-02", "Pier Depositor LLC", "EX-99.2") for f in ("s5.htm", "s6.htm")] + [al2_hit("C1", f, "2025-01-14", "Cane Depositor LLC") for f in ("s7.htm", "s9.htm", "s9b.htm")]
+                    + [al2_hit("Q1", "ex99-9.htm", "2025-09-08", "Quay Residential Funding", "EX-99.9")] + [al2_hit("E1", f, "2026-05-26", "Eddy Depositor LLC") for f in ("a.htm", "b.htm")])
+edgar._append_jsonl(al2_home / "edgar" / "filings.jsonl", [{"adsh": "W1", "deal": "WAVE 2026-HE3"}, {"adsh": "P1", "deal": "PIER 2025-RPL6"}, {"adsh": "C1", "deal": "CANE 2025-I2"},
+                                                         {"adsh": "Q1", "deal": "QUAY 2025-9"}, {"adsh": "E1", "deal": "EDDY 2026-HE1"}])
+edgar._append_jsonl(al2_home / "edgar" / "loans.jsonl",
+                    [al2_loan("W1", "s5.htm", f"line{n + 1}", ["VantageScore 4.0"] if n == 6 else classic, s) for n, s in enumerate(wave)]
+                    + [al2_loan("W1", "s6.htm", f"6120{n:04d}", ["VantageScore 4.0"] if n == 6 else ["Fair Isaac (VER. 2)"], wave[n]) for n in wave_bp]
+                    + [al2_loan("W1", "s7.htm", f"row0-{n}", classic, s) for n, s in enumerate([801, 640, 777, 655, 790, 615])]
+                    + [al2_loan("P1", "s5.htm", f"row0-{n}", ["VantageScore 4.0", "Beacon 5.0"] if n == 11 else classic, s) for n, s in enumerate(pier)]
+                    + [al2_loan("P1", "s6.htm", f"row0-{n}", ["VantageScore 4.0"] if n == 7 else [], s) for n, s in enumerate(pier[4:14])]
+                    + [al2_loan("C1", f, f"5311{n:04d}", []) for f in ("s7.htm", "s9.htm") for n in range(8)] + [al2_loan("C1", "s9b.htm", f"row0-{n}", ["Classic"] if n == 2 else []) for n in range(8)]
+                    + [al2_loan("Q1", "ex99-9.htm", f"355100{n:04d}", ["1"]) for n in range(6)] + [al2_loan("Q1", "ex99-9.htm", f"row3-{n}", classic) for n in range(4)]
+                    + [al2_loan("E1", f, f"row0-{n}", classic, s) for f, scores in zip(("a.htm", "b.htm"), eddy) for n, s in enumerate(scores)])
+edgar.paths.DATA = al2_home
+al2_pl = edgar.build_datasets()["private_label"]
+edgar.paths.DATA = real_data
+al2_meta, al2_filers = next(r for r in al2_pl if r["view"] == "meta"), {r["key"]: r for r in al2_pl if r["view"] == "filer"}
+assert {f: (r["n"], r["vs4_n"], r["classic_n"], r["unclear_n"], r["blank_n"]) for f, r in al2_filers.items()} == {
+    "Wave Depositor LLC": (20, 1, 19, 0, 0), "Pier Depositor LLC": (16, 1, 15, 0, 0), "Cane Depositor LLC": (8, 0, 1, 0, 7), "Quay Residential Funding": (6, 0, 4, 2, 0),
+    "Eddy Depositor LLC": (20, 0, 20, 0, 0)}, al2_filers
+assert (al2_meta["n"], al2_meta["vs4_n"], al2_meta["vs4_no_fico_n"]) == (70, 2, 1), al2_meta  # WAVE's VS4 loan names no FICO model in either schedule; PIER's names Beacon
+# The watch's counts by filing join them the same way.
+assert edgar.tape_counts({"W1", "P1"}, al2_home / "edgar" / "loans.jsonl") == {
+    "W1": {"tape_n": 20, "tape_named": 20, "tape_vs": 1, "tape_vs4": 1, "tape_vs_old": 0, "tape_vs_alone": 1, "tape_vs_classic": 0, "tape_vs4_alone": 1, "tape_old_alone": 0},
+    "P1": {"tape_n": 16, "tape_named": 16, "tape_vs": 1, "tape_vs4": 1, "tape_vs_old": 0, "tape_vs_alone": 0, "tape_vs_classic": 1, "tape_vs4_alone": 0, "tape_old_alone": 0}}
+# Two deals that give the same 8-figure numbers to other loans (GCAT 2025-NQM3 and NQM5): their scores and credit report months differ, so the loans stay apart. Two deals
+# that share loans keep them together though one loan's score changed, as its month did not.
+ru_home = home / "reused_data"
+(ru_home / "edgar").mkdir(parents=True)
+edgar._append_jsonl(ru_home / "edgar" / "hits.jsonl", [al2_hit(a, "ex99-5.htm", d, f, "EX-99.5") for a, d, f in (("G3", "2025-05-01", "Glen Depositor LLC"), ("G5", "2025-09-01", "Glen Depositor LLC"),
+                                                                                                            ("O19", "2025-08-01", "Oak Funding LLC"), ("O22", "2025-11-03", "Oak Funding LLC"))])
+edgar._append_jsonl(ru_home / "edgar" / "filings.jsonl", [{"adsh": "G3", "deal": "GLEN 2025-NQM3"}, {"adsh": "G5", "deal": "GLEN 2025-NQM5"}, {"adsh": "O19", "deal": "OAK 2025-NQM19"},
+                                                         {"adsh": "O22", "deal": "OAK 2025-NQM22"}])
+glen = [(701, "2025-02", 688, "2025-06"), (722, "2025-03", 739, "2025-07"), (745, "2025-02", 712, "2025-06"), (760, "2025-04", 790, "2025-07"), (733, "2025-01", 704, "2025-05"), (684, "2025-03", 751, "2025-08")]
+glen = [glen[n % 6] for n in range(12)]
+edgar._append_jsonl(ru_home / "edgar" / "loans.jsonl", [al2_loan(a, "ex99-5.htm", f"2025{1101 + n:04d}", classic, g[k], g[k + 1]) for a, k in (("G3", 0), ("G5", 2)) for n, g in enumerate(glen)]
+                    + [al2_loan(a, "ex99-5.htm", f"40000770{n:02d}", classic, 700 + n if a == "O19" or n else 699, "2025-05") for a in ("O19", "O22") for n in range(12)])
+edgar.paths.DATA = ru_home
+ru_filers = {r["key"]: r["n"] for r in edgar.build_datasets()["private_label"] if r["view"] == "filer"}
+edgar.paths.DATA = real_data
+assert ru_filers == {"Glen Depositor LLC": 24, "Oak Funding LLC": 12}, ru_filers
 
 # Ginnie Mae's loan files: both layouts read alike, only new purchases and full refinances count, a lender's step shows by closing month, and FHA is the check
 import duckdb  # noqa: E402
